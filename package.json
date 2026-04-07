@@ -1,0 +1,51 @@
+{
+  "name": "openclaude-desktop",
+  "version": "1.0.1",
+  "description": "Desktop GUI for OpenClaude",
+  "author": "OpenClaude",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
+    "dev:vite": "vite",
+    "build": "tsc -b && vite build",
+    "electron": "electron .",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win"
+  },
+  "build": {
+    "appId": "com.openclaude.desktop",
+    "productName": "OpenClaude Desktop",
+    "directories": { "output": "release" },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "public/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^41.1.1",
+    "electron-builder": "^26.8.1",
+    "typescript": "~6.0.2",
+    "vite": "^8.0.4",
+    "wait-on": "^9.0.4"
+  },
+  "dependencies": {
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "highlight.js": "^11.11.1",
+    "lucide-react": "^1.7.0",
+    "marked": "^17.0.6"
+  }
+}
