@@ -1,80 +1,96 @@
 # OpenClaude Desktop
 
-Interface desktop open-source para modelos de IA locais via Ollama — visual inspirado no Claude, 100% privado e gratuito.
+> Interface desktop open-source para modelos de IA locais via Ollama — visual inspirado no Claude, 100% privado e gratuito.
 
-![OpenClaude Desktop](public/icon.png)
+![Version](https://img.shields.io/badge/version-1.0.1-orange)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
+![Electron](https://img.shields.io/badge/Electron-41-47848F?logo=electron)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)
+
+![OpenClaude Desktop Screenshot](src/assets/hero.png)
 
 ## ✨ Funcionalidades
 
-- 💬 **Interface estilo Claude** — chat limpo com suporte a Markdown e syntax highlight
-- 🤖 **Modo Agente** — executa tarefas complexas automaticamente com múltiplos passos
-- 🔧 **Ferramentas integradas** — execute comandos, leia/escreva arquivos, busque na web
-- 🔴 **Streaming em tempo real** — respostas aparecem palavra por palavra
-- 💾 **Histórico persistente** — conversas salvas automaticamente em disco
-- 🗂️ **Multi-conversa** — sidebar com histórico, busca e renomeação
-- ⚙️ **Configurações** — temperatura, system prompt, max tokens, auto-start
-- 🌐 **Busca web** — DuckDuckGo integrado como ferramenta
-- 📂 **Drag & Drop** — arraste arquivos diretamente no chat
-- 📤 **Export** — salve conversas como Markdown
-- ⌨️ **Atalhos** — `Ctrl+N`, `Ctrl+K`, `Ctrl+,`, `Ctrl+Shift+Space`
-- 🔔 **System Tray** — minimiza para a bandeja do Windows
-- 🟢 **Status Ollama** — indicador online/offline em tempo real
+| Feature | Descrição |
+|---------|-----------|
+| 💬 **Chat estilo Claude** | Interface limpa com Markdown e syntax highlight |
+| 🤖 **Modo Agente** | Executa tarefas complexas com múltiplos passos automáticos |
+| 🔧 **Ferramentas** | Execute comandos, leia/escreva arquivos, busque na web |
+| 🔴 **Streaming** | Respostas em tempo real palavra por palavra |
+| 💾 **Histórico** | Conversas salvas automaticamente em disco |
+| 🗂️ **Multi-conversa** | Sidebar com busca e renomeação |
+| ⚙️ **Configurações** | Temperatura, system prompt, max tokens, auto-start |
+| 🌐 **Busca Web** | DuckDuckGo integrado como ferramenta |
+| 📂 **Drag & Drop** | Arraste arquivos diretamente no chat |
+| 📤 **Export** | Salve conversas como Markdown |
+| ⌨️ **Atalhos** | `Ctrl+N`, `Ctrl+K`, `Ctrl+,`, `Ctrl+Shift+Space` |
+| 🔔 **System Tray** | Minimiza para a bandeja do Windows |
+| 🟢 **Status Ollama** | Indicador online/offline em tempo real |
 
-## 🚀 Pré-requisitos
+## 🚀 Início Rápido
 
-- [Ollama](https://ollama.com) instalado e rodando
+### 1. Pré-requisitos
+
+- [Ollama](https://ollama.com/download) instalado
 - Node.js 20+
-- Um modelo baixado (ex: `ollama pull qwen2.5-coder:7b`)
 
-## 📦 Instalação
-
-### Download direto
-Baixe o instalador na página de [Releases](../../releases).
-
-### Rodar do fonte
+### 2. Baixe um modelo
 
 ```bash
-git clone https://github.com/SEU_USUARIO/openclaude-desktop
+ollama pull qwen2.5-coder:7b
+```
+
+### 3. Instale o app
+
+Baixe o instalador na página de [Releases](../../releases/latest) e execute.
+
+Ou rode do fonte:
+
+```bash
+git clone https://github.com/mrtjr/openclaude-desktop
 cd openclaude-desktop
 npm install
 npm run dev
 ```
 
-### Build
+## 🤖 Modelos recomendados
 
-```bash
-npm run build       # Build da UI
-npm run dist:win    # Gerar instalador .exe para Windows
-```
-
-## 🔧 Configuração
-
-1. Inicie o Ollama: `ollama serve`
-2. Baixe um modelo: `ollama pull qwen2.5-coder:7b`
-3. Abra o OpenClaude Desktop
-4. Selecione o modelo no menu inferior esquerdo
-
-### Modelos recomendados
-
-| Modelo | RAM necessária | Ideal para |
-|--------|---------------|-----------|
-| `qwen2.5-coder:7b` | 8 GB | Código |
-| `qwen3.5:9b` | 12 GB | Geral |
+| Modelo | RAM | Ideal para |
+|--------|-----|-----------|
+| `qwen2.5-coder:7b` | 8 GB | Código rápido |
+| `qwen3.5:9b` | 12 GB | Uso geral |
 | `qwen2.5-coder:32b` | 24 GB | Código avançado |
 | `dolphin3:8b` | 8 GB | Sem restrições |
 
-## 🛠️ Stack
+## 🛠️ Build
 
-- **Electron** — app desktop cross-platform
-- **React + TypeScript** — interface
-- **Vite** — bundler
-- **Tailwind / CSS customizado** — estilos
-- **Ollama API** — modelos de IA locais
+```bash
+npm run build       # Build da UI
+npm run dist:win    # Gerar instalador .exe Windows
+```
+
+## 🔧 Stack
+
+- **Electron 41** — app desktop
+- **React 19 + TypeScript** — UI
+- **Vite** — bundler  
+- **Ollama API** — modelos locais
 
 ## 🤝 Contribuindo
 
-Pull requests são bem-vindos! Abra uma issue para discutir mudanças maiores antes.
+1. Fork o repositório
+2. Crie sua branch: `git checkout -b feature/minha-feature`
+3. Commit: `git commit -m 'Add: minha feature'`
+4. Push: `git push origin feature/minha-feature`
+5. Abra um Pull Request
+
+Issues e sugestões são bem-vindas!
 
 ## 📄 Licença
 
 MIT — veja [LICENSE](LICENSE)
+
+---
+
+> Inspirado no [OpenClaude CLI](https://github.com/Gitlawb/openclaude) — built with ❤️
