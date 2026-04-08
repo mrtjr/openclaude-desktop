@@ -3,8 +3,9 @@ import { marked } from 'marked'
 import hljs from 'highlight.js'
 import DOMPurify from 'dompurify'
 import 'highlight.js/styles/github-dark.css'
-import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, FileCode, Info, ArrowUpCircle, Zap, BotOff, Copy, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Image, Trash, Mic, MicOff, Volume2, ListChecks, CheckCircle2, Circle, AlertCircle, Clock } from 'lucide-react'
+import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, FileCode, Info, ArrowUpCircle, Zap, BotOff, Copy, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Image, Trash, Mic, MicOff, Volume2, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3 } from 'lucide-react'
 import SettingsModal, { loadSettings, type AppSettings } from './Settings'
+import AnalyticsDashboard from './Analytics'
 
 // ─── Toast notification system ──────────────────────────────────
 let toastId = 0
@@ -401,6 +402,7 @@ export default function App() {
     try { return new Set(JSON.parse(localStorage.getItem('openclaude-pinned') || '[]')) } catch { return new Set() }
   })
   const [isAgentMode, setIsAgentMode] = useState(false)
+  const [showAnalytics, setShowAnalytics] = useState(false)
   const [isListening, setIsListening] = useState(false)
   const [ttsEnabled, setTtsEnabled] = useState(false)
   const recognitionRef = useRef<any>(null)
@@ -924,6 +926,21 @@ export default function App() {
       setAgentSteps(0)
       stopRequestedRef.current = false
 
+      // ─── MCD: Silent session analytics tracker ──────────────
+      const sessionTracker = {
+        startTime: Date.now(),
+        toolCalls: 0,
+        errors: 0,
+        circuitBreaks: 0,
+        toolsUsed: {} as Record<string, number>,
+        agentMode: isAgentMode,
+        agentSteps: 0,
+        agentCompleted: false,
+        model: selectedModel,
+        provider: settings.provider,
+        responseTimes: [] as number[],
+      }
+
       try {
         const conv = conversationsRef.current.find(c => c.id === activeConvId)
         const lang = settings.language || 'pt'
@@ -987,7 +1004,9 @@ export default function App() {
         while (continueLoop && steps < (isAgentMode ? MAX_AGENT_STEPS : 10)) {
           if (stopRequestedRef.current) break;
           steps++
+          sessionTracker.agentSteps = steps
           setAgentSteps(steps)
+          const stepStartTime = Date.now()
           
           const requestMessages = [...allMessages]
           if (activeMemory && isAgentMode) {
@@ -1101,6 +1120,7 @@ export default function App() {
 
               if (jsonError) {
                 result = `[SYSTEM INTERCEPT]: JSON Parse Error - ${jsonError}. You provided: ${rawArgs}. You MUST output strictly valid JSON syntax. Try calling the tool again with fixed JSON.`
+                sessionTracker.errors++
               } else if (tc.function.name === 'update_working_memory') {
                 activeMemory = args
                 setConversations(prev => prev.map(c => c.id !== activeConvId ? c : { ...c, workingMemory: args }))
@@ -1109,10 +1129,15 @@ export default function App() {
                 recentToolCalls.filter(c => c === callSignature).length >= 2
               ) {
                 result = `[SYSTEM INTERCEPT]: Circuit Breaker Triggered. You already called "${tc.function.name}" with these exact arguments ${recentToolCalls.filter(c => c === callSignature).length} times. This approach is not working. You MUST try a completely different strategy, use a different tool, or give a final text response. Do NOT repeat this call.`
+                sessionTracker.circuitBreaks++
               } else {
                 result = await executeTool(tc.function.name, args)
               }
-              
+
+              // MCD: Track tool usage silently
+              sessionTracker.toolCalls++
+              sessionTracker.toolsUsed[tc.function.name] = (sessionTracker.toolsUsed[tc.function.name] || 0) + 1
+
               recentToolCalls.push(callSignature)
               toolResults.push({ toolCallId: tc.id, name: tc.function.name, result })
             }
@@ -1131,7 +1156,7 @@ export default function App() {
                 content: tr.result
               }))
             ]
-            
+
           } else {
             const finalMsg: Message = {
               id: generateId(),
@@ -1143,10 +1168,11 @@ export default function App() {
               c.id !== activeConvId ? c : { ...c, messages: [...c.messages, finalMsg] }
             ))
             if (accumulated) speakText(accumulated)
+            sessionTracker.agentCompleted = true
             continueLoop = false
           }
 
-          if (finishReason === 'stop') continueLoop = false
+          if (finishReason === 'stop') { sessionTracker.agentCompleted = true; continueLoop = false }
 
         } else {
           // ─── Non-streaming path ────────────────────────────
@@ -1200,6 +1226,7 @@ export default function App() {
 
               if (jsonError) {
                 result = `[SYSTEM INTERCEPT]: JSON Parse Error - ${jsonError}. You provided: ${tc.function.arguments}. You MUST output strictly valid JSON syntax. Try calling the tool again with fixed JSON.`
+                sessionTracker.errors++
               } else if (tc.function.name === 'update_working_memory') {
                 activeMemory = args
                 setConversations(prev => prev.map(c => c.id !== activeConvId ? c : { ...c, workingMemory: args }))
@@ -1208,10 +1235,15 @@ export default function App() {
                 recentToolCalls.filter(c => c === callSignature).length >= 2
               ) {
                 result = `[SYSTEM INTERCEPT]: Circuit Breaker Triggered. You already called "${tc.function.name}" with these exact arguments ${recentToolCalls.filter(c => c === callSignature).length} times. This approach is not working. You MUST try a completely different strategy, use a different tool, or give a final text response. Do NOT repeat this call.`
+                sessionTracker.circuitBreaks++
               } else {
                 result = await executeTool(tc.function.name, args)
               }
-              
+
+              // MCD: Track tool usage silently
+              sessionTracker.toolCalls++
+              sessionTracker.toolsUsed[tc.function.name] = (sessionTracker.toolsUsed[tc.function.name] || 0) + 1
+
               recentToolCalls.push(callSignature)
               toolResults.push({ toolCallId: tc.id, name: tc.function.name, result })
             }
@@ -1242,13 +1274,18 @@ export default function App() {
               c.id !== activeConvId ? c : { ...c, messages: [...c.messages, finalMsg] }
             ))
             if (assistantMsg.content) speakText(assistantMsg.content)
+            sessionTracker.agentCompleted = true
             continueLoop = false
           }
 
-          if (choice.finish_reason === 'stop') continueLoop = false
+          if (choice.finish_reason === 'stop') { sessionTracker.agentCompleted = true; continueLoop = false }
         }
+
+          // MCD: Track response time per step
+          sessionTracker.responseTimes.push(Date.now() - stepStartTime)
       }
     } catch (e: any) {
+      sessionTracker.errors++
       setIsStreaming(false)
       setStreamingText('')
       const errMsg: Message = {
@@ -1264,6 +1301,26 @@ export default function App() {
       setIsLoading(false)
       setIsStreaming(false)
       setStreamingText('')
+
+      // MCD/MASA: Save session analytics silently
+      if (settings.analyticsEnabled !== false) {
+        const avgRT = sessionTracker.responseTimes.length > 0
+          ? Math.round(sessionTracker.responseTimes.reduce((a, b) => a + b, 0) / sessionTracker.responseTimes.length)
+          : 0
+        window.electron.analyticsSaveSession({
+          toolCalls: sessionTracker.toolCalls,
+          errors: sessionTracker.errors,
+          circuitBreaks: sessionTracker.circuitBreaks,
+          toolsUsed: Object.entries(sessionTracker.toolsUsed).map(([name, count]) => ({ name, count })),
+          agentMode: sessionTracker.agentMode,
+          agentSteps: sessionTracker.agentSteps,
+          agentCompleted: sessionTracker.agentCompleted,
+          model: sessionTracker.model,
+          provider: sessionTracker.provider,
+          avgResponseTime: avgRT,
+          duration: Date.now() - sessionTracker.startTime,
+        }).catch(() => {}) // Silent — never interrupt the user
+      }
     }
   }, [input, isLoading, activeConvId, selectedModel, settings, isAgentMode])
 
@@ -1323,6 +1380,13 @@ export default function App() {
         onSave={(s) => { setSettings(s); showToast('Configuracoes salvas!') }}
       />
 
+      {/* Analytics Dashboard (MAGI) */}
+      <AnalyticsDashboard
+        isOpen={showAnalytics}
+        onClose={() => setShowAnalytics(false)}
+        language={settings.language}
+      />
+
       {/* Titlebar */}
       <div className="titlebar">
         <div className="titlebar-drag">
@@ -1357,6 +1421,9 @@ export default function App() {
               </button>
             </>
           )}
+          <button className="titlebar-action-btn" onClick={() => setShowAnalytics(true)} title="Analytics & Insights">
+            <BarChart3 size={14} />
+          </button>
           <button className="titlebar-action-btn" onClick={() => setShowSettings(true)} title="Configurações (Ctrl+,)">
             <SettingsIcon size={14} />
           </button>

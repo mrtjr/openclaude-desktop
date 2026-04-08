@@ -12,6 +12,38 @@ let tray = null
 let activeStreamRequest = null
 
 const CONVERSATIONS_PATH = path.join(app.getPath('userData'), 'conversations.json')
+const ANALYTICS_PATH = path.join(app.getPath('userData'), 'analytics.json')
+
+// ─── Analytics Engine (MCD + MASA) ──────────────────────────────────
+// Silent data collection + secure local storage with auto-purge
+function loadAnalytics() {
+  try {
+    if (fs.existsSync(ANALYTICS_PATH)) {
+      return JSON.parse(fs.readFileSync(ANALYTICS_PATH, 'utf-8'))
+    }
+  } catch (e) {
+    console.error('Failed to load analytics:', e)
+  }
+  return { sessions: [], globalStats: { totalSessions: 0, totalToolCalls: 0, totalErrors: 0, totalAgentRuns: 0, totalCircuitBreaks: 0 } }
+}
+
+function saveAnalytics(data) {
+  try {
+    // Auto-purge: remove sessions older than 30 days (MASA requirement)
+    const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000)
+    if (data.sessions) {
+      data.sessions = data.sessions.filter(s => s.timestamp > thirtyDaysAgo)
+    }
+    // Keep max 500 sessions to prevent unbounded growth
+    if (data.sessions && data.sessions.length > 500) {
+      data.sessions = data.sessions.slice(-500)
+    }
+    fs.writeFileSync(ANALYTICS_PATH, JSON.stringify(data, null, 2), 'utf-8')
+    return { error: null }
+  } catch (e) {
+    return { error: e.message }
+  }
+}
 
 // ─── Conversations persistence ───────────────────────────────────────
 function loadConversations() {
@@ -763,7 +795,7 @@ ipcMain.handle('mcp-connect', async (event, { id, command, args, env }) => {
     const initResult = await sendRequest('initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
-      clientInfo: { name: 'OpenClaude Desktop', version: '1.3.0' }
+      clientInfo: { name: 'OpenClaude Desktop', version: '1.4.0' }
     })
 
     // List tools
@@ -841,6 +873,121 @@ ipcMain.handle('parallel-chat', async (event, { tasks, model, temperature, max_t
 
   const results = await Promise.all(tasks.map(executeTask))
   return results
+})
+
+// ─── IPC: Analytics (MCD/MAGI/MASA) ────────────────────────────────────
+ipcMain.handle('analytics-save-session', async (event, sessionData) => {
+  const analytics = loadAnalytics()
+  analytics.sessions.push({
+    ...sessionData,
+    timestamp: Date.now()
+  })
+  // Update global stats
+  analytics.globalStats.totalSessions++
+  analytics.globalStats.totalToolCalls += sessionData.toolCalls || 0
+  analytics.globalStats.totalErrors += sessionData.errors || 0
+  if (sessionData.agentMode) analytics.globalStats.totalAgentRuns++
+  analytics.globalStats.totalCircuitBreaks += sessionData.circuitBreaks || 0
+  return saveAnalytics(analytics)
+})
+
+ipcMain.handle('analytics-load', async () => {
+  return loadAnalytics()
+})
+
+ipcMain.handle('analytics-get-insights', async () => {
+  const analytics = loadAnalytics()
+  const sessions = analytics.sessions || []
+  if (sessions.length === 0) {
+    return { hasData: false }
+  }
+
+  // MAGI: Generate insights from collected data
+  const now = Date.now()
+  const last7d = sessions.filter(s => s.timestamp > now - 7 * 24 * 60 * 60 * 1000)
+  const last24h = sessions.filter(s => s.timestamp > now - 24 * 60 * 60 * 1000)
+
+  // Tool usage frequency
+  const toolFreq = {}
+  for (const s of sessions) {
+    if (s.toolsUsed) {
+      for (const tool of s.toolsUsed) {
+        toolFreq[tool.name] = (toolFreq[tool.name] || 0) + tool.count
+      }
+    }
+  }
+  const topTools = Object.entries(toolFreq)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([name, count]) => ({ name, count }))
+
+  // Model usage
+  const modelFreq = {}
+  for (const s of sessions) {
+    if (s.model) {
+      modelFreq[s.model] = (modelFreq[s.model] || 0) + 1
+    }
+  }
+  const modelUsage = Object.entries(modelFreq)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, count]) => ({ name, count }))
+
+  // Average response time
+  const responseTimes = sessions.filter(s => s.avgResponseTime > 0).map(s => s.avgResponseTime)
+  const avgResponseTime = responseTimes.length > 0
+    ? Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length)
+    : 0
+
+  // Agent completion rate
+  const agentSessions = sessions.filter(s => s.agentMode)
+  const agentCompleted = agentSessions.filter(s => s.agentCompleted)
+  const agentCompletionRate = agentSessions.length > 0
+    ? Math.round((agentCompleted.length / agentSessions.length) * 100)
+    : 0
+
+  // Average agent steps
+  const agentSteps = agentSessions.filter(s => s.agentSteps > 0).map(s => s.agentSteps)
+  const avgAgentSteps = agentSteps.length > 0
+    ? Math.round(agentSteps.reduce((a, b) => a + b, 0) / agentSteps.length * 10) / 10
+    : 0
+
+  // Error rate
+  const totalInteractions = sessions.length
+  const sessionsWithErrors = sessions.filter(s => (s.errors || 0) > 0).length
+  const errorRate = totalInteractions > 0
+    ? Math.round((sessionsWithErrors / totalInteractions) * 100)
+    : 0
+
+  // Provider usage
+  const providerFreq = {}
+  for (const s of sessions) {
+    const p = s.provider || 'ollama'
+    providerFreq[p] = (providerFreq[p] || 0) + 1
+  }
+
+  return {
+    hasData: true,
+    global: analytics.globalStats,
+    period: {
+      total: sessions.length,
+      last7d: last7d.length,
+      last24h: last24h.length
+    },
+    topTools,
+    modelUsage,
+    providerUsage: Object.entries(providerFreq).map(([name, count]) => ({ name, count })),
+    avgResponseTime,
+    agentCompletionRate,
+    avgAgentSteps,
+    errorRate,
+    totalAgentRuns: agentSessions.length,
+    totalCircuitBreaks: analytics.globalStats.totalCircuitBreaks
+  }
+})
+
+ipcMain.handle('analytics-clear', async () => {
+  const empty = { sessions: [], globalStats: { totalSessions: 0, totalToolCalls: 0, totalErrors: 0, totalAgentRuns: 0, totalCircuitBreaks: 0 } }
+  return saveAnalytics(empty)
 })
 
 // ─── App lifecycle ───────────────────────────────────────────────────

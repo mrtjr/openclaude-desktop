@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v1.3.0-ff6b35?style=for-the-badge&logo=windows" alt="Download" /></a>
+  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v1.4.0-ff6b35?style=for-the-badge&logo=windows" alt="Download" /></a>
   <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License" />
   <img src="https://img.shields.io/badge/platform-Windows-lightgrey?style=for-the-badge" alt="Platform" />
 </p>
@@ -42,6 +42,7 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 | Single-threaded AI | Collaborative parallel agents |
 | Text-only interaction | Voice input (STT) and voice output (TTS) |
 | No ecosystem integration | MCP client for Claude-compatible servers |
+| No usage insights | Self-evolution analytics with local-only dashboard |
 
 ---
 
@@ -55,6 +56,7 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 - **Task Planning** — decompose complex goals into tracked subtasks with visual progress
 - **14 built-in tools** — commands, files, web search, browser, task planning, parallel agents
 - **Mandatory language setting** — forces all responses in Portuguese or English (4-layer enforcement)
+- **Self-Evolution Analytics** — silent performance tracking with insights dashboard
 
 ### Browser Automation (Playwright)
 - **Navigate** to any URL with full Chromium browser
@@ -82,6 +84,16 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 - Real-time status tracking: pending, in progress, done, failed
 - Progress counter showing completed/total tasks
 
+### Analytics & Self-Evolution (MCD/MAGI/MASA)
+- **Silent data collection** — automatically tracks tool usage, response times, errors, circuit breaker activations
+- **Insights dashboard** — visual analytics panel accessible from the titlebar (chart icon)
+- **Agent performance metrics** — completion rate, average steps, agent vs. normal mode comparison
+- **Tool usage heatmap** — bar chart showing your most-used tools
+- **Model & provider tracking** — see which models and providers you use most
+- **Local-only storage** — all data stays on your machine, zero telemetry
+- **Auto-purge** — sessions older than 30 days are automatically deleted (MASA)
+- **Opt-in control** — enable/disable analytics collection in Settings
+
 ### Robustness Engine
 - **JSON auto-correction** — intercepts and teaches the model to fix malformed tool calls
 - **Circuit breaker** — detects repeated identical tool calls (3x) and forces strategy change
@@ -106,6 +118,7 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 - **Real abort** — stop generation mid-stream (kills HTTP request server-side)
 - **Persistent memory** — opt-in memory system for cross-conversation context
 - **Model persistence** — remembers your last selected model
+- **Analytics auto-purge** — 30-day retention + 500 session cap prevents unbounded storage growth
 
 ---
 
@@ -313,9 +326,10 @@ openclaude-desktop/
 │   └── preload.js       # Context bridge (40+ secure API methods)
 ├── src/
 │   ├── App.tsx           # Main UI: chat, tools, task plan, voice, agent mode
-│   ├── Settings.tsx      # Settings: providers, language, API keys, memory
-│   ├── index.css         # Dark/light themes, task plan, voice styles
-│   └── vite-env.d.ts     # TypeScript declarations (45+ API types)
+│   ├── Analytics.tsx     # Analytics dashboard (MAGI insights engine)
+│   ├── Settings.tsx      # Settings: providers, language, API keys, memory, analytics
+│   ├── index.css         # Dark/light themes, task plan, voice, analytics styles
+│   └── vite-env.d.ts     # TypeScript declarations (50+ API types)
 ├── public/               # Static assets
 ├── Modelfile-uncensored  # Template for creating uncensored models
 └── package.json          # Dependencies & build config
@@ -344,10 +358,23 @@ openclaude-desktop/
 | Offline capable | Yes | No | No | No |
 | Circuit breaker | Yes | N/A | N/A | Unknown |
 | Language enforcement | 4 layers | Auto | Auto | Auto |
+| Usage analytics | Local-only | Cloud | Cloud | Cloud |
+| Self-evolution insights | Yes | No | No | No |
 
 ---
 
 ## Changelog
+
+### v1.4.0 — Self-Evolution Architecture
+- Silent session analytics engine (MCD — data collection module)
+- Analytics & Insights dashboard (MAGI — analysis & insights module)
+- Local secure storage with 30-day auto-purge (MASA — secure storage module)
+- Per-session tracking: tool calls, response times, errors, circuit breakers, agent metrics
+- Visual bar charts for tool usage frequency
+- Model & provider usage analytics
+- Agent Mode performance metrics (completion rate, avg steps)
+- Analytics opt-in/opt-out toggle in Settings
+- Bilingual analytics dashboard (PT/EN)
 
 ### v1.3.0 — Tier 3: Advanced
 - Task planning with visual progress panel

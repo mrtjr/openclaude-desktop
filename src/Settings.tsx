@@ -20,6 +20,7 @@ export interface AppSettings {
   anthropicModel: string
   contextLimit: number
   memoryEnabled: boolean
+  analyticsEnabled: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -46,6 +47,7 @@ REGRAS OBRIGATÓRIAS:
   anthropicModel: 'claude-sonnet-4-20250514',
   contextLimit: 50,
   memoryEnabled: false,
+  analyticsEnabled: true,
 }
 
 export function loadSettings(): AppSettings {
@@ -236,6 +238,17 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
               <span>Memória persistente</span>
               <div className={`toggle ${local.memoryEnabled ? 'on' : ''}`}
                 onClick={() => setLocal(s => ({ ...s, memoryEnabled: !s.memoryEnabled }))}>
+                <div className="toggle-knob" />
+              </div>
+            </label>
+          </div>
+
+          {/* Analytics */}
+          <div className="settings-group">
+            <label className="settings-label">
+              <span>{local.language === 'pt' ? 'Analytics (coleta local)' : 'Analytics (local collection)'}</span>
+              <div className={`toggle ${local.analyticsEnabled ? 'on' : ''}`}
+                onClick={() => setLocal(s => ({ ...s, analyticsEnabled: !s.analyticsEnabled }))}>
                 <div className="toggle-knob" />
               </div>
             </label>

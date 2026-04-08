@@ -75,4 +75,10 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Collaborative agents
   parallelChat: (params) => ipcRenderer.invoke('parallel-chat', params),
+
+  // Analytics (MCD/MAGI/MASA)
+  analyticsSaveSession: (data) => ipcRenderer.invoke('analytics-save-session', data),
+  analyticsLoad: () => ipcRenderer.invoke('analytics-load'),
+  analyticsGetInsights: () => ipcRenderer.invoke('analytics-get-insights'),
+  analyticsClear: () => ipcRenderer.invoke('analytics-clear'),
 })

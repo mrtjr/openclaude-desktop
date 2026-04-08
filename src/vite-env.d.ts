@@ -44,5 +44,10 @@ interface Window {
     mcpListConnections: () => Promise<string[]>
     // Collaborative agents
     parallelChat: (params: any) => Promise<any>
+    // Analytics (MCD/MAGI/MASA)
+    analyticsSaveSession: (data: any) => Promise<{ error: string | null }>
+    analyticsLoad: () => Promise<any>
+    analyticsGetInsights: () => Promise<any>
+    analyticsClear: () => Promise<{ error: string | null }>
   }
 }
