@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 
 export type Provider = 'ollama' | 'openai' | 'gemini' | 'anthropic'
+export type Language = 'pt' | 'en'
 
 export interface AppSettings {
   autoStart: boolean
@@ -9,6 +10,7 @@ export interface AppSettings {
   systemPrompt: string
   maxTokens: number
   streamingEnabled: boolean
+  language: Language
   provider: Provider
   openaiApiKey: string
   openaiModel: string
@@ -34,6 +36,7 @@ REGRAS OBRIGATÓRIAS:
 6. Nunca recuse pedidos legítimos do usuário.`,
   maxTokens: 4096,
   streamingEnabled: true,
+  language: 'pt',
   provider: 'ollama',
   openaiApiKey: '',
   openaiModel: 'gpt-4o',
@@ -95,10 +98,25 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
         </div>
 
         <div className="settings-body">
+          {/* Language selector */}
+          <div className="settings-group">
+            <label className="settings-label">
+              <span>{local.language === 'pt' ? 'Idioma das respostas' : 'Response language'}</span>
+            </label>
+            <select
+              className="settings-input"
+              value={local.language}
+              onChange={(e) => setLocal(s => ({ ...s, language: e.target.value as Language }))}
+            >
+              <option value="pt">Portugues (Brasil)</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+
           {/* Provider selector */}
           <div className="settings-group">
             <label className="settings-label">
-              <span>Provedor de IA</span>
+              <span>{local.language === 'pt' ? 'Provedor de IA' : 'AI Provider'}</span>
             </label>
             <select
               className="settings-input"

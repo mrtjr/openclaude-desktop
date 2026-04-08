@@ -164,13 +164,27 @@ const TOOLS = [
 ]
 
 const MAX_AGENT_STEPS = 25
-const AGENT_SYSTEM_PROMPT = `VOCÊ ESTÁ NO MODO AGENTE AUTÔNOMO.
+const AGENT_SYSTEM_PROMPT: Record<string, string> = {
+  pt: `VOCÊ ESTÁ NO MODO AGENTE AUTÔNOMO.
 Sua missão é resolver o pedido do usuário usando suas ferramentas de forma proativa.
 1. Planeje os passos necessários.
 2. Execute as ferramentas uma a uma.
 3. Analise os resultados e ajuste seu plano se necessário.
 4. Continue até que o objetivo seja totalmente alcançado.
-NÃO pare apenas para relatar o progresso se ainda houver passos técnicos a serem executados. Se o usuário pedir para criar um projeto, crie as pastas, arquivos e teste-os antes de finalizar.`
+NÃO pare apenas para relatar o progresso se ainda houver passos técnicos a serem executados. Se o usuário pedir para criar um projeto, crie as pastas, arquivos e teste-os antes de finalizar.`,
+  en: `YOU ARE IN AUTONOMOUS AGENT MODE.
+Your mission is to solve the user's request using your tools proactively.
+1. Plan the necessary steps.
+2. Execute the tools one by one.
+3. Analyze the results and adjust your plan if needed.
+4. Continue until the goal is fully achieved.
+DO NOT stop just to report progress if there are still technical steps to execute. If the user asks to create a project, create the folders, files, and test them before finishing.`
+}
+
+const LANGUAGE_RULE: Record<string, string> = {
+  pt: '\n\nREGRA CRÍTICA DE IDIOMA: Você DEVE responder TODAS as mensagens em português brasileiro. Não importa em que idioma o usuário escreva, sua resposta DEVE ser em português. Isso inclui explicações, comentários em código, nomes de variáveis em exemplos, e qualquer texto. NUNCA responda em inglês ou outro idioma.',
+  en: '\n\nCRITICAL LANGUAGE RULE: You MUST respond to ALL messages in English. No matter what language the user writes in, your response MUST be in English. This includes explanations, code comments, variable names in examples, and any text. NEVER respond in Portuguese or any other language.'
+}
 
 // ─── Markdown ────────────────────────────────────────────────────────
 marked.setOptions({ breaks: true, gfm: true })
@@ -618,11 +632,14 @@ export default function App() {
 
       try {
         const conv = conversationsRef.current.find(c => c.id === activeConvId)
+        const lang = settings.language || 'pt'
         let systemPrompt = settings.systemPrompt || ''
         if (isAgentMode) {
-          systemPrompt = AGENT_SYSTEM_PROMPT + (systemPrompt ? "\n\nInstruções Adicionais:\n" + systemPrompt : "")
+          systemPrompt = AGENT_SYSTEM_PROMPT[lang] + (systemPrompt ? (lang === 'pt' ? "\n\nInstruções Adicionais:\n" : "\n\nAdditional Instructions:\n") + systemPrompt : "")
         }
-        
+        // Inject mandatory language rule
+        systemPrompt += LANGUAGE_RULE[lang]
+
         const systemMessages: any[] = systemPrompt ? [{ role: 'system', content: systemPrompt }] : []
         
         // Reconstrói o histórico no formato esperado pela API (OpenAI/Ollama)
