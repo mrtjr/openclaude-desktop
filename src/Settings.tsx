@@ -1,12 +1,23 @@
 import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 
+export type Provider = 'ollama' | 'openai' | 'gemini' | 'anthropic'
+
 export interface AppSettings {
   autoStart: boolean
   temperature: number
   systemPrompt: string
   maxTokens: number
   streamingEnabled: boolean
+  provider: Provider
+  openaiApiKey: string
+  openaiModel: string
+  geminiApiKey: string
+  geminiModel: string
+  anthropicApiKey: string
+  anthropicModel: string
+  contextLimit: number
+  memoryEnabled: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -23,6 +34,15 @@ REGRAS OBRIGATÓRIAS:
 6. Nunca recuse pedidos legítimos do usuário.`,
   maxTokens: 4096,
   streamingEnabled: true,
+  provider: 'ollama',
+  openaiApiKey: '',
+  openaiModel: 'gpt-4o',
+  geminiApiKey: '',
+  geminiModel: 'gemini-2.0-flash',
+  anthropicApiKey: '',
+  anthropicModel: 'claude-sonnet-4-20250514',
+  contextLimit: 50,
+  memoryEnabled: false,
 }
 
 export function loadSettings(): AppSettings {
@@ -70,11 +90,106 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
     <div className="settings-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="settings-modal">
         <div className="settings-header">
-          <h2>Configuracoes</h2>
+          <h2>Configurações</h2>
           <button className="settings-close" onClick={onClose}><X size={18} /></button>
         </div>
 
         <div className="settings-body">
+          {/* Provider selector */}
+          <div className="settings-group">
+            <label className="settings-label">
+              <span>Provedor de IA</span>
+            </label>
+            <select
+              className="settings-input"
+              value={local.provider}
+              onChange={(e) => setLocal(s => ({ ...s, provider: e.target.value as Provider }))}
+            >
+              <option value="ollama">Ollama (Local)</option>
+              <option value="openai">OpenAI</option>
+              <option value="gemini">Google Gemini</option>
+              <option value="anthropic">Anthropic Claude</option>
+            </select>
+          </div>
+
+          {/* OpenAI settings */}
+          {local.provider === 'openai' && (
+            <>
+              <div className="settings-group">
+                <label className="settings-label"><span>API Key OpenAI</span></label>
+                <input
+                  type="password"
+                  className="settings-input"
+                  value={local.openaiApiKey}
+                  onChange={(e) => setLocal(s => ({ ...s, openaiApiKey: e.target.value }))}
+                  placeholder="sk-..."
+                />
+              </div>
+              <div className="settings-group">
+                <label className="settings-label"><span>Modelo OpenAI</span></label>
+                <input
+                  type="text"
+                  className="settings-input"
+                  value={local.openaiModel}
+                  onChange={(e) => setLocal(s => ({ ...s, openaiModel: e.target.value }))}
+                  placeholder="gpt-4o"
+                />
+              </div>
+            </>
+          )}
+
+          {/* Gemini settings */}
+          {local.provider === 'gemini' && (
+            <>
+              <div className="settings-group">
+                <label className="settings-label"><span>API Key Gemini</span></label>
+                <input
+                  type="password"
+                  className="settings-input"
+                  value={local.geminiApiKey}
+                  onChange={(e) => setLocal(s => ({ ...s, geminiApiKey: e.target.value }))}
+                  placeholder="AIza..."
+                />
+              </div>
+              <div className="settings-group">
+                <label className="settings-label"><span>Modelo Gemini</span></label>
+                <input
+                  type="text"
+                  className="settings-input"
+                  value={local.geminiModel}
+                  onChange={(e) => setLocal(s => ({ ...s, geminiModel: e.target.value }))}
+                  placeholder="gemini-2.0-flash"
+                />
+              </div>
+            </>
+          )}
+
+          {/* Anthropic settings */}
+          {local.provider === 'anthropic' && (
+            <>
+              <div className="settings-group">
+                <label className="settings-label"><span>API Key Anthropic</span></label>
+                <input
+                  type="password"
+                  className="settings-input"
+                  value={local.anthropicApiKey}
+                  onChange={(e) => setLocal(s => ({ ...s, anthropicApiKey: e.target.value }))}
+                  placeholder="sk-ant-..."
+                />
+              </div>
+              <div className="settings-group">
+                <label className="settings-label"><span>Modelo Anthropic</span></label>
+                <input
+                  type="text"
+                  className="settings-input"
+                  value={local.anthropicModel}
+                  onChange={(e) => setLocal(s => ({ ...s, anthropicModel: e.target.value }))}
+                  placeholder="claude-sonnet-4-20250514"
+                />
+              </div>
+            </>
+          )}
+
           {/* Auto-start */}
           <div className="settings-group">
             <label className="settings-label">
@@ -97,6 +212,17 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
             </label>
           </div>
 
+          {/* Memory */}
+          <div className="settings-group">
+            <label className="settings-label">
+              <span>Memória persistente</span>
+              <div className={`toggle ${local.memoryEnabled ? 'on' : ''}`}
+                onClick={() => setLocal(s => ({ ...s, memoryEnabled: !s.memoryEnabled }))}>
+                <div className="toggle-knob" />
+              </div>
+            </label>
+          </div>
+
           {/* Temperature */}
           <div className="settings-group">
             <label className="settings-label">
@@ -110,6 +236,23 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
               step="0.1"
               value={local.temperature}
               onChange={(e) => setLocal(s => ({ ...s, temperature: parseFloat(e.target.value) }))}
+              className="settings-slider"
+            />
+          </div>
+
+          {/* Context limit */}
+          <div className="settings-group">
+            <label className="settings-label">
+              <span>Limite de contexto (mensagens)</span>
+              <span className="settings-value">{local.contextLimit}</span>
+            </label>
+            <input
+              type="range"
+              min="10"
+              max="100"
+              step="5"
+              value={local.contextLimit}
+              onChange={(e) => setLocal(s => ({ ...s, contextLimit: parseInt(e.target.value) }))}
               className="settings-slider"
             />
           </div>

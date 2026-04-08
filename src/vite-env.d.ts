@@ -24,5 +24,18 @@ interface Window {
     close: () => Promise<void>
     isMaximized: () => Promise<boolean>
     checkForUpdates: () => Promise<{ updateAvailable: boolean; releaseUrl?: string; latestVersion?: string; error?: string }>
+    abortStream: () => Promise<{ aborted: boolean }>
+    loadMemory: () => Promise<{ topics: string[]; facts: Record<string, string[]> }>
+    saveMemory: (data: { topics: string[]; facts: Record<string, string[]> }) => Promise<{ error: string | null }>
+    providerChat: (params: {
+      provider: 'openai' | 'gemini' | 'anthropic'
+      apiKey: string
+      model: string
+      messages: any[]
+      tools?: any[]
+      temperature?: number
+      max_tokens?: number
+      stream?: boolean
+    }) => Promise<any>
   }
 }

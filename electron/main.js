@@ -3,11 +3,13 @@ const { exec } = require('child_process')
 const path = require('path')
 const fs = require('fs')
 const http = require('http')
+const https = require('https')
 
 const isDev = process.env.NODE_ENV === 'development'
 
 let win = null
 let tray = null
+let activeStreamRequest = null
 
 const CONVERSATIONS_PATH = path.join(app.getPath('userData'), 'conversations.json')
 
@@ -159,6 +161,16 @@ ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, tem
       }
     }
 
+    let doneSent = false
+    const sendDone = (error) => {
+      if (doneSent) return
+      doneSent = true
+      activeStreamRequest = null
+      try {
+        event.sender.send('ollama-stream-chunk', { done: true, ...(error ? { error } : {}) })
+      } catch {}
+    }
+
     const req = http.request(options, (res) => {
       let buffer = ''
 
@@ -172,7 +184,7 @@ ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, tem
           if (!trimmed || !trimmed.startsWith('data: ')) continue
           const jsonStr = trimmed.slice(6)
           if (jsonStr === '[DONE]') {
-            try { event.sender.send('ollama-stream-chunk', { done: true }) } catch {}
+            sendDone()
             continue
           }
           try {
@@ -183,7 +195,6 @@ ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, tem
       })
 
       res.on('end', () => {
-        // Process remaining buffer
         if (buffer.trim()) {
           const trimmed = buffer.trim()
           if (trimmed.startsWith('data: ') && trimmed.slice(6) !== '[DONE]') {
@@ -193,25 +204,47 @@ ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, tem
             } catch {}
           }
         }
-        event.sender.send('ollama-stream-chunk', { done: true })
+        sendDone()
         resolve({ ok: true })
       })
     })
 
     req.on('error', (err) => {
-      event.sender.send('ollama-stream-chunk', { done: true, error: err.message })
-      reject(err)
+      sendDone(err.message)
+      resolve({ ok: false, error: err.message })
     })
+
+    activeStreamRequest = req
     req.write(body)
     req.end()
   })
 })
 
+// ─── IPC: Abort stream (kills HTTP request, frees GPU) ──────────────
+ipcMain.handle('abort-stream', async () => {
+  if (activeStreamRequest) {
+    activeStreamRequest.destroy()
+    activeStreamRequest = null
+    return { aborted: true }
+  }
+  return { aborted: false }
+})
+
 // ─── IPC: Execute command ────────────────────────────────────────────
 ipcMain.handle('exec-command', async (event, cmd) => {
   return new Promise((resolve) => {
-    exec(cmd, { shell: 'powershell.exe', timeout: 30000 }, (err, stdout, stderr) => {
-      resolve({ stdout: stdout || '', stderr: stderr || '', error: err?.message || null })
+    exec(cmd, {
+      shell: 'powershell.exe',
+      timeout: 60000,
+      maxBuffer: 10 * 1024 * 1024, // 10MB
+      windowsHide: true
+    }, (err, stdout, stderr) => {
+      resolve({
+        stdout: stdout || '',
+        stderr: stderr || '',
+        exitCode: err?.code ?? 0,
+        error: err && !stdout && !stderr ? err.message : null
+      })
     })
   })
 })
@@ -261,36 +294,83 @@ ipcMain.handle('load-conversations', async () => {
   return loadConversations()
 })
 
-// ─── IPC: Web search (DuckDuckGo) ───────────────────────────────────
+// ─── IPC: Web search (DuckDuckGo HTML scraping) ─────────────────────
 ipcMain.handle('web-search', async (event, query) => {
   return new Promise((resolve) => {
-    const https = require('https')
-    const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`
-    https.get(url, (res) => {
-      let data = ''
+    const encodedQuery = encodeURIComponent(query)
+    const options = {
+      hostname: 'html.duckduckgo.com',
+      path: `/html/?q=${encodedQuery}`,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8'
+      }
+    }
+    let data = ''
+    const req = https.request(options, (res) => {
+      // Follow redirects
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        https.get(res.headers.location, { headers: options.headers }, (r2) => {
+          let rd = ''
+          r2.on('data', c => rd += c)
+          r2.on('end', () => parseAndResolve(rd))
+        }).on('error', (e) => resolve({ result: null, error: e.message }))
+        return
+      }
       res.on('data', chunk => data += chunk)
-      res.on('end', () => {
-        try {
-          const result = JSON.parse(data)
-          let text = ''
-          if (result.AbstractText) text += `Abstract: ${result.AbstractText}\n`
-          if (result.AbstractSource) text += `Source: ${result.AbstractSource}\n`
-          if (result.AbstractURL) text += `URL: ${result.AbstractURL}\n`
-          if (result.RelatedTopics && result.RelatedTopics.length > 0) {
-            text += '\nRelated Topics:\n'
-            for (const topic of result.RelatedTopics.slice(0, 5)) {
-              if (topic.Text) text += `- ${topic.Text}\n`
-              if (topic.FirstURL) text += `  URL: ${topic.FirstURL}\n`
-            }
-          }
-          resolve({ result: text || 'No results found.', error: null })
-        } catch (e) {
-          resolve({ result: null, error: e.message })
-        }
-      })
-    }).on('error', (e) => {
-      resolve({ result: null, error: e.message })
+      res.on('end', () => parseAndResolve(data))
     })
+    req.on('error', (e) => resolve({ result: null, error: e.message }))
+    req.end()
+
+    function parseAndResolve(html) {
+      const results = []
+      // Extract result links and snippets from DuckDuckGo HTML
+      const resultRegex = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi
+      const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi
+      let match
+      while ((match = resultRegex.exec(html)) !== null && results.length < 8) {
+        const url = decodeURIComponent(match[1].replace(/.*uddg=/, '').replace(/&.*/, ''))
+        const title = match[2].replace(/<[^>]*>/g, '').trim()
+        if (title && url && !url.includes('duckduckgo.com')) {
+          results.push({ title, url })
+        }
+      }
+      // Try to get snippets
+      let idx = 0
+      while ((match = snippetRegex.exec(html)) !== null && idx < results.length) {
+        results[idx].snippet = match[1].replace(/<[^>]*>/g, '').trim()
+        idx++
+      }
+      if (results.length > 0) {
+        const text = results.map((r, i) =>
+          `${i + 1}. **${r.title}**\n   ${r.url}${r.snippet ? `\n   ${r.snippet}` : ''}`
+        ).join('\n\n')
+        resolve({ result: `Resultados para "${query}":\n\n${text}`, error: null })
+      } else {
+        // Fallback to instant answer API
+        https.get(`https://api.duckduckgo.com/?q=${encodedQuery}&format=json&no_html=1`, (res2) => {
+          let d = ''
+          res2.on('data', c => d += c)
+          res2.on('end', () => {
+            try {
+              const r = JSON.parse(d)
+              let text = ''
+              if (r.AbstractText) text += r.AbstractText + '\n'
+              if (r.AbstractURL) text += `Fonte: ${r.AbstractURL}\n`
+              if (r.RelatedTopics) {
+                for (const t of r.RelatedTopics.slice(0, 5)) {
+                  if (t.Text) text += `- ${t.Text}\n`
+                }
+              }
+              resolve({ result: text || `Sem resultados para "${query}".`, error: null })
+            } catch { resolve({ result: `Sem resultados para "${query}".`, error: null }) }
+          })
+        }).on('error', () => resolve({ result: `Sem resultados para "${query}".`, error: null }))
+      }
+    }
   })
 })
 
@@ -394,7 +474,7 @@ ipcMain.handle('read-dropped-file', async (event, filePath) => {
 // ─── IPC: Update Check ───────────────────────────────────────────────
 ipcMain.handle('check-update', async () => {
   return new Promise((resolve) => {
-    const defaultRepo = 'OpenClaude/openclaude-desktop' // Repositorio placeholder, trocar para o oficial depois
+    const defaultRepo = 'mrtjr/openclaude-desktop'
     const options = {
       hostname: 'api.github.com',
       path: `/repos/${defaultRepo}/releases/latest`,
@@ -441,6 +521,112 @@ ipcMain.handle('check-update', async () => {
       })
     })
     req.on('error', (e) => resolve({ updateAvailable: false, error: e.message }))
+    req.end()
+  })
+})
+
+// ─── IPC: Memory system (persistent user memory) ────────────────────
+const MEMORY_PATH = path.join(app.getPath('userData'), 'memory.json')
+
+function loadMemory() {
+  try {
+    if (fs.existsSync(MEMORY_PATH)) {
+      return JSON.parse(fs.readFileSync(MEMORY_PATH, 'utf-8'))
+    }
+  } catch {}
+  return { facts: [], preferences: [], projects: [] }
+}
+
+function saveMemory(data) {
+  try {
+    fs.writeFileSync(MEMORY_PATH, JSON.stringify(data, null, 2), 'utf-8')
+    return { error: null }
+  } catch (e) {
+    return { error: e.message }
+  }
+}
+
+ipcMain.handle('load-memory', async () => loadMemory())
+ipcMain.handle('save-memory', async (event, data) => saveMemory(data))
+
+// ─── IPC: Multi-provider chat (OpenAI, Gemini, Anthropic) ──────────
+ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, messages, tools, temperature, max_tokens, stream }) => {
+  return new Promise((resolve, reject) => {
+    let hostname, apiPath, headers, bodyObj
+
+    if (provider === 'openai') {
+      hostname = 'api.openai.com'
+      apiPath = '/v1/chat/completions'
+      headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+      bodyObj = { model, messages, tools: tools || undefined, stream: false, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
+    } else if (provider === 'gemini') {
+      hostname = 'generativelanguage.googleapis.com'
+      // Convert OpenAI format to Gemini format
+      const geminiContents = messages.filter(m => m.role !== 'system').map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }]
+      }))
+      const systemInstruction = messages.find(m => m.role === 'system')
+      apiPath = `/v1beta/models/${model}:generateContent?key=${apiKey}`
+      headers = { 'Content-Type': 'application/json' }
+      bodyObj = {
+        contents: geminiContents,
+        generationConfig: { temperature: temperature ?? 0.7, maxOutputTokens: max_tokens || 4096 },
+        ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction.content }] } } : {})
+      }
+    } else if (provider === 'anthropic') {
+      hostname = 'api.anthropic.com'
+      apiPath = '/v1/messages'
+      const systemMsg = messages.find(m => m.role === 'system')
+      const nonSystemMsgs = messages.filter(m => m.role !== 'system').map(m => ({
+        role: m.role,
+        content: m.content
+      }))
+      headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }
+      bodyObj = {
+        model,
+        max_tokens: max_tokens || 4096,
+        messages: nonSystemMsgs,
+        ...(systemMsg ? { system: systemMsg.content } : {}),
+        temperature: temperature ?? 0.7
+      }
+    } else {
+      return resolve({ error: `Provider "${provider}" not supported` })
+    }
+
+    const body = JSON.stringify(bodyObj)
+    const reqOptions = {
+      hostname,
+      path: apiPath,
+      method: 'POST',
+      headers: { ...headers, 'Content-Length': Buffer.byteLength(body) }
+    }
+
+    const req = https.request(reqOptions, (res) => {
+      let data = ''
+      res.on('data', chunk => data += chunk)
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data)
+          if (res.statusCode >= 400) {
+            return resolve({ error: `API error ${res.statusCode}: ${JSON.stringify(parsed)}` })
+          }
+
+          // Normalize response to OpenAI format
+          if (provider === 'gemini') {
+            const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text || ''
+            resolve({ choices: [{ message: { role: 'assistant', content: text }, finish_reason: 'stop' }] })
+          } else if (provider === 'anthropic') {
+            const text = parsed.content?.map(c => c.text).join('') || ''
+            resolve({ choices: [{ message: { role: 'assistant', content: text }, finish_reason: parsed.stop_reason === 'end_turn' ? 'stop' : parsed.stop_reason }] })
+          } else {
+            resolve(parsed)
+          }
+        } catch (e) { resolve({ error: e.message }) }
+      })
+    })
+    req.on('error', (e) => resolve({ error: e.message }))
+    req.write(body)
     req.end()
   })
 })

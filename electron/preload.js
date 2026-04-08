@@ -46,4 +46,14 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Updates
   checkForUpdates: () => ipcRenderer.invoke('check-update'),
+
+  // Abort stream
+  abortStream: () => ipcRenderer.invoke('abort-stream'),
+
+  // Memory system
+  loadMemory: () => ipcRenderer.invoke('load-memory'),
+  saveMemory: (data) => ipcRenderer.invoke('save-memory', data),
+
+  // Multi-provider
+  providerChat: (params) => ipcRenderer.invoke('provider-chat', params),
 })

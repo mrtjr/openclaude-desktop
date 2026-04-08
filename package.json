@@ -1,6 +1,6 @@
 {
   "name": "openclaude-desktop",
-  "version": "1.0.1",
+  "version": "1.2.0",
   "description": "Desktop GUI for OpenClaude",
   "author": "OpenClaude",
   "main": "electron/main.js",
@@ -15,10 +15,17 @@
   "build": {
     "appId": "com.openclaude.desktop",
     "productName": "OpenClaude Desktop",
-    "directories": { "output": "release" },
+    "directories": {
+      "output": "release"
+    },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "public/icon.ico",
       "signAndEditExecutable": false
@@ -42,10 +49,12 @@
     "wait-on": "^9.0.4"
   },
   "dependencies": {
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
+    "@types/dompurify": "^3.0.5",
+    "dompurify": "^3.3.3",
     "highlight.js": "^11.11.1",
     "lucide-react": "^1.7.0",
-    "marked": "^17.0.6"
+    "marked": "^17.0.6",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
   }
 }

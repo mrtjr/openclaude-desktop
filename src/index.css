@@ -533,3 +533,56 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .stop-agent-btn { display: flex; align-items: center; gap: 6px; padding: 4px 12px; background: rgba(244, 67, 54, 0.1); border: 1px solid rgba(244, 67, 54, 0.2); border-radius: 6px; color: #ff5252; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
 .stop-agent-btn:hover { background: rgba(244, 67, 54, 0.2); color: #ff1744; transform: translateY(-1px); }
 
+/* ── Light Theme ─────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg-primary: #f5f5fa;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #e8eaf0;
+  --bg-input: #ffffff;
+  --accent: #e85d2a;
+  --accent-hover: #d04f1f;
+  --text-primary: #1a1a2e;
+  --text-secondary: #4a4a6a;
+  --text-muted: #8888aa;
+  --border: #dddde5;
+  --user-bg: rgba(232, 93, 42, 0.06);
+  --assistant-bg: rgba(232, 93, 42, 0.02);
+  --tool-bg: #f0f0f5;
+  --tool-border: #dddde5;
+  --scrollbar: #ccccdd;
+  --green: #388e3c;
+  --red: #d32f2f;
+}
+[data-theme="light"] .code-block { background: #f8f8fc; }
+[data-theme="light"] .code-header { background: #e8e8f0; }
+[data-theme="light"] .hljs { background: #f8f8fc !important; }
+
+/* ── Sidebar closed transition ───────────────────────────────── */
+.sidebar.closed { width: 0; min-width: 0; padding: 0; overflow: hidden; border-right: none; }
+
+/* ── Conversation actions ────────────────────────────────────── */
+.conv-actions { display: flex; align-items: center; gap: 2px; opacity: 0; transition: opacity 0.15s; }
+.conv-item:hover .conv-actions { opacity: 1; }
+.conv-action-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 3px; border-radius: 4px; transition: all 0.15s; display: flex; align-items: center; }
+.conv-action-btn:hover { color: var(--accent); background: rgba(255, 107, 53, 0.1); }
+.conv-action-btn.conv-delete:hover { color: #e81123; background: rgba(232, 17, 35, 0.1); }
+
+/* ── Pinned conversations ────────────────────────────────────── */
+.conv-item.pinned { border-left-color: var(--accent); }
+.pinned-icon { color: var(--accent) !important; }
+
+/* ── Message footer (timestamp + actions) ────────────────────── */
+.message-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+.message-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s; }
+.message:hover .message-actions { opacity: 1; }
+.msg-action-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 3px 5px; border-radius: 4px; transition: all 0.15s; display: flex; align-items: center; }
+.msg-action-btn:hover { color: var(--accent); background: rgba(255, 107, 53, 0.1); }
+
+/* ── Image attach button ─────────────────────────────────────── */
+.attach-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 6px; border-radius: 6px; transition: all 0.15s; display: flex; align-items: center; flex-shrink: 0; }
+.attach-btn:hover { color: var(--accent); background: rgba(255, 107, 53, 0.1); }
+
+/* ── Export btn text in titlebar ──────────────────────────────── */
+.titlebar-action-btn.export-btn { width: auto; padding: 0 8px; gap: 4px; font-size: 11px; }
+.titlebar-action-btn:disabled { opacity: 0.4; cursor: default; }
+

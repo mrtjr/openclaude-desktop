@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { marked } from 'marked'
 import hljs from 'highlight.js'
+import DOMPurify from 'dompurify'
 import 'highlight.js/styles/github-dark.css'
-import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, FileCode, Info, ArrowUpCircle, Zap, BotOff } from 'lucide-react'
+import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, FileCode, Info, ArrowUpCircle, Zap, BotOff, Copy, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Image, Trash } from 'lucide-react'
 import SettingsModal, { loadSettings, type AppSettings } from './Settings'
 
 // ─── Toast notification system ──────────────────────────────────
@@ -177,12 +178,13 @@ const renderer = new marked.Renderer()
 renderer.code = ({ text, lang }: any) => {
   const language = lang && hljs.getLanguage(lang) ? lang : 'plaintext'
   const highlighted = hljs.highlight(text, { language }).value
-  return `<div class="code-block"><div class="code-header"><span class="code-lang">${language}</span><button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText)">Copiar</button></div><pre><code class="hljs language-${language}">${highlighted}</code></pre></div>`
+  return `<div class="code-block"><div class="code-header"><span class="code-lang">${language}</span><button class="copy-btn" data-copy>Copiar</button></div><pre><code class="hljs language-${language}">${highlighted}</code></pre></div>`
 }
 marked.use({ renderer })
 
 function formatMarkdown(text: string): string {
-  return marked.parse(text) as string
+  const html = marked.parse(text) as string
+  return DOMPurify.sanitize(html)
 }
 
 function generateId(): string {
@@ -196,10 +198,10 @@ export default function App() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [models, setModels] = useState<string[]>([])
-  const [selectedModel, setSelectedModel] = useState('qwen35-uncensored')
+  const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('openclaude-model') || 'qwen35-uncensored')
   const [showModelDropdown, setShowModelDropdown] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [sidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [ollamaOnline, setOllamaOnline] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [streamingText, setStreamingText] = useState('')
@@ -210,9 +212,13 @@ export default function App() {
   const [placeholderIdx, setPlaceholderIdx] = useState(0)
   const [collapsedTools, setCollapsedTools] = useState<Set<string>>(new Set())
   const [updateAvailable, setUpdateAvailable] = useState<{available: boolean, releaseUrl: string, latestVersion: string} | null>(null)
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('openclaude-theme') as 'dark' | 'light') || 'dark')
+  const [pinnedConvs, setPinnedConvs] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('openclaude-pinned') || '[]')) } catch { return new Set() }
+  })
   const [isAgentMode, setIsAgentMode] = useState(false)
   const [agentSteps, setAgentSteps] = useState(0)
-  const [stopRequested, setStopRequested] = useState(false)
+  const stopRequestedRef = useRef(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -228,8 +234,13 @@ export default function App() {
     setLoadingConversations(true)
     window.electron.loadConversations().then((data: any) => {
       if (Array.isArray(data) && data.length > 0) {
-        setConversations(data)
-        setActiveConvId(data[0].id)
+        const parsed = data.map((c: any) => ({
+          ...c,
+          createdAt: new Date(c.createdAt),
+          messages: c.messages.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }))
+        }))
+        setConversations(parsed)
+        setActiveConvId(parsed[0].id)
       } else {
         newConversation()
       }
@@ -271,8 +282,13 @@ export default function App() {
       if (data.models) {
         const names = data.models.map((m: any) => m.name)
         setModels(names)
-        if (names.includes('qwen35-uncensored')) setSelectedModel('qwen35-uncensored')
-        else if (names.length > 0) setSelectedModel(names[0])
+        const saved = localStorage.getItem('openclaude-model')
+        if (saved && names.includes(saved)) {
+          setSelectedModel(saved)
+        } else if (names.length > 0) {
+          setSelectedModel(names[0])
+          localStorage.setItem('openclaude-model', names[0])
+        }
       }
     })
   }, [])
@@ -319,6 +335,28 @@ export default function App() {
       setPlaceholderIdx(i => (i + 1) % PLACEHOLDER_HINTS.length)
     }, 8000)
     return () => clearInterval(interval)
+  }, [])
+
+  // ─── Theme management ──────────────────────────────────────────
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('openclaude-theme', theme)
+  }, [theme])
+
+  // ─── Code block copy buttons (event delegation) ────────────────
+  useEffect(() => {
+    const handleCopyClick = (e: MouseEvent) => {
+      const btn = (e.target as HTMLElement).closest('[data-copy]') as HTMLButtonElement
+      if (!btn) return
+      const code = btn.closest('.code-block')?.querySelector('pre')?.innerText
+      if (code) {
+        navigator.clipboard.writeText(code)
+        btn.textContent = 'Copiado!'
+        setTimeout(() => { btn.textContent = 'Copiar' }, 2000)
+      }
+    }
+    document.addEventListener('click', handleCopyClick)
+    return () => document.removeEventListener('click', handleCopyClick)
   }, [])
 
   // ─── Keyboard shortcuts ────────────────────────────────────────
@@ -489,14 +527,67 @@ export default function App() {
   }
 
   const stopAgent = () => {
-    setStopRequested(true)
+    stopRequestedRef.current = true
     setIsLoading(false)
     setIsStreaming(false)
     if (streamCleanupRef.current) {
       streamCleanupRef.current()
       streamCleanupRef.current = null
     }
+    window.electron.abortStream().catch(() => {})
     showToast('Agente interrompido pelo usuário.')
+  }
+
+  // ─── Copy message text ────────────────────────────────────────
+  const copyMessage = (content: string) => {
+    navigator.clipboard.writeText(content)
+    showToast('Mensagem copiada!')
+  }
+
+  // ─── Delete individual message ────────────────────────────────
+  const deleteMessage = (msgId: string) => {
+    if (!activeConvId) return
+    setConversations(prev => prev.map(c => {
+      if (c.id !== activeConvId) return c
+      return { ...c, messages: c.messages.filter(m => m.id !== msgId) }
+    }))
+  }
+
+  // ─── Regenerate last assistant response ───────────────────────
+  const regenerateResponse = () => {
+    if (!activeConv || isLoading) return
+    const msgs = activeConv.messages
+    // Find last user message
+    let lastUserIdx = -1
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user') { lastUserIdx = i; break }
+    }
+    if (lastUserIdx === -1) return
+    const lastUserContent = msgs[lastUserIdx].content
+    // Remove messages after (and including) the last assistant response
+    const trimmed = msgs.slice(0, lastUserIdx + 1)
+    // Remove last user msg too (sendMessage will re-add it)
+    setConversations(prev => prev.map(c => {
+      if (c.id !== activeConvId) return c
+      return { ...c, messages: trimmed.slice(0, -1) }
+    }))
+    setInput(lastUserContent)
+    // Trigger send on next tick
+    setTimeout(() => {
+      const btn = document.querySelector('.send-btn') as HTMLButtonElement
+      btn?.click()
+    }, 100)
+  }
+
+  // ─── Toggle conversation pin ──────────────────────────────────
+  const togglePin = (convId: string) => {
+    setPinnedConvs(prev => {
+      const next = new Set(prev)
+      if (next.has(convId)) next.delete(convId)
+      else next.add(convId)
+      localStorage.setItem('openclaude-pinned', JSON.stringify([...next]))
+      return next
+    })
   }
 
   // ─── Send message (with streaming support) ─────────────────────
@@ -523,7 +614,7 @@ export default function App() {
     setInput('')
       setIsLoading(true)
       setAgentSteps(0)
-      setStopRequested(false)
+      stopRequestedRef.current = false
 
       try {
         const conv = conversationsRef.current.find(c => c.id === activeConvId)
@@ -562,13 +653,19 @@ export default function App() {
         // Adiciona a mensagem atual do usuário
         history.push({ role: 'user', content: userMsg.content })
 
+        // Sliding window: limit context to avoid token overflow
+        const MAX_CONTEXT_MESSAGES = settings.contextLimit || 50
+        const trimmedHistory = history.length > MAX_CONTEXT_MESSAGES
+          ? history.slice(-MAX_CONTEXT_MESSAGES)
+          : history
+
         let continueLoop = true
-        let allMessages: any[] = [...systemMessages, ...history]
+        let allMessages: any[] = [...systemMessages, ...trimmedHistory]
         const useStreaming = settings.streamingEnabled
         let steps = 0
 
         while (continueLoop && steps < (isAgentMode ? MAX_AGENT_STEPS : 5)) {
-          if (stopRequested) break;
+          if (stopRequestedRef.current) break;
           steps++
           setAgentSteps(steps)
           
@@ -780,7 +877,7 @@ export default function App() {
       setIsStreaming(false)
       setStreamingText('')
     }
-  }, [input, isLoading, activeConvId, selectedModel, settings])
+  }, [input, isLoading, activeConvId, selectedModel, settings, isAgentMode])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -789,14 +886,28 @@ export default function App() {
     }
   }
 
-  // ─── Filtered conversations ────────────────────────────────────
-  const filteredConversations = searchQuery.trim()
-    ? conversations.filter(c => {
-        const q = searchQuery.toLowerCase()
-        if (c.title.toLowerCase().includes(q)) return true
-        return c.messages.some(m => m.content.toLowerCase().includes(q))
-      })
-    : conversations
+  // ─── Filtered & sorted conversations (pinned first, with debounced search) ─
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    searchTimerRef.current = setTimeout(() => setDebouncedSearch(searchQuery), 200)
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
+  }, [searchQuery])
+
+  const filteredConversations = (() => {
+    let list = conversations
+    if (debouncedSearch.trim()) {
+      const q = debouncedSearch.toLowerCase()
+      list = list.filter(c => c.title.toLowerCase().includes(q) || c.messages.some(m => m.content.toLowerCase().includes(q)))
+    }
+    // Pinned first
+    return [...list].sort((a, b) => {
+      const ap = pinnedConvs.has(a.id) ? 1 : 0
+      const bp = pinnedConvs.has(b.id) ? 1 : 0
+      return bp - ap
+    })
+  })()
 
   // ─── Render ────────────────────────────────────────────────────
   return (
@@ -841,13 +952,24 @@ export default function App() {
           {activeConv ? activeConv.title : ''}
         </div>
         <div className="titlebar-actions">
+          <button className="titlebar-action-btn" onClick={() => setSidebarOpen(p => !p)} title="Toggle sidebar">
+            {sidebarOpen ? <PanelLeftClose size={14} /> : <PanelLeft size={14} />}
+          </button>
+          <button className="titlebar-action-btn" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} title="Alternar tema">
+            {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+          </button>
           {activeConv && activeConv.messages.length > 0 && (
-            <button className="titlebar-action-btn export-btn" onClick={exportConversation} title="Exportar conversa">
-              <Download size={14} />
-              <span>Exportar</span>
-            </button>
+            <>
+              <button className="titlebar-action-btn" onClick={regenerateResponse} title="Regenerar última resposta" disabled={isLoading}>
+                <RefreshCw size={14} />
+              </button>
+              <button className="titlebar-action-btn export-btn" onClick={exportConversation} title="Exportar conversa">
+                <Download size={14} />
+                <span>Exportar</span>
+              </button>
+            </>
           )}
-          <button className="titlebar-action-btn" onClick={() => setShowSettings(true)} title="Configuracoes (Ctrl+,)">
+          <button className="titlebar-action-btn" onClick={() => setShowSettings(true)} title="Configurações (Ctrl+,)">
             <SettingsIcon size={14} />
           </button>
         </div>
@@ -906,17 +1028,22 @@ export default function App() {
               filteredConversations.map(conv => (
                 <div
                   key={conv.id}
-                  className={`conv-item ${conv.id === activeConvId ? 'active' : ''}`}
+                  className={`conv-item ${conv.id === activeConvId ? 'active' : ''} ${pinnedConvs.has(conv.id) ? 'pinned' : ''}`}
                   onClick={() => setActiveConvId(conv.id)}
                 >
-                  <MessageSquare size={14} className="conv-icon" />
+                  {pinnedConvs.has(conv.id) ? <Pin size={14} className="conv-icon pinned-icon" /> : <MessageSquare size={14} className="conv-icon" />}
                   <div className="conv-info">
                     <span className="conv-title">{conv.title}</span>
                     <span className="conv-date">{getRelativeTime(conv.createdAt)}</span>
                   </div>
-                  <button className="conv-delete" onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id) }}>
-                    <Trash2 size={12} />
-                  </button>
+                  <div className="conv-actions">
+                    <button className="conv-action-btn" onClick={(e) => { e.stopPropagation(); togglePin(conv.id) }} title={pinnedConvs.has(conv.id) ? 'Desafixar' : 'Fixar'}>
+                      <Pin size={12} />
+                    </button>
+                    <button className="conv-action-btn conv-delete" onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id) }}>
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
                 </div>
               ))
             )}
@@ -933,7 +1060,7 @@ export default function App() {
                 <div className="model-dropdown">
                   {models.map(m => (
                     <button key={m} className={`model-option ${m === selectedModel ? 'active' : ''}`}
-                      onClick={() => { setSelectedModel(m); setShowModelDropdown(false) }}>
+                      onClick={() => { setSelectedModel(m); localStorage.setItem('openclaude-model', m); setShowModelDropdown(false) }}>
                       {m}
                     </button>
                   ))}
@@ -1004,8 +1131,20 @@ export default function App() {
                         </div>
                       )
                     })}
-                    <div className="message-timestamp">
-                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    <div className="message-footer">
+                      <span className="message-timestamp">
+                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      <div className="message-actions">
+                        {msg.content && (
+                          <button className="msg-action-btn" onClick={() => copyMessage(msg.content)} title="Copiar">
+                            <Copy size={12} />
+                          </button>
+                        )}
+                        <button className="msg-action-btn" onClick={() => deleteMessage(msg.id)} title="Excluir mensagem">
+                          <Trash size={12} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1052,6 +1191,21 @@ export default function App() {
           {/* Input area */}
           <div className="input-area">
             <div className="input-container">
+              <input type="file" id="image-upload" accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
+                const file = e.target.files?.[0]
+                if (!file) return
+                const reader = new FileReader()
+                reader.onload = () => {
+                  const base64 = reader.result as string
+                  setInput(prev => prev + `\n[Imagem anexada: ${file.name}]\n`)
+                  showToast(`Imagem ${file.name} anexada`)
+                }
+                reader.readAsDataURL(file)
+                e.target.value = ''
+              }} />
+              <button className="attach-btn" onClick={() => document.getElementById('image-upload')?.click()} title="Anexar imagem">
+                <Image size={16} />
+              </button>
               <textarea
                 ref={textareaRef}
                 value={input}
