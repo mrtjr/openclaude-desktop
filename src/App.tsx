@@ -163,7 +163,7 @@ const TOOLS = [
   }
 ]
 
-const MAX_AGENT_STEPS = 10
+const MAX_AGENT_STEPS = 25
 const AGENT_SYSTEM_PROMPT = `VOCÊ ESTÁ NO MODO AGENTE AUTÔNOMO.
 Sua missão é resolver o pedido do usuário usando suas ferramentas de forma proativa.
 1. Planeje os passos necessários.
@@ -664,7 +664,7 @@ export default function App() {
         const useStreaming = settings.streamingEnabled
         let steps = 0
 
-        while (continueLoop && steps < (isAgentMode ? MAX_AGENT_STEPS : 5)) {
+        while (continueLoop && steps < (isAgentMode ? MAX_AGENT_STEPS : 10)) {
           if (stopRequestedRef.current) break;
           steps++
           setAgentSteps(steps)
@@ -766,10 +766,6 @@ export default function App() {
               }))
             ]
             
-            // Se NÃO estiver em modo agente, paramos após a primeira execução de ferramenta para o usuário ver o resultado
-            if (!isAgentMode) {
-              continueLoop = false
-            }
           } else {
             const finalMsg: Message = {
               id: generateId(),
@@ -840,10 +836,6 @@ export default function App() {
               }))
             ]
 
-            // Se NÃO estiver em modo agente, paramos após a primeira execução de ferramenta
-            if (!isAgentMode) {
-              continueLoop = false
-            }
           } else {
             const finalMsg: Message = {
               id: generateId(),
