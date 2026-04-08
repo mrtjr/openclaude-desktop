@@ -242,7 +242,14 @@ function generateId(): string {
 function isSmallModel(modelName: string): boolean {
   if (!modelName) return false
   const lower = modelName.toLowerCase()
-  return lower.includes('7b') || lower.includes('8b') || lower.includes('9b') || lower.includes('14b') || lower.includes('phi') || lower.includes('mistral') || lower.includes('qwen')
+  // Match models with parameter counts <=14B
+  const smallSizes = /\b(7b|8b|9b|14b|3b|1b|0\.5b)\b/i
+  if (smallSizes.test(lower)) return true
+  // Known small model families (without size suffix)
+  if (lower.includes('phi') || lower.includes('mistral') && !lower.includes('large')) return true
+  // Default to small if no size indicator found (conservative: enables guardrails)
+  if (!/\d+b\b/i.test(lower)) return true
+  return false
 }
 
 // ─── App ─────────────────────────────────────────────────────────────
@@ -864,11 +871,9 @@ export default function App() {
                 setConversations(prev => prev.map(c => c.id !== activeConvId ? c : { ...c, workingMemory: args }))
                 result = `[SYSTEM]: Working memory updated successfully.`
               } else if (
-                recentToolCalls.length >= 2 && 
-                recentToolCalls[recentToolCalls.length - 1] === callSignature && 
-                recentToolCalls[recentToolCalls.length - 2] === callSignature
+                recentToolCalls.filter(c => c === callSignature).length >= 2
               ) {
-                result = `[SYSTEM INTERCEPT]: Circuit Breaker Triggered. You are repeating the exact same tool call ("${tc.function.name}") with the exact same arguments for the 3rd time. This approach is not working. Try a different strategy, use a different tool, or give a final text response.`
+                result = `[SYSTEM INTERCEPT]: Circuit Breaker Triggered. You already called "${tc.function.name}" with these exact arguments ${recentToolCalls.filter(c => c === callSignature).length} times. This approach is not working. You MUST try a completely different strategy, use a different tool, or give a final text response. Do NOT repeat this call.`
               } else {
                 result = await executeTool(tc.function.name, args)
               }
@@ -964,11 +969,9 @@ export default function App() {
                 setConversations(prev => prev.map(c => c.id !== activeConvId ? c : { ...c, workingMemory: args }))
                 result = `[SYSTEM]: Working memory updated successfully.`
               } else if (
-                recentToolCalls.length >= 2 && 
-                recentToolCalls[recentToolCalls.length - 1] === callSignature && 
-                recentToolCalls[recentToolCalls.length - 2] === callSignature
+                recentToolCalls.filter(c => c === callSignature).length >= 2
               ) {
-                result = `[SYSTEM INTERCEPT]: Circuit Breaker Triggered. You are repeating the exact same tool call ("${tc.function.name}") with the exact same arguments for the 3rd time. This approach is not working. Try a different strategy, use a different tool, or give a final text response.`
+                result = `[SYSTEM INTERCEPT]: Circuit Breaker Triggered. You already called "${tc.function.name}" with these exact arguments ${recentToolCalls.filter(c => c === callSignature).length} times. This approach is not working. You MUST try a completely different strategy, use a different tool, or give a final text response. Do NOT repeat this call.`
               } else {
                 result = await executeTool(tc.function.name, args)
               }
