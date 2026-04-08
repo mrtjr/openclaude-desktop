@@ -72,10 +72,26 @@ interface Conversation {
   title: string
   messages: Message[]
   createdAt: Date
+  workingMemory?: Record<string, string>
 }
 
 // ─── Tools ───────────────────────────────────────────────────────────
 const TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'update_working_memory',
+      description: 'Update your short-term memory to avoid losing context. Call this when you complete a step or change goals.',
+      parameters: {
+        type: 'object',
+        properties: {
+          current_goal: { type: 'string' },
+          done_steps: { type: 'string' },
+          open_tasks: { type: 'string' }
+        }
+      }
+    }
+  },
   {
     type: 'function',
     function: {
@@ -186,6 +202,24 @@ const LANGUAGE_RULE: Record<string, string> = {
   en: '\n\nCRITICAL LANGUAGE RULE: You MUST respond to ALL messages in English. No matter what language the user writes in, your response MUST be in English. This includes explanations, code comments, variable names in examples, and any text. NEVER respond in Portuguese or any other language.'
 }
 
+// Priming: first assistant message sets the tone in the correct language
+const LANGUAGE_PRIMING: Record<string, { user: string; assistant: string }> = {
+  pt: {
+    user: 'Em que idioma você deve responder?',
+    assistant: 'Eu devo responder sempre em português brasileiro, sem exceções.'
+  },
+  en: {
+    user: 'What language must you respond in?',
+    assistant: 'I must always respond in English, without exceptions.'
+  }
+}
+
+// Reminder injected right before generation (closest to output = strongest influence)
+const LANGUAGE_REMINDER: Record<string, string> = {
+  pt: '[LEMBRETE DO SISTEMA: Responda SOMENTE em português brasileiro. Toda sua resposta deve estar em português.]',
+  en: '[SYSTEM REMINDER: Respond ONLY in English. Your entire response must be in English.]'
+}
+
 // ─── Markdown ────────────────────────────────────────────────────────
 marked.setOptions({ breaks: true, gfm: true })
 const renderer = new marked.Renderer()
@@ -203,6 +237,12 @@ function formatMarkdown(text: string): string {
 
 function generateId(): string {
   return Math.random().toString(36).substring(2, 9)
+}
+
+function isSmallModel(modelName: string): boolean {
+  if (!modelName) return false
+  const lower = modelName.toLowerCase()
+  return lower.includes('7b') || lower.includes('8b') || lower.includes('9b') || lower.includes('14b') || lower.includes('phi') || lower.includes('mistral') || lower.includes('qwen')
 }
 
 // ─── App ─────────────────────────────────────────────────────────────
@@ -471,7 +511,7 @@ export default function App() {
   }
 
   // ─── Tool execution ────────────────────────────────────────────
-  const executeTool = async (name: string, args: Record<string, any>): Promise<string> => {
+  const executeToolRaw = async (name: string, args: Record<string, any>): Promise<string> => {
     try {
       if (name === 'execute_command') {
         const result = await window.electron.execCommand(args.command)
@@ -506,6 +546,18 @@ export default function App() {
     } catch (e: any) {
       return `Erro: ${e.message}`
     }
+  }
+
+  const executeTool = async (name: string, args: Record<string, any>): Promise<string> => {
+    const out = await executeToolRaw(name, args)
+    
+    if (out && out.length > 4000) {
+      return out.substring(0, 2000) + 
+      `\n\n...[SYSTEM TRUNCATED: Output too large. Original size was ${out.length} characters. Showing start and end only.]...\n\n` + 
+      out.substring(out.length - 1500)
+    }
+    
+    return out
   }
 
   // ─── Export conversation ───────────────────────────────────────
@@ -676,16 +728,46 @@ export default function App() {
           ? history.slice(-MAX_CONTEXT_MESSAGES)
           : history
 
+        // Language priming: inject a fake Q&A exchange that locks the language
+        const priming = LANGUAGE_PRIMING[lang]
+        const primingMessages = [
+          { role: 'user', content: priming.user },
+          { role: 'assistant', content: priming.assistant }
+        ]
+
         let continueLoop = true
-        let allMessages: any[] = [...systemMessages, ...trimmedHistory]
+        let allMessages: any[] = [...systemMessages, ...primingMessages, ...trimmedHistory]
         const useStreaming = settings.streamingEnabled
         let steps = 0
+        const recentToolCalls: string[] = []
+        let activeMemory = conv?.workingMemory || null
 
         while (continueLoop && steps < (isAgentMode ? MAX_AGENT_STEPS : 10)) {
           if (stopRequestedRef.current) break;
           steps++
           setAgentSteps(steps)
           
+          const requestMessages = [...allMessages]
+          if (activeMemory && isAgentMode) {
+            requestMessages.push({
+              role: 'system',
+              content: `[URGENT WORKING MEMORY STATE]\nGoal: ${activeMemory.current_goal || 'None'}\nDone: ${activeMemory.done_steps || 'None'}\nPending: ${activeMemory.open_tasks || 'None'}`
+            })
+          }
+
+          if (isAgentMode && isSmallModel(selectedModel)) {
+            requestMessages.push({
+              role: 'system',
+              content: `[FOCUSED REMINDER]\nYou are an Agent. You MUST use tools to overcome the user goal.\n- If the goal is not strictly complete, output ONLY a valid JSON tool call without conversational preamble.\n- Use 'update_working_memory' proactively to store sub-step completions.\n- When everything is concluded, formulate your final human answer.`
+            })
+          }
+
+          // Language reminder: injected last = closest to generation = strongest influence
+          requestMessages.push({
+            role: 'system',
+            content: LANGUAGE_REMINDER[lang]
+          })
+
           if (useStreaming) {
             // ─── Streaming path ────────────────────────────────
             let accumulated = ''
@@ -733,7 +815,7 @@ export default function App() {
 
             window.electron.ollamaChatStream({
               model: selectedModel,
-              messages: allMessages,
+              messages: requestMessages,
               tools: TOOLS,
               temperature: settings.temperature,
               max_tokens: settings.maxTokens
@@ -755,7 +837,7 @@ export default function App() {
               toolCalls: toolCallsData.map(tc => ({
                 id: tc.id,
                 name: tc.function.name,
-                arguments: (() => { try { return JSON.parse(tc.function.arguments) } catch { return {} } })()
+                arguments: (() => { try { return JSON.parse(tc.function.arguments || '{}') } catch { return { raw_invalid_json: tc.function.arguments } } })()
               })),
               timestamp: new Date()
             }
@@ -763,8 +845,35 @@ export default function App() {
             const toolResults: ToolResult[] = []
             for (const tc of toolCallsData) {
               let args: Record<string, any> = {}
-              try { args = JSON.parse(tc.function.arguments) } catch {}
-              const result = await executeTool(tc.function.name, args)
+              let jsonError: string | null = null
+              let result = ""
+              const rawArgs = tc.function.arguments || '{}'
+              
+              try { 
+                args = JSON.parse(rawArgs) 
+              } catch (e: any) {
+                jsonError = e.message
+              }
+              
+              const callSignature = `${tc.function.name}:::${rawArgs}`
+
+              if (jsonError) {
+                result = `[SYSTEM INTERCEPT]: JSON Parse Error - ${jsonError}. You provided: ${rawArgs}. You MUST output strictly valid JSON syntax. Try calling the tool again with fixed JSON.`
+              } else if (tc.function.name === 'update_working_memory') {
+                activeMemory = args
+                setConversations(prev => prev.map(c => c.id !== activeConvId ? c : { ...c, workingMemory: args }))
+                result = `[SYSTEM]: Working memory updated successfully.`
+              } else if (
+                recentToolCalls.length >= 2 && 
+                recentToolCalls[recentToolCalls.length - 1] === callSignature && 
+                recentToolCalls[recentToolCalls.length - 2] === callSignature
+              ) {
+                result = `[SYSTEM INTERCEPT]: Circuit Breaker Triggered. You are repeating the exact same tool call ("${tc.function.name}") with the exact same arguments for the 3rd time. This approach is not working. Try a different strategy, use a different tool, or give a final text response.`
+              } else {
+                result = await executeTool(tc.function.name, args)
+              }
+              
+              recentToolCalls.push(callSignature)
               toolResults.push({ toolCallId: tc.id, name: tc.function.name, result })
             }
             thinkingMsg.toolResults = toolResults
@@ -802,7 +911,7 @@ export default function App() {
           // ─── Non-streaming path ────────────────────────────
           const response = await window.electron.ollamaChat({
             model: selectedModel,
-            messages: allMessages,
+            messages: requestMessages,
             tools: TOOLS,
             temperature: settings.temperature,
             max_tokens: settings.maxTokens
@@ -823,7 +932,7 @@ export default function App() {
                 id: tc.id,
                 name: tc.function.name,
                 arguments: typeof tc.function.arguments === 'string'
-                  ? JSON.parse(tc.function.arguments)
+                  ? (() => { try { return JSON.parse(tc.function.arguments) } catch { return { raw_invalid_json: tc.function.arguments } } })()
                   : tc.function.arguments
               })),
               timestamp: new Date()
@@ -831,10 +940,40 @@ export default function App() {
 
             const toolResults: ToolResult[] = []
             for (const tc of toolCalls) {
-              const args = typeof tc.function.arguments === 'string'
-                ? JSON.parse(tc.function.arguments)
-                : tc.function.arguments
-              const result = await executeTool(tc.function.name, args)
+              let args: Record<string, any> = {}
+              let jsonError: string | null = null
+              let result = ""
+
+              if (typeof tc.function.arguments === 'string') {
+                try {
+                  args = JSON.parse(tc.function.arguments || '{}')
+                } catch (e: any) {
+                  jsonError = e.message
+                }
+              } else {
+                args = tc.function.arguments || {}
+              }
+
+              const rawArgs = typeof tc.function.arguments === 'string' ? tc.function.arguments : JSON.stringify(tc.function.arguments || {})
+              const callSignature = `${tc.function.name}:::${rawArgs}`
+
+              if (jsonError) {
+                result = `[SYSTEM INTERCEPT]: JSON Parse Error - ${jsonError}. You provided: ${tc.function.arguments}. You MUST output strictly valid JSON syntax. Try calling the tool again with fixed JSON.`
+              } else if (tc.function.name === 'update_working_memory') {
+                activeMemory = args
+                setConversations(prev => prev.map(c => c.id !== activeConvId ? c : { ...c, workingMemory: args }))
+                result = `[SYSTEM]: Working memory updated successfully.`
+              } else if (
+                recentToolCalls.length >= 2 && 
+                recentToolCalls[recentToolCalls.length - 1] === callSignature && 
+                recentToolCalls[recentToolCalls.length - 2] === callSignature
+              ) {
+                result = `[SYSTEM INTERCEPT]: Circuit Breaker Triggered. You are repeating the exact same tool call ("${tc.function.name}") with the exact same arguments for the 3rd time. This approach is not working. Try a different strategy, use a different tool, or give a final text response.`
+              } else {
+                result = await executeTool(tc.function.name, args)
+              }
+              
+              recentToolCalls.push(callSignature)
               toolResults.push({ toolCallId: tc.id, name: tc.function.name, result })
             }
 
