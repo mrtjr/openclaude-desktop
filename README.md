@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v1.4.0-ff6b35?style=for-the-badge&logo=windows" alt="Download" /></a>
+  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v1.4.1-ff6b35?style=for-the-badge&logo=windows" alt="Download" /></a>
   <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License" />
   <img src="https://img.shields.io/badge/platform-Windows-lightgrey?style=for-the-badge" alt="Platform" />
 </p>
@@ -51,7 +51,7 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 ### Core AI
 - **Multi-provider** — Ollama (local), OpenAI, Google Gemini, Anthropic Claude
 - **Streaming responses** — real-time word-by-word output
-- **Agent Mode** — autonomous multi-step execution (up to 25 steps)
+- **Agent Mode** — autonomous multi-step execution (unlimited steps, no artificial cap)
 - **Collaborative Agents** — multiple AI instances working in parallel on different subtasks
 - **Task Planning** — decompose complex goals into tracked subtasks with visual progress
 - **14 built-in tools** — commands, files, web search, browser, task planning, parallel agents
@@ -213,7 +213,9 @@ Toggle **Agent Mode** with the lightning bolt button. The AI will autonomously:
 2. Execute tools one by one
 3. Analyze results and adjust the plan
 4. Delegate subtasks to parallel agents when beneficial
-5. Continue until the task is complete (up to 25 steps)
+5. Continue until the task is **fully complete** — no artificial step limit
+
+Unlike competitors with hidden caps, OpenClaude runs until the job is done. A built-in idle detector stops the agent only if it gets stuck in a non-productive loop (5 consecutive steps with no real progress).
 
 **Example:** "Create a Python web scraper that extracts product prices from 3 e-commerce sites"
 - The agent creates a task plan with subtasks
@@ -346,7 +348,7 @@ openclaude-desktop/
 | Free | Yes | Freemium | Freemium | Paid |
 | Local models | Yes | No | No | No |
 | Cloud providers | 4 providers | OpenAI only | Anthropic only | Multiple |
-| Agent mode | 25 steps | Yes | Yes | Yes |
+| Agent mode | Unlimited steps | Yes | Yes | Yes |
 | Browser automation | Playwright | No | No | Yes |
 | Parallel agents | Yes | No | No | Yes |
 | Voice I/O | Yes | Yes | No | No |
@@ -364,6 +366,14 @@ openclaude-desktop/
 ---
 
 ## Changelog
+
+### v1.4.1 — Unlimited Agent Mode
+- Removed hard 25-step limit — agent now runs until task is fully complete
+- Fixed critical bug: `finish_reason='stop'` from Ollama killing the loop after tool calls
+- Added idle step detector (5 consecutive non-productive steps triggers safe stop)
+- Improved agent system prompt for better persistence and task completion
+- Enhanced small model directive to prevent premature text-only responses
+- Agent badge now shows step count without a max limit
 
 ### v1.4.0 — Self-Evolution Architecture
 - Silent session analytics engine (MCD — data collection module)

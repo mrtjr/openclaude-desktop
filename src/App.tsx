@@ -303,22 +303,39 @@ const TOOLS = [
   }
 ]
 
-const MAX_AGENT_STEPS = 25
+// No visible step limit — loop ends naturally when the model stops calling tools.
+// Safety valve prevents truly infinite loops (unreachable in normal use).
+const AGENT_SAFETY_LIMIT = 200
+const NORMAL_SAFETY_LIMIT = 50
+// If the model produces N consecutive steps with zero real tool progress, force stop
+const IDLE_STEP_THRESHOLD = 5
 const AGENT_SYSTEM_PROMPT: Record<string, string> = {
-  pt: `VOCÊ ESTÁ NO MODO AGENTE AUTÔNOMO.
-Sua missão é resolver o pedido do usuário usando suas ferramentas de forma proativa.
-1. Planeje os passos necessários.
-2. Execute as ferramentas uma a uma.
-3. Analise os resultados e ajuste seu plano se necessário.
-4. Continue até que o objetivo seja totalmente alcançado.
-NÃO pare apenas para relatar o progresso se ainda houver passos técnicos a serem executados. Se o usuário pedir para criar um projeto, crie as pastas, arquivos e teste-os antes de finalizar.`,
-  en: `YOU ARE IN AUTONOMOUS AGENT MODE.
-Your mission is to solve the user's request using your tools proactively.
-1. Plan the necessary steps.
-2. Execute the tools one by one.
-3. Analyze the results and adjust your plan if needed.
-4. Continue until the goal is fully achieved.
-DO NOT stop just to report progress if there are still technical steps to execute. If the user asks to create a project, create the folders, files, and test them before finishing.`
+  pt: `VOCÊ ESTÁ NO MODO AGENTE AUTÔNOMO COM FERRAMENTAS ILIMITADAS.
+Sua missão é resolver COMPLETAMENTE o pedido do usuário. Não há limite de passos — continue trabalhando até terminar tudo.
+
+REGRAS ABSOLUTAS:
+1. PLANEJE primeiro usando plan_tasks para decompor o objetivo em subtarefas.
+2. EXECUTE as ferramentas uma a uma, marcando cada subtarefa como concluída.
+3. NUNCA pare no meio — se uma etapa falhar, tente uma abordagem diferente.
+4. NUNCA responda apenas com texto se ainda houver ações técnicas pendentes.
+5. Se o usuário pedir para criar algo, crie TODOS os arquivos, pastas, e teste antes de finalizar.
+6. Use update_working_memory a cada 3-5 passos para não perder contexto.
+7. Só dê a resposta final em texto quando TODAS as tarefas estiverem concluídas.
+
+VOCÊ TEM TEMPO ILIMITADO. Use quantos passos forem necessários. A qualidade da entrega é mais importante que velocidade.`,
+  en: `YOU ARE IN AUTONOMOUS AGENT MODE WITH UNLIMITED TOOLS.
+Your mission is to FULLY solve the user's request. There is no step limit — keep working until everything is done.
+
+ABSOLUTE RULES:
+1. PLAN first using plan_tasks to decompose the goal into subtasks.
+2. EXECUTE tools one by one, marking each subtask as completed.
+3. NEVER stop midway — if a step fails, try a different approach.
+4. NEVER respond with just text if there are still technical actions pending.
+5. If the user asks to create something, create ALL files, folders, and test before finishing.
+6. Use update_working_memory every 3-5 steps to preserve context.
+7. Only give the final text response when ALL tasks are completed.
+
+YOU HAVE UNLIMITED TIME. Use as many steps as needed. Delivery quality matters more than speed.`
 }
 
 const LANGUAGE_RULE: Record<string, string> = {
@@ -998,10 +1015,12 @@ export default function App() {
         let allMessages: any[] = [...systemMessages, ...primingMessages, ...trimmedHistory]
         const useStreaming = settings.streamingEnabled
         let steps = 0
+        let idleSteps = 0 // steps with no real tool execution (only memory updates, errors, etc.)
         const recentToolCalls: string[] = []
         let activeMemory = conv?.workingMemory || null
+        const safetyLimit = isAgentMode ? AGENT_SAFETY_LIMIT : NORMAL_SAFETY_LIMIT
 
-        while (continueLoop && steps < (isAgentMode ? MAX_AGENT_STEPS : 10)) {
+        while (continueLoop && steps < safetyLimit) {
           if (stopRequestedRef.current) break;
           steps++
           sessionTracker.agentSteps = steps
@@ -1019,7 +1038,7 @@ export default function App() {
           if (isAgentMode && isSmallModel(selectedModel)) {
             requestMessages.push({
               role: 'system',
-              content: `[FOCUSED REMINDER]\nYou are an Agent. You MUST use tools to overcome the user goal.\n- If the goal is not strictly complete, output ONLY a valid JSON tool call without conversational preamble.\n- Use 'update_working_memory' proactively to store sub-step completions.\n- When everything is concluded, formulate your final human answer.`
+              content: `[CRITICAL AGENT DIRECTIVE]\nYou are an autonomous Agent with unlimited steps. You MUST keep calling tools until the user's goal is 100% complete.\n- If the goal is NOT fully done, you MUST output a tool call. Do NOT output a text-only response.\n- Use 'update_working_memory' every few steps.\n- Only give a final text answer when every single subtask is done.\n- NEVER say "I'll do X next" — just DO it by calling the tool NOW.`
             })
           }
 
@@ -1143,6 +1162,16 @@ export default function App() {
             }
             thinkingMsg.toolResults = toolResults
 
+            // Track idle steps: if all tools in this step were non-productive, increment idle counter
+            const hasRealToolWork = toolResults.some(tr =>
+              tr.name !== 'update_working_memory' &&
+              !tr.result.startsWith('[SYSTEM INTERCEPT]')
+            )
+            if (hasRealToolWork) { idleSteps = 0 } else { idleSteps++ }
+            if (idleSteps >= IDLE_STEP_THRESHOLD) {
+              continueLoop = false
+            }
+
             setConversations(prev => prev.map(c =>
               c.id !== activeConvId ? c : { ...c, messages: [...c.messages, thinkingMsg] }
             ))
@@ -1172,7 +1201,12 @@ export default function App() {
             continueLoop = false
           }
 
-          if (finishReason === 'stop') { sessionTracker.agentCompleted = true; continueLoop = false }
+          // Only stop on 'stop' if NO tool calls were made this step
+          // Ollama local models often return finish_reason='stop' even after emitting tool_calls
+          if (finishReason === 'stop' && !(toolCallsData.length > 0 && toolCallsData[0]?.function?.name)) {
+            sessionTracker.agentCompleted = true
+            continueLoop = false
+          }
 
         } else {
           // ─── Non-streaming path ────────────────────────────
@@ -1249,6 +1283,17 @@ export default function App() {
             }
 
             thinkingMsg.toolResults = toolResults
+
+            // Track idle steps: if all tools in this step were non-productive, increment idle counter
+            const hasRealToolWork = toolResults.some(tr =>
+              tr.name !== 'update_working_memory' &&
+              !tr.result.startsWith('[SYSTEM INTERCEPT]')
+            )
+            if (hasRealToolWork) { idleSteps = 0 } else { idleSteps++ }
+            if (idleSteps >= IDLE_STEP_THRESHOLD) {
+              continueLoop = false
+            }
+
             setConversations(prev => prev.map(c =>
               c.id !== activeConvId ? c : { ...c, messages: [...c.messages, thinkingMsg] }
             ))
@@ -1278,7 +1323,11 @@ export default function App() {
             continueLoop = false
           }
 
-          if (choice.finish_reason === 'stop') { sessionTracker.agentCompleted = true; continueLoop = false }
+          // Only stop on 'stop' if NO tool calls were made this step
+          if (choice.finish_reason === 'stop' && !(toolCalls && toolCalls.length > 0)) {
+            sessionTracker.agentCompleted = true
+            continueLoop = false
+          }
         }
 
           // MCD: Track response time per step
@@ -1628,7 +1677,7 @@ export default function App() {
                     {isAgentMode && (
                       <div className="agent-badge">
                         <Zap size={10} className="pulse" />
-                        <span>Agente: Passo {agentSteps}/{MAX_AGENT_STEPS}</span>
+                        <span>Agente: Passo {agentSteps}</span>
                       </div>
                     )}
                     {isLoading && (
