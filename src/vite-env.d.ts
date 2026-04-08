@@ -25,17 +25,24 @@ interface Window {
     isMaximized: () => Promise<boolean>
     checkForUpdates: () => Promise<{ updateAvailable: boolean; releaseUrl?: string; latestVersion?: string; error?: string }>
     abortStream: () => Promise<{ aborted: boolean }>
-    loadMemory: () => Promise<{ topics: string[]; facts: Record<string, string[]> }>
-    saveMemory: (data: { topics: string[]; facts: Record<string, string[]> }) => Promise<{ error: string | null }>
-    providerChat: (params: {
-      provider: 'openai' | 'gemini' | 'anthropic'
-      apiKey: string
-      model: string
-      messages: any[]
-      tools?: any[]
-      temperature?: number
-      max_tokens?: number
-      stream?: boolean
-    }) => Promise<any>
+    loadMemory: () => Promise<any>
+    saveMemory: (data: any) => Promise<{ error: string | null }>
+    providerChat: (params: any) => Promise<any>
+    // Browser automation
+    browserLaunch: () => Promise<any>
+    browserNavigate: (url: string) => Promise<any>
+    browserScreenshot: () => Promise<any>
+    browserGetText: () => Promise<any>
+    browserClick: (selector: string) => Promise<any>
+    browserType: (params: { selector: string; text: string }) => Promise<any>
+    browserEvaluate: (code: string) => Promise<any>
+    browserClose: () => Promise<any>
+    // MCP client
+    mcpConnect: (params: any) => Promise<any>
+    mcpCallTool: (params: any) => Promise<any>
+    mcpDisconnect: (id: string) => Promise<any>
+    mcpListConnections: () => Promise<string[]>
+    // Collaborative agents
+    parallelChat: (params: any) => Promise<any>
   }
 }

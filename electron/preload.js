@@ -56,4 +56,23 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Multi-provider
   providerChat: (params) => ipcRenderer.invoke('provider-chat', params),
+
+  // Browser automation
+  browserLaunch: () => ipcRenderer.invoke('browser-launch'),
+  browserNavigate: (url) => ipcRenderer.invoke('browser-navigate', url),
+  browserScreenshot: () => ipcRenderer.invoke('browser-screenshot'),
+  browserGetText: () => ipcRenderer.invoke('browser-get-text'),
+  browserClick: (selector) => ipcRenderer.invoke('browser-click', selector),
+  browserType: (params) => ipcRenderer.invoke('browser-type', params),
+  browserEvaluate: (code) => ipcRenderer.invoke('browser-evaluate', code),
+  browserClose: () => ipcRenderer.invoke('browser-close'),
+
+  // MCP client
+  mcpConnect: (params) => ipcRenderer.invoke('mcp-connect', params),
+  mcpCallTool: (params) => ipcRenderer.invoke('mcp-call-tool', params),
+  mcpDisconnect: (id) => ipcRenderer.invoke('mcp-disconnect', id),
+  mcpListConnections: () => ipcRenderer.invoke('mcp-list-connections'),
+
+  // Collaborative agents
+  parallelChat: (params) => ipcRenderer.invoke('parallel-chat', params),
 })

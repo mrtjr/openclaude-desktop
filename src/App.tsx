@@ -3,7 +3,7 @@ import { marked } from 'marked'
 import hljs from 'highlight.js'
 import DOMPurify from 'dompurify'
 import 'highlight.js/styles/github-dark.css'
-import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, FileCode, Info, ArrowUpCircle, Zap, BotOff, Copy, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Image, Trash } from 'lucide-react'
+import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, FileCode, Info, ArrowUpCircle, Zap, BotOff, Copy, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Image, Trash, Mic, MicOff, Volume2, ListChecks, CheckCircle2, Circle, AlertCircle, Clock } from 'lucide-react'
 import SettingsModal, { loadSettings, type AppSettings } from './Settings'
 
 // ─── Toast notification system ──────────────────────────────────
@@ -67,12 +67,18 @@ interface ToolResult {
   error?: string
 }
 
+interface TaskPlan {
+  goal: string
+  tasks: { id: string; title: string; status: string; result?: string }[]
+}
+
 interface Conversation {
   id: string
   title: string
   messages: Message[]
   createdAt: Date
   workingMemory?: Record<string, string>
+  taskPlan?: TaskPlan
 }
 
 // ─── Tools ───────────────────────────────────────────────────────────
@@ -174,6 +180,123 @@ const TOOLS = [
           target: { type: 'string', description: 'File path or URL to open' }
         },
         required: ['target']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'plan_tasks',
+      description: 'Create a task plan to decompose a complex request into subtasks. Use this for multi-step goals.',
+      parameters: {
+        type: 'object',
+        properties: {
+          goal: { type: 'string', description: 'The overall goal' },
+          tasks: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                title: { type: 'string' },
+                status: { type: 'string', description: 'pending | in_progress | done | failed' }
+              }
+            },
+            description: 'List of subtasks'
+          }
+        },
+        required: ['goal', 'tasks']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_task_status',
+      description: 'Update the status of a subtask in the current plan.',
+      parameters: {
+        type: 'object',
+        properties: {
+          task_id: { type: 'string' },
+          status: { type: 'string', description: 'pending | in_progress | done | failed' },
+          result: { type: 'string', description: 'Optional result or note' }
+        },
+        required: ['task_id', 'status']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_navigate',
+      description: 'Open a browser and navigate to a URL. Returns page title and text content.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'URL to navigate to' }
+        },
+        required: ['url']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_get_text',
+      description: 'Get the text content of the current browser page.',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_click',
+      description: 'Click an element on the page by CSS selector.',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector of the element to click' }
+        },
+        required: ['selector']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_type',
+      description: 'Type text into an input field by CSS selector.',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector of the input' },
+          text: { type: 'string', description: 'Text to type' }
+        },
+        required: ['selector', 'text']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delegate_subtasks',
+      description: 'Run multiple subtasks in parallel using collaborative agents. Each subtask gets its own AI instance.',
+      parameters: {
+        type: 'object',
+        properties: {
+          subtasks: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                prompt: { type: 'string', description: 'The instruction for this agent' }
+              }
+            },
+            description: 'List of subtasks to execute in parallel'
+          }
+        },
+        required: ['subtasks']
       }
     }
   }
@@ -278,6 +401,9 @@ export default function App() {
     try { return new Set(JSON.parse(localStorage.getItem('openclaude-pinned') || '[]')) } catch { return new Set() }
   })
   const [isAgentMode, setIsAgentMode] = useState(false)
+  const [isListening, setIsListening] = useState(false)
+  const [ttsEnabled, setTtsEnabled] = useState(false)
+  const recognitionRef = useRef<any>(null)
   const [agentSteps, setAgentSteps] = useState(0)
   const stopRequestedRef = useRef(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -549,6 +675,69 @@ export default function App() {
         const result = await window.electron.openTarget(args.target)
         return result.error ? `Erro: ${result.error}` : `Aberto: ${args.target}`
       }
+      // ── Task Planning ──
+      if (name === 'plan_tasks') {
+        const plan: TaskPlan = { goal: args.goal, tasks: args.tasks || [] }
+        if (activeConvId) {
+          setConversations(prev => prev.map(c => c.id !== activeConvId ? c : { ...c, taskPlan: plan }))
+        }
+        return `Task plan created: "${args.goal}" with ${plan.tasks.length} subtasks.`
+      }
+      if (name === 'update_task_status') {
+        if (activeConvId) {
+          setConversations(prev => prev.map(c => {
+            if (c.id !== activeConvId || !c.taskPlan) return c
+            const tasks = c.taskPlan.tasks.map(t =>
+              t.id === args.task_id ? { ...t, status: args.status, result: args.result || t.result } : t
+            )
+            return { ...c, taskPlan: { ...c.taskPlan, tasks } }
+          }))
+        }
+        return `Task "${args.task_id}" updated to ${args.status}${args.result ? ': ' + args.result : ''}`
+      }
+      // ── Browser Automation ──
+      if (name === 'browser_navigate') {
+        const launch = await window.electron.browserLaunch()
+        if (launch.error) return `Browser launch error: ${launch.error}`
+        const nav = await window.electron.browserNavigate(args.url)
+        if (nav.error) return `Navigation error: ${nav.error}`
+        const text = await window.electron.browserGetText()
+        return `Navigated to: ${nav.title} (${nav.url})\n\nPage content:\n${text.text || '(empty)'}`
+      }
+      if (name === 'browser_get_text') {
+        const result = await window.electron.browserGetText()
+        return result.text || result.error || '(empty page)'
+      }
+      if (name === 'browser_click') {
+        const result = await window.electron.browserClick(args.selector)
+        return result.success ? `Clicked: ${args.selector}` : `Click error: ${result.error}`
+      }
+      if (name === 'browser_type') {
+        const result = await window.electron.browserType({ selector: args.selector, text: args.text })
+        return result.success ? `Typed in: ${args.selector}` : `Type error: ${result.error}`
+      }
+      // ── Collaborative Agents ──
+      if (name === 'delegate_subtasks') {
+        const lang = settings.language || 'pt'
+        const systemMsg = settings.systemPrompt || ''
+        const tasks = (args.subtasks || []).map((st: any) => ({
+          id: st.id,
+          messages: [
+            ...(systemMsg ? [{ role: 'system', content: systemMsg + LANGUAGE_RULE[lang] }] : []),
+            { role: 'user', content: st.prompt }
+          ]
+        }))
+        const results = await window.electron.parallelChat({
+          tasks,
+          model: selectedModel,
+          temperature: settings.temperature,
+          max_tokens: settings.maxTokens
+        })
+        return results.map((r: any) => {
+          const content = r.result?.choices?.[0]?.message?.content || r.error || 'No response'
+          return `[Agent ${r.id}]: ${content}`
+        }).join('\n\n---\n\n')
+      }
       return 'Ferramenta nao reconhecida'
     } catch (e: any) {
       return `Erro: ${e.message}`
@@ -597,6 +786,52 @@ export default function App() {
 
     await window.electron.writeFile({ filePath: result.filePath, content: md })
     showToast('Conversa exportada com sucesso!')
+  }
+
+  // ─── Voice I/O ─────────────────────────────────────────────────
+  const toggleListening = () => {
+    if (isListening) {
+      recognitionRef.current?.stop()
+      setIsListening(false)
+      return
+    }
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      showToast('Speech Recognition not supported')
+      return
+    }
+    const recognition = new SpeechRecognition()
+    recognition.lang = settings.language === 'en' ? 'en-US' : 'pt-BR'
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.onresult = (event: any) => {
+      let transcript = ''
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript
+      }
+      setInput(prev => {
+        // Replace interim results
+        const base = prev.replace(/\[.*?\]$/, '').trimEnd()
+        if (event.results[event.results.length - 1].isFinal) {
+          return (base ? base + ' ' : '') + transcript
+        }
+        return (base ? base + ' ' : '') + `[${transcript}]`
+      })
+    }
+    recognition.onerror = () => setIsListening(false)
+    recognition.onend = () => setIsListening(false)
+    recognition.start()
+    recognitionRef.current = recognition
+    setIsListening(true)
+  }
+
+  const speakText = (text: string) => {
+    if (!ttsEnabled) return
+    speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(text.replace(/[#*`_\[\]]/g, '').substring(0, 2000))
+    utterance.lang = settings.language === 'en' ? 'en-US' : 'pt-BR'
+    utterance.rate = 1.1
+    speechSynthesis.speak(utterance)
   }
 
   const stopAgent = () => {
@@ -907,6 +1142,7 @@ export default function App() {
             setConversations(prev => prev.map(c =>
               c.id !== activeConvId ? c : { ...c, messages: [...c.messages, finalMsg] }
             ))
+            if (accumulated) speakText(accumulated)
             continueLoop = false
           }
 
@@ -1005,6 +1241,7 @@ export default function App() {
             setConversations(prev => prev.map(c =>
               c.id !== activeConvId ? c : { ...c, messages: [...c.messages, finalMsg] }
             ))
+            if (assistantMsg.content) speakText(assistantMsg.content)
             continueLoop = false
           }
 
@@ -1339,6 +1576,31 @@ export default function App() {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Task Plan Panel */}
+          {activeConv?.taskPlan && (
+            <div className="task-plan-panel">
+              <div className="task-plan-header">
+                <ListChecks size={14} />
+                <span>{activeConv.taskPlan.goal}</span>
+                <span className="task-plan-progress">
+                  {activeConv.taskPlan.tasks.filter(t => t.status === 'done').length}/{activeConv.taskPlan.tasks.length}
+                </span>
+              </div>
+              <div className="task-plan-list">
+                {activeConv.taskPlan.tasks.map(task => (
+                  <div key={task.id} className={`task-plan-item task-${task.status}`}>
+                    {task.status === 'done' ? <CheckCircle2 size={12} /> :
+                     task.status === 'in_progress' ? <Loader2 size={12} className="spin" /> :
+                     task.status === 'failed' ? <AlertCircle size={12} /> :
+                     <Circle size={12} />}
+                    <span>{task.title}</span>
+                    {task.result && <span className="task-result">{task.result}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Input area */}
           <div className="input-area">
             <div className="input-container">
@@ -1356,6 +1618,12 @@ export default function App() {
               }} />
               <button className="attach-btn" onClick={() => document.getElementById('image-upload')?.click()} title="Anexar imagem">
                 <Image size={16} />
+              </button>
+              <button className={`attach-btn ${isListening ? 'active-voice' : ''}`} onClick={toggleListening} title={isListening ? 'Parar gravação' : 'Falar'}>
+                {isListening ? <MicOff size={16} /> : <Mic size={16} />}
+              </button>
+              <button className={`attach-btn ${ttsEnabled ? 'active-voice' : ''}`} onClick={() => { setTtsEnabled(p => !p); if (ttsEnabled) speechSynthesis.cancel() }} title={ttsEnabled ? 'Desativar voz' : 'Ativar leitura em voz'}>
+                <Volume2 size={16} />
               </button>
               <textarea
                 ref={textareaRef}

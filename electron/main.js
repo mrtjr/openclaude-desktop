@@ -631,6 +631,218 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
   })
 })
 
+// ─── IPC: Browser Automation (Playwright) ───────────────────────────────
+let browser = null
+let browserPage = null
+
+ipcMain.handle('browser-launch', async () => {
+  try {
+    const { chromium } = require('playwright')
+    browser = await chromium.launch({ headless: false })
+    const context = await browser.newContext()
+    browserPage = await context.newPage()
+    return { success: true }
+  } catch (e) {
+    return { error: e.message }
+  }
+})
+
+ipcMain.handle('browser-navigate', async (event, url) => {
+  if (!browserPage) return { error: 'Browser not launched' }
+  try {
+    await browserPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
+    return { success: true, url: browserPage.url(), title: await browserPage.title() }
+  } catch (e) { return { error: e.message } }
+})
+
+ipcMain.handle('browser-screenshot', async () => {
+  if (!browserPage) return { error: 'Browser not launched' }
+  try {
+    const buf = await browserPage.screenshot({ type: 'png' })
+    return { success: true, base64: buf.toString('base64') }
+  } catch (e) { return { error: e.message } }
+})
+
+ipcMain.handle('browser-get-text', async () => {
+  if (!browserPage) return { error: 'Browser not launched' }
+  try {
+    const text = await browserPage.evaluate(() => document.body.innerText)
+    return { success: true, text: text.substring(0, 8000) }
+  } catch (e) { return { error: e.message } }
+})
+
+ipcMain.handle('browser-click', async (event, selector) => {
+  if (!browserPage) return { error: 'Browser not launched' }
+  try {
+    await browserPage.click(selector, { timeout: 5000 })
+    return { success: true }
+  } catch (e) { return { error: e.message } }
+})
+
+ipcMain.handle('browser-type', async (event, { selector, text }) => {
+  if (!browserPage) return { error: 'Browser not launched' }
+  try {
+    await browserPage.fill(selector, text, { timeout: 5000 })
+    return { success: true }
+  } catch (e) { return { error: e.message } }
+})
+
+ipcMain.handle('browser-evaluate', async (event, code) => {
+  if (!browserPage) return { error: 'Browser not launched' }
+  try {
+    const result = await browserPage.evaluate(code)
+    return { success: true, result: JSON.stringify(result).substring(0, 5000) }
+  } catch (e) { return { error: e.message } }
+})
+
+ipcMain.handle('browser-close', async () => {
+  try {
+    if (browser) { await browser.close(); browser = null; browserPage = null }
+    return { success: true }
+  } catch (e) { return { error: e.message } }
+})
+
+// ─── IPC: MCP Client ────────────────────────────────────────────────────
+const mcpConnections = new Map()
+
+ipcMain.handle('mcp-connect', async (event, { id, command, args, env }) => {
+  try {
+    const { spawn } = require('child_process')
+    const proc = spawn(command, args || [], {
+      env: { ...process.env, ...(env || {}) },
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+
+    let buffer = ''
+    const pendingRequests = new Map()
+    let requestId = 0
+
+    const sendRequest = (method, params) => {
+      return new Promise((resolve, reject) => {
+        const rid = ++requestId
+        const msg = JSON.stringify({ jsonrpc: '2.0', id: rid, method, params }) + '\n'
+        pendingRequests.set(rid, { resolve, reject })
+        proc.stdin.write(msg)
+        setTimeout(() => {
+          if (pendingRequests.has(rid)) {
+            pendingRequests.delete(rid)
+            reject(new Error('MCP request timeout'))
+          }
+        }, 15000)
+      })
+    }
+
+    proc.stdout.on('data', (chunk) => {
+      buffer += chunk.toString()
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+      for (const line of lines) {
+        if (!line.trim()) continue
+        try {
+          const msg = JSON.parse(line)
+          if (msg.id && pendingRequests.has(msg.id)) {
+            const { resolve } = pendingRequests.get(msg.id)
+            pendingRequests.delete(msg.id)
+            resolve(msg.result || msg.error || msg)
+          }
+        } catch {}
+      }
+    })
+
+    proc.on('error', (e) => {
+      mcpConnections.delete(id)
+    })
+
+    proc.on('exit', () => {
+      mcpConnections.delete(id)
+    })
+
+    mcpConnections.set(id, { proc, sendRequest })
+
+    // Initialize
+    const initResult = await sendRequest('initialize', {
+      protocolVersion: '2024-11-05',
+      capabilities: {},
+      clientInfo: { name: 'OpenClaude Desktop', version: '1.3.0' }
+    })
+
+    // List tools
+    const toolsResult = await sendRequest('tools/list', {})
+
+    return { success: true, serverInfo: initResult, tools: toolsResult?.tools || [] }
+  } catch (e) {
+    return { error: e.message }
+  }
+})
+
+ipcMain.handle('mcp-call-tool', async (event, { connectionId, toolName, args }) => {
+  const conn = mcpConnections.get(connectionId)
+  if (!conn) return { error: 'MCP server not connected' }
+  try {
+    const result = await conn.sendRequest('tools/call', { name: toolName, arguments: args || {} })
+    const text = result?.content?.map(c => c.text || '').join('') || JSON.stringify(result)
+    return { success: true, result: text }
+  } catch (e) { return { error: e.message } }
+})
+
+ipcMain.handle('mcp-disconnect', async (event, id) => {
+  const conn = mcpConnections.get(id)
+  if (conn) {
+    conn.proc.kill()
+    mcpConnections.delete(id)
+  }
+  return { success: true }
+})
+
+ipcMain.handle('mcp-list-connections', async () => {
+  return [...mcpConnections.keys()]
+})
+
+// ─── IPC: Collaborative Agents (Parallel Execution) ─────────────────────
+ipcMain.handle('parallel-chat', async (event, { tasks, model, temperature, max_tokens }) => {
+  // tasks = [{ id, messages, tools }]
+  const executeTask = (task) => {
+    return new Promise((resolve) => {
+      const body = JSON.stringify({
+        model,
+        messages: task.messages,
+        tools: task.tools || [],
+        stream: false,
+        options: { temperature: temperature ?? 0.7 },
+        ...(max_tokens ? { max_tokens } : {})
+      })
+
+      const options = {
+        hostname: 'localhost',
+        port: 11434,
+        path: '/v1/chat/completions',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+      }
+
+      const req = http.request(options, (res) => {
+        let data = ''
+        res.on('data', chunk => data += chunk)
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(data)
+            resolve({ id: task.id, result: parsed, error: null })
+          } catch (e) {
+            resolve({ id: task.id, result: null, error: e.message })
+          }
+        })
+      })
+      req.on('error', (e) => resolve({ id: task.id, result: null, error: e.message }))
+      req.setTimeout(120000, () => { req.destroy(); resolve({ id: task.id, result: null, error: 'Timeout' }) })
+      req.write(body)
+      req.end()
+    })
+  }
+
+  const results = await Promise.all(tasks.map(executeTask))
+  return results
+})
+
 // ─── App lifecycle ───────────────────────────────────────────────────
 app.whenReady().then(() => {
   createWindow()
