@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v1.4.1-ff6b35?style=for-the-badge&logo=windows" alt="Download" /></a>
+  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v1.5.0-ff6b35?style=for-the-badge&logo=windows" alt="Download" /></a>
   <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License" />
   <img src="https://img.shields.io/badge/platform-Windows-lightgrey?style=for-the-badge" alt="Platform" />
 </p>
@@ -54,9 +54,14 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 - **Agent Mode** — autonomous multi-step execution (unlimited steps, no artificial cap)
 - **Collaborative Agents** — multiple AI instances working in parallel on different subtasks
 - **Task Planning** — decompose complex goals into tracked subtasks with visual progress
-- **14 built-in tools** — commands, files, web search, browser, task planning, parallel agents
+- **17 built-in tools** — commands, files, web search, browser, task planning, git, undo, parallel agents
 - **Mandatory language setting** — forces all responses in Portuguese or English (4-layer enforcement)
-- **Self-Evolution Analytics** — silent performance tracking with insights dashboard
+- **Self-Evolution Analytics** ��� silent performance tracking with insights dashboard
+- **Context Compaction** — smart summarization of old messages (never lose context)
+- **Tool Permissions** — approval required for dangerous operations (execute, write, git)
+- **File Snapshots + Undo** — automatic backup before every write, one-click restore
+- **Git Awareness** — native git tool (status, diff, log, commit) sandboxed for safety
+- **Audit Log** — every tool execution logged with input, output, duration, and status
 
 ### Browser Automation (Playwright)
 - **Navigate** to any URL with full Chromium browser
@@ -114,11 +119,14 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 
 ### Security & Performance
 - **XSS protection** — DOMPurify sanitization on all rendered content (no onclick)
-- **Sliding context window** — configurable message limit (10-100)
+- **Smart context window** — compacts old messages via model summarization instead of discarding
+- **Tool permission system** — dangerous tools require explicit user approval
+- **File snapshots** — automatic backup before every write operation, undo support
+- **Git sandboxing** — git commands run in isolated handler, no shell injection possible
+- **Audit trail** — every tool execution logged with full details
 - **Real abort** — stop generation mid-stream (kills HTTP request server-side)
-- **Persistent memory** — opt-in memory system for cross-conversation context
-- **Model persistence** — remembers your last selected model
-- **Analytics auto-purge** — 30-day retention + 500 session cap prevents unbounded storage growth
+- **Persistent memory** — auto-injected into context when enabled
+- **Analytics auto-purge** — 30-day retention + 500 session cap
 
 ---
 
@@ -362,10 +370,23 @@ openclaude-desktop/
 | Language enforcement | 4 layers | Auto | Auto | Auto |
 | Usage analytics | Local-only | Cloud | Cloud | Cloud |
 | Self-evolution insights | Yes | No | No | No |
+| Context compaction | Auto-summarize | Truncate | Truncate | Truncate |
+| Tool approval | Per-action | Per-session | None | None |
+| File undo/snapshots | Yes | No | No | No |
+| Git native tool | Sandboxed | No | No | No |
+| Audit log | Full | No | No | No |
 
 ---
 
 ## Changelog
+
+### v1.5.0 — Robustness & Safety Engine
+- **Context Compaction**: Old messages are summarized by the model instead of being discarded. Persistent memory injected automatically.
+- **Tool Permission Guardrails**: Dangerous tools (execute_command, write_file, git, browser) require user approval. Toggle in Settings.
+- **File Snapshots + Undo**: Every file write creates an automatic backup. New `undo_last_write` tool to restore previous version. 50-snapshot stack.
+- **Git Awareness**: Native `git_command` tool — status, diff, log, add, commit — sandboxed to git only (no shell injection).
+- **Run Audit Log**: Every tool execution logged with inputs, outputs, duration, and status. Persisted to disk. Max 1000 entries with auto-purge.
+- 17 built-in tools (was 14): added `git_command`, `undo_last_write`, enhanced `write_file` with auto-snapshot
 
 ### v1.4.1 — Unlimited Agent Mode
 - Removed hard 25-step limit — agent now runs until task is fully complete

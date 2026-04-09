@@ -80,6 +80,7 @@ interface Conversation {
   createdAt: Date
   workingMemory?: Record<string, string>
   taskPlan?: TaskPlan
+  contextSummary?: string
 }
 
 // ─── Tools ───────────────────────────────────────────────────────────
@@ -280,6 +281,29 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'git_command',
+      description: 'Run a git command in a specified directory. Supports: status, diff, log, add, commit, branch, checkout, stash. Use for version control awareness.',
+      parameters: {
+        type: 'object',
+        properties: {
+          command: { type: 'string', description: 'The git subcommand and args (e.g. "status", "diff --stat", "log --oneline -10", "add .", "commit -m msg")' },
+          cwd: { type: 'string', description: 'Working directory (the repo path)' }
+        },
+        required: ['command', 'cwd']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'undo_last_write',
+      description: 'Undo the last file write operation, restoring the file to its previous state. Use when a write produced errors or bad results.',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'delegate_subtasks',
       description: 'Run multiple subtasks in parallel using collaborative agents. Each subtask gets its own AI instance.',
       parameters: {
@@ -304,11 +328,25 @@ const TOOLS = [
 ]
 
 // No visible step limit — loop ends naturally when the model stops calling tools.
-// Safety valve prevents truly infinite loops (unreachable in normal use).
 const AGENT_SAFETY_LIMIT = 200
 const NORMAL_SAFETY_LIMIT = 50
-// If the model produces N consecutive steps with zero real tool progress, force stop
 const IDLE_STEP_THRESHOLD = 5
+
+// ─── Tool Permission System ────────────────────────────────────────
+const SAFE_TOOLS = new Set([
+  'read_file', 'list_directory', 'web_search', 'browser_get_text',
+  'update_working_memory', 'plan_tasks', 'update_task_status', 'undo_last_write'
+])
+const DANGEROUS_TOOLS = new Set([
+  'execute_command', 'write_file', 'open_file_or_url', 'git_command',
+  'browser_navigate', 'browser_click', 'browser_type', 'delegate_subtasks'
+])
+
+interface PendingApproval {
+  toolName: string
+  args: Record<string, any>
+  resolve: (approved: boolean) => void
+}
 const AGENT_SYSTEM_PROMPT: Record<string, string> = {
   pt: `VOCÊ ESTÁ NO MODO AGENTE AUTÔNOMO COM FERRAMENTAS ILIMITADAS.
 Sua missão é resolver COMPLETAMENTE o pedido do usuário. Não há limite de passos — continue trabalhando até terminar tudo.
@@ -420,6 +458,7 @@ export default function App() {
   })
   const [isAgentMode, setIsAgentMode] = useState(false)
   const [showAnalytics, setShowAnalytics] = useState(false)
+  const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
   const [isListening, setIsListening] = useState(false)
   const [ttsEnabled, setTtsEnabled] = useState(false)
   const recognitionRef = useRef<any>(null)
@@ -694,6 +733,17 @@ export default function App() {
         const result = await window.electron.openTarget(args.target)
         return result.error ? `Erro: ${result.error}` : `Aberto: ${args.target}`
       }
+      // ── Git ──
+      if (name === 'git_command') {
+        const result = await window.electron.gitCommand({ command: args.command, cwd: args.cwd })
+        if (result.error) return `Git error: ${result.error}`
+        return (result.stdout + (result.stderr ? '\n' + result.stderr : '')).trim() || 'Done (no output)'
+      }
+      // ── Undo ──
+      if (name === 'undo_last_write') {
+        const result = await window.electron.undoLastWrite()
+        return result.error ? `Undo error: ${result.error}` : `File restored: ${result.restored}`
+      }
       // ── Task Planning ──
       if (name === 'plan_tasks') {
         const plan: TaskPlan = { goal: args.goal, tasks: args.tasks || [] }
@@ -763,15 +813,43 @@ export default function App() {
     }
   }
 
+  const requestApproval = (toolName: string, args: Record<string, any>): Promise<boolean> => {
+    return new Promise((resolve) => {
+      setPendingApproval({ toolName, args, resolve })
+    })
+  }
+
   const executeTool = async (name: string, args: Record<string, any>): Promise<string> => {
+    // Permission check: dangerous tools require user approval (unless disabled)
+    if (settings.confirmDangerousTools !== false && DANGEROUS_TOOLS.has(name)) {
+      const approved = await requestApproval(name, args)
+      if (!approved) {
+        // Audit: log denied action
+        window.electron.auditLogAppend({ tool: name, args, status: 'denied', output: '' }).catch(() => {})
+        return `[USER DENIED]: The user rejected execution of "${name}". Try a different approach or ask the user what they prefer.`
+      }
+    }
+
+    const startTime = Date.now()
     const out = await executeToolRaw(name, args)
-    
+    const duration = Date.now() - startTime
+
+    // Audit log: silently record every tool execution
+    window.electron.auditLogAppend({
+      tool: name,
+      args,
+      status: out.startsWith('Erro:') || out.startsWith('[SYSTEM INTERCEPT]') ? 'error' : 'success',
+      output: out.substring(0, 500),
+      duration,
+      conversationId: activeConvId,
+    }).catch(() => {})
+
     if (out && out.length > 4000) {
-      return out.substring(0, 2000) + 
-      `\n\n...[SYSTEM TRUNCATED: Output too large. Original size was ${out.length} characters. Showing start and end only.]...\n\n` + 
+      return out.substring(0, 2000) +
+      `\n\n...[SYSTEM TRUNCATED: Output too large. Original size was ${out.length} characters. Showing start and end only.]...\n\n` +
       out.substring(out.length - 1500)
     }
-    
+
     return out
   }
 
@@ -998,11 +1076,57 @@ export default function App() {
         // Adiciona a mensagem atual do usuário
         history.push({ role: 'user', content: userMsg.content })
 
-        // Sliding window: limit context to avoid token overflow
+        // Smart context management: compact old messages instead of discarding
         const MAX_CONTEXT_MESSAGES = settings.contextLimit || 50
-        const trimmedHistory = history.length > MAX_CONTEXT_MESSAGES
-          ? history.slice(-MAX_CONTEXT_MESSAGES)
-          : history
+        const COMPACT_THRESHOLD = Math.floor(MAX_CONTEXT_MESSAGES * 0.7)
+        let contextSummary = conv?.contextSummary || ''
+        let trimmedHistory = history
+
+        if (history.length > MAX_CONTEXT_MESSAGES) {
+          const overflow = history.length - COMPACT_THRESHOLD
+          const oldMessages = history.slice(0, overflow)
+          trimmedHistory = history.slice(overflow)
+
+          // Request compaction from the model (async, non-blocking fallback)
+          try {
+            const compactResult = await window.electron.compactContext({
+              messages: oldMessages,
+              model: selectedModel,
+              language: lang
+            })
+            if (compactResult.summary) {
+              contextSummary = (contextSummary ? contextSummary + '\n\n' : '') + compactResult.summary
+              // Keep summary from growing unbounded (max ~2000 chars)
+              if (contextSummary.length > 2000) {
+                contextSummary = contextSummary.slice(-2000)
+              }
+              // Persist the summary on the conversation
+              setConversations(prev => prev.map(c =>
+                c.id !== activeConvId ? c : { ...c, contextSummary }
+              ))
+            }
+          } catch {
+            // Fallback: simple truncation if compaction fails
+          }
+        }
+
+        // Inject memory context: persistent memory + context summary
+        const memoryContext: string[] = []
+        if (contextSummary) {
+          memoryContext.push(`[CONTEXT SUMMARY — earlier conversation]\n${contextSummary}`)
+        }
+        if (settings.memoryEnabled) {
+          try {
+            const mem = await window.electron.loadMemory()
+            const parts: string[] = []
+            if (mem.facts?.length) parts.push(`Facts: ${mem.facts.join('; ')}`)
+            if (mem.preferences?.length) parts.push(`Preferences: ${mem.preferences.join('; ')}`)
+            if (mem.projects?.length) parts.push(`Projects: ${mem.projects.join('; ')}`)
+            if (parts.length > 0) {
+              memoryContext.push(`[PERSISTENT MEMORY]\n${parts.join('\n')}`)
+            }
+          } catch {}
+        }
 
         // Language priming: inject a fake Q&A exchange that locks the language
         const priming = LANGUAGE_PRIMING[lang]
@@ -1011,8 +1135,13 @@ export default function App() {
           { role: 'assistant', content: priming.assistant }
         ]
 
+        // Build context: system + memory + priming + history
+        const memoryMessages = memoryContext.length > 0
+          ? [{ role: 'system', content: memoryContext.join('\n\n') }]
+          : []
+
         let continueLoop = true
-        let allMessages: any[] = [...systemMessages, ...primingMessages, ...trimmedHistory]
+        let allMessages: any[] = [...systemMessages, ...memoryMessages, ...primingMessages, ...trimmedHistory]
         const useStreaming = settings.streamingEnabled
         let steps = 0
         let idleSteps = 0 // steps with no real tool execution (only memory updates, errors, etc.)
@@ -1713,6 +1842,34 @@ export default function App() {
                     {task.result && <span className="task-result">{task.result}</span>}
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Tool Approval Banner */}
+          {pendingApproval && (
+            <div className="approval-banner">
+              <div className="approval-header">
+                <AlertCircle size={16} />
+                <span>{settings.language === 'en' ? 'Permission required' : 'Permissão necessária'}</span>
+              </div>
+              <div className="approval-detail">
+                <span className="approval-tool">{pendingApproval.toolName}</span>
+                <pre className="approval-args">{JSON.stringify(pendingApproval.args, null, 2)}</pre>
+              </div>
+              <div className="approval-actions">
+                <button className="approval-btn approve" onClick={() => {
+                  pendingApproval.resolve(true)
+                  setPendingApproval(null)
+                }}>
+                  <CheckCircle2 size={14} /> {settings.language === 'en' ? 'Allow' : 'Permitir'}
+                </button>
+                <button className="approval-btn deny" onClick={() => {
+                  pendingApproval.resolve(false)
+                  setPendingApproval(null)
+                }}>
+                  <XCircle size={14} /> {settings.language === 'en' ? 'Deny' : 'Negar'}
+                </button>
               </div>
             </div>
           )}

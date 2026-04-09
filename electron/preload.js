@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('electron', {
   // Ollama
+  compactContext: (params) => ipcRenderer.invoke('compact-context', params),
   ollamaChat: (params) => ipcRenderer.invoke('ollama-chat', params),
   ollamaChatStream: (params) => ipcRenderer.invoke('ollama-chat-stream', params),
   onStreamChunk: (callback) => {
@@ -13,8 +14,11 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Commands & Files
   execCommand: (cmd) => ipcRenderer.invoke('exec-command', cmd),
+  gitCommand: (params) => ipcRenderer.invoke('git-command', params),
   readFile: (path) => ipcRenderer.invoke('read-file', path),
   writeFile: (params) => ipcRenderer.invoke('write-file', params),
+  undoLastWrite: () => ipcRenderer.invoke('undo-last-write'),
+  listSnapshots: () => ipcRenderer.invoke('list-snapshots'),
 
   // Conversations
   saveConversations: (data) => ipcRenderer.invoke('save-conversations', data),
@@ -75,6 +79,11 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Collaborative agents
   parallelChat: (params) => ipcRenderer.invoke('parallel-chat', params),
+
+  // Audit Log
+  auditLogAppend: (entry) => ipcRenderer.invoke('audit-log-append', entry),
+  auditLogLoad: () => ipcRenderer.invoke('audit-log-load'),
+  auditLogClear: () => ipcRenderer.invoke('audit-log-clear'),
 
   // Analytics (MCD/MAGI/MASA)
   analyticsSaveSession: (data) => ipcRenderer.invoke('analytics-save-session', data),

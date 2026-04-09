@@ -2,12 +2,16 @@
 
 interface Window {
   electron: {
+    compactContext: (params: { messages: any[]; model: string; language: string }) => Promise<{ summary: string; error: string | null }>
     ollamaChat: (params: any) => Promise<any>
     ollamaChatStream: (params: any) => Promise<any>
     onStreamChunk: (callback: (chunk: any) => void) => () => void
     execCommand: (cmd: string) => Promise<{ stdout: string; stderr: string; error: string | null }>
+    gitCommand: (params: { command: string; cwd: string }) => Promise<{ stdout: string; stderr: string; error: string | null }>
     readFile: (path: string) => Promise<{ content: string | null; error: string | null }>
     writeFile: (params: { filePath: string; content: string }) => Promise<{ error: string | null }>
+    undoLastWrite: () => Promise<{ error: string | null; restored: string | null }>
+    listSnapshots: () => Promise<{ filePath: string; timestamp: number; fileName: string }[]>
     listModels: () => Promise<any>
     saveConversations: (data: any) => Promise<{ error: string | null }>
     loadConversations: () => Promise<any>
@@ -44,6 +48,10 @@ interface Window {
     mcpListConnections: () => Promise<string[]>
     // Collaborative agents
     parallelChat: (params: any) => Promise<any>
+    // Audit Log
+    auditLogAppend: (entry: any) => Promise<{ error: string | null }>
+    auditLogLoad: () => Promise<any[]>
+    auditLogClear: () => Promise<{ error: string | null }>
     // Analytics (MCD/MAGI/MASA)
     analyticsSaveSession: (data: any) => Promise<{ error: string | null }>
     analyticsLoad: () => Promise<any>

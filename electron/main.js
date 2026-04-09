@@ -13,6 +13,7 @@ let activeStreamRequest = null
 
 const CONVERSATIONS_PATH = path.join(app.getPath('userData'), 'conversations.json')
 const ANALYTICS_PATH = path.join(app.getPath('userData'), 'analytics.json')
+const AUDIT_LOG_PATH = path.join(app.getPath('userData'), 'audit-log.json')
 
 // ─── Analytics Engine (MCD + MASA) ──────────────────────────────────
 // Silent data collection + secure local storage with auto-purge
@@ -132,6 +133,51 @@ function createWindow() {
   ipcMain.handle('window-close', () => win.hide())
   ipcMain.handle('window-is-maximized', () => win.isMaximized())
 }
+
+// ─── IPC: Context Compaction (summarize old messages via model) ──────
+ipcMain.handle('compact-context', async (event, { messages, model, language }) => {
+  return new Promise((resolve) => {
+    const compactPrompt = language === 'pt'
+      ? `Resuma a conversa abaixo em um parágrafo compacto preservando: (1) fatos-chave mencionados, (2) decisões tomadas, (3) arquivos/caminhos referenciados, (4) estado atual do trabalho. Seja denso e factual, sem floreios. Máximo 300 palavras.`
+      : `Summarize the conversation below in one compact paragraph preserving: (1) key facts mentioned, (2) decisions made, (3) files/paths referenced, (4) current state of work. Be dense and factual, no fluff. Maximum 300 words.`
+
+    const compactMessages = [
+      { role: 'system', content: compactPrompt },
+      { role: 'user', content: messages.map(m => `[${m.role}]: ${m.content?.substring(0, 500) || '(tool call)'}`).join('\n') }
+    ]
+
+    const body = JSON.stringify({
+      model,
+      messages: compactMessages,
+      stream: false,
+      options: { temperature: 0.1 }
+    })
+
+    const options = {
+      hostname: 'localhost',
+      port: 11434,
+      path: '/v1/chat/completions',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+    }
+
+    const req = http.request(options, (res) => {
+      let data = ''
+      res.on('data', chunk => data += chunk)
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data)
+          const summary = parsed.choices?.[0]?.message?.content || ''
+          resolve({ summary, error: null })
+        } catch (e) { resolve({ summary: '', error: e.message }) }
+      })
+    })
+    req.on('error', (e) => resolve({ summary: '', error: e.message }))
+    req.setTimeout(30000, () => { req.destroy(); resolve({ summary: '', error: 'Compaction timeout' }) })
+    req.write(body)
+    req.end()
+  })
+})
 
 // ─── IPC: Ollama chat (non-streaming) ────────────────────────────────
 ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperature, max_tokens }) => {
@@ -281,6 +327,29 @@ ipcMain.handle('exec-command', async (event, cmd) => {
   })
 })
 
+// ─── IPC: Git command (sandboxed to git only) ──────────────────────
+ipcMain.handle('git-command', async (event, { command, cwd }) => {
+  return new Promise((resolve) => {
+    // Security: only allow git subcommands, no pipes/chains
+    if (/[;&|`$]/.test(command)) {
+      return resolve({ stdout: '', stderr: '', error: 'Invalid characters in git command' })
+    }
+    exec(`git ${command}`, {
+      cwd: cwd || undefined,
+      shell: 'powershell.exe',
+      timeout: 30000,
+      maxBuffer: 5 * 1024 * 1024,
+      windowsHide: true
+    }, (err, stdout, stderr) => {
+      resolve({
+        stdout: stdout || '',
+        stderr: stderr || '',
+        error: err && !stdout && !stderr ? err.message : null
+      })
+    })
+  })
+})
+
 // ─── IPC: Read file ──────────────────────────────────────────────────
 ipcMain.handle('read-file', async (event, filePath) => {
   try {
@@ -290,15 +359,53 @@ ipcMain.handle('read-file', async (event, filePath) => {
   }
 })
 
-// ─── IPC: Write file ─────────────────────────────────────────────────
+// ─── IPC: Write file (with auto-snapshot for undo) ──────────────────
+const SNAPSHOTS_DIR = path.join(app.getPath('userData'), 'snapshots')
+const fileSnapshots = [] // Stack: [{filePath, backupPath, timestamp}]
+
 ipcMain.handle('write-file', async (event, { filePath, content }) => {
   try {
+    // Auto-snapshot: save backup before overwriting
+    if (fs.existsSync(filePath)) {
+      fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true })
+      const backupName = `${Date.now()}_${path.basename(filePath)}`
+      const backupPath = path.join(SNAPSHOTS_DIR, backupName)
+      fs.copyFileSync(filePath, backupPath)
+      fileSnapshots.push({ filePath, backupPath, timestamp: Date.now() })
+      // Keep max 50 snapshots
+      while (fileSnapshots.length > 50) {
+        const old = fileSnapshots.shift()
+        try { fs.unlinkSync(old.backupPath) } catch {}
+      }
+    }
     fs.mkdirSync(path.dirname(filePath), { recursive: true })
     fs.writeFileSync(filePath, content, 'utf-8')
     return { error: null }
   } catch (e) {
     return { error: e.message }
   }
+})
+
+ipcMain.handle('undo-last-write', async () => {
+  if (fileSnapshots.length === 0) {
+    return { error: 'No snapshots available', restored: null }
+  }
+  const snap = fileSnapshots.pop()
+  try {
+    fs.copyFileSync(snap.backupPath, snap.filePath)
+    fs.unlinkSync(snap.backupPath)
+    return { error: null, restored: snap.filePath }
+  } catch (e) {
+    return { error: e.message, restored: null }
+  }
+})
+
+ipcMain.handle('list-snapshots', async () => {
+  return fileSnapshots.map(s => ({
+    filePath: s.filePath,
+    timestamp: s.timestamp,
+    fileName: path.basename(s.filePath)
+  }))
 })
 
 // ─── IPC: List models ────────────────────────────────────────────────
@@ -873,6 +980,40 @@ ipcMain.handle('parallel-chat', async (event, { tasks, model, temperature, max_t
 
   const results = await Promise.all(tasks.map(executeTask))
   return results
+})
+
+// ─── IPC: Audit Log ────────────────────────────────────────────────────
+function loadAuditLog() {
+  try {
+    if (fs.existsSync(AUDIT_LOG_PATH)) {
+      return JSON.parse(fs.readFileSync(AUDIT_LOG_PATH, 'utf-8'))
+    }
+  } catch {}
+  return []
+}
+
+function saveAuditLog(entries) {
+  try {
+    // Keep max 1000 entries, auto-purge old
+    const trimmed = entries.slice(-1000)
+    fs.writeFileSync(AUDIT_LOG_PATH, JSON.stringify(trimmed, null, 2), 'utf-8')
+  } catch {}
+}
+
+ipcMain.handle('audit-log-append', async (event, entry) => {
+  const log = loadAuditLog()
+  log.push({ ...entry, timestamp: Date.now() })
+  saveAuditLog(log)
+  return { error: null }
+})
+
+ipcMain.handle('audit-log-load', async () => {
+  return loadAuditLog()
+})
+
+ipcMain.handle('audit-log-clear', async () => {
+  saveAuditLog([])
+  return { error: null }
 })
 
 // ─── IPC: Analytics (MCD/MAGI/MASA) ────────────────────────────────────

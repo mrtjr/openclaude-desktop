@@ -21,6 +21,7 @@ export interface AppSettings {
   contextLimit: number
   memoryEnabled: boolean
   analyticsEnabled: boolean
+  confirmDangerousTools: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -48,6 +49,7 @@ REGRAS OBRIGATÓRIAS:
   contextLimit: 50,
   memoryEnabled: false,
   analyticsEnabled: true,
+  confirmDangerousTools: true,
 }
 
 export function loadSettings(): AppSettings {
@@ -238,6 +240,17 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
               <span>Memória persistente</span>
               <div className={`toggle ${local.memoryEnabled ? 'on' : ''}`}
                 onClick={() => setLocal(s => ({ ...s, memoryEnabled: !s.memoryEnabled }))}>
+                <div className="toggle-knob" />
+              </div>
+            </label>
+          </div>
+
+          {/* Tool Confirmation */}
+          <div className="settings-group">
+            <label className="settings-label">
+              <span>{local.language === 'pt' ? 'Confirmar ferramentas perigosas' : 'Confirm dangerous tools'}</span>
+              <div className={`toggle ${local.confirmDangerousTools ? 'on' : ''}`}
+                onClick={() => setLocal(s => ({ ...s, confirmDangerousTools: !s.confirmDangerousTools }))}>
                 <div className="toggle-knob" />
               </div>
             </label>
