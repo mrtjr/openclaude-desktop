@@ -376,6 +376,11 @@ ABSOLUTE RULES:
 YOU HAVE UNLIMITED TIME. Use as many steps as needed. Delivery quality matters more than speed.`
 }
 
+const PLANNING_MODE_PROMPT: Record<string, string> = {
+  pt: `[MODO PLANEJAMENTO ATIVO]\nVocê DEVE criar ou atualizar o plano de tarefas usando 'plan_tasks' antes de realizar qualquer ação técnica significativa. Explique seu raciocínio de planejamento para o usuário.`,
+  en: `[PLANNING MODE ACTIVE]\nYou MUST create or update the task plan using 'plan_tasks' before performing any significant technical action. Explain your planning reasoning to the user.`
+}
+
 const LANGUAGE_RULE: Record<string, string> = {
   pt: '\n\nREGRA CRÍTICA DE IDIOMA: Você DEVE responder TODAS as mensagens em português brasileiro. Não importa em que idioma o usuário escreva, sua resposta DEVE ser em português. Isso inclui explicações, comentários em código, nomes de variáveis em exemplos, e qualquer texto. NUNCA responda em inglês ou outro idioma.',
   en: '\n\nCRITICAL LANGUAGE RULE: You MUST respond to ALL messages in English. No matter what language the user writes in, your response MUST be in English. This includes explanations, code comments, variable names in examples, and any text. NEVER respond in Portuguese or any other language.'
@@ -459,6 +464,7 @@ export default function App() {
   const [isAgentMode, setIsAgentMode] = useState(false)
   const [showAnalytics, setShowAnalytics] = useState(false)
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
+  const [showPermissionMenu, setShowPermissionMenu] = useState(false)
   const [isListening, setIsListening] = useState(false)
   const [ttsEnabled, setTtsEnabled] = useState(false)
   const recognitionRef = useRef<any>(null)
@@ -611,6 +617,7 @@ export default function App() {
       if (e.key === 'Escape') {
         if (showSettings) setShowSettings(false)
         if (showModelDropdown) setShowModelDropdown(false)
+        if (showPermissionMenu) setShowPermissionMenu(false)
       }
       // Ctrl+N: new conversation
       if (e.ctrlKey && e.key === 'n') {
@@ -820,8 +827,23 @@ export default function App() {
   }
 
   const executeTool = async (name: string, args: Record<string, any>): Promise<string> => {
-    // Permission check: dangerous tools require user approval (unless disabled)
-    if (settings.confirmDangerousTools !== false && DANGEROUS_TOOLS.has(name)) {
+    // Permission check: dangerous tools require user approval (unless disabled by level)
+    const level = settings.permissionLevel || 'ask'
+    let needsApproval = false
+
+    if (level === 'ask') {
+      needsApproval = DANGEROUS_TOOLS.has(name)
+    } else if (level === 'auto_edits') {
+      // Auto-approve write/git, but ask for others
+      const editTools = new Set(['write_file', 'git_command', 'undo_last_write'])
+      needsApproval = DANGEROUS_TOOLS.has(name) && !editTools.has(name)
+    } else if (level === 'planning') {
+      needsApproval = DANGEROUS_TOOLS.has(name)
+    } else if (level === 'ignore') {
+      needsApproval = false
+    }
+
+    if (needsApproval) {
       const approved = await requestApproval(name, args)
       if (!approved) {
         // Audit: log denied action
@@ -1039,6 +1061,28 @@ export default function App() {
       try {
         const conv = conversationsRef.current.find(c => c.id === activeConvId)
         const lang = settings.language || 'pt'
+
+        let finalProvider = settings.provider || 'ollama'
+        let finalModel = selectedModel
+        let finalApiKey = ''
+        if (finalProvider === 'anthropic') {
+           finalModel = settings.anthropicModel || 'claude-sonnet-4-20250514'
+           finalApiKey = settings.anthropicApiKey
+        } else if (finalProvider === 'openai') {
+           finalModel = settings.openaiModel || 'gpt-4o'
+           finalApiKey = settings.openaiApiKey
+        } else if (finalProvider === 'gemini') {
+           finalModel = settings.geminiModel || 'gemini-2.0-flash'
+           finalApiKey = settings.geminiApiKey
+        } else if (finalProvider === 'openrouter') {
+           finalModel = settings.openrouterModel || 'google/gemini-2.5-pro'
+           finalApiKey = settings.openrouterApiKey
+        } else if (finalProvider === 'modal') {
+           finalModel = settings.modalModel || 'zai-org/GLM-5.1-FP8'
+           finalApiKey = settings.modalApiKey
+        }
+        const isNotOllama = finalProvider !== 'ollama'
+
         let systemPrompt = settings.systemPrompt || ''
         if (isAgentMode) {
           systemPrompt = AGENT_SYSTEM_PROMPT[lang] + (systemPrompt ? (lang === 'pt' ? "\n\nInstruções Adicionais:\n" : "\n\nAdditional Instructions:\n") + systemPrompt : "")
@@ -1091,7 +1135,7 @@ export default function App() {
           try {
             const compactResult = await window.electron.compactContext({
               messages: oldMessages,
-              model: selectedModel,
+              model: finalModel,
               language: lang
             })
             if (compactResult.summary) {
@@ -1142,7 +1186,7 @@ export default function App() {
 
         let continueLoop = true
         let allMessages: any[] = [...systemMessages, ...memoryMessages, ...primingMessages, ...trimmedHistory]
-        const useStreaming = settings.streamingEnabled
+        const useStreaming = isNotOllama ? false : settings.streamingEnabled
         let steps = 0
         let idleSteps = 0 // steps with no real tool execution (only memory updates, errors, etc.)
         const recentToolCalls: string[] = []
@@ -1164,7 +1208,14 @@ export default function App() {
             })
           }
 
-          if (isAgentMode && isSmallModel(selectedModel)) {
+          if (settings.permissionLevel === 'planning') {
+            requestMessages.push({
+              role: 'system',
+              content: PLANNING_MODE_PROMPT[lang]
+            })
+          }
+
+          if (isAgentMode && isSmallModel(finalModel)) {
             requestMessages.push({
               role: 'system',
               content: `[CRITICAL AGENT DIRECTIVE]\nYou are an autonomous Agent with unlimited steps. You MUST keep calling tools until the user's goal is 100% complete.\n- If the goal is NOT fully done, you MUST output a tool call. Do NOT output a text-only response.\n- Use 'update_working_memory' every few steps.\n- Only give a final text answer when every single subtask is done.\n- NEVER say "I'll do X next" — just DO it by calling the tool NOW.`
@@ -1223,7 +1274,7 @@ export default function App() {
             streamCleanupRef.current = cleanup
 
             window.electron.ollamaChatStream({
-              model: selectedModel,
+              model: finalModel,
               messages: requestMessages,
               tools: TOOLS,
               temperature: settings.temperature,
@@ -1339,13 +1390,31 @@ export default function App() {
 
         } else {
           // ─── Non-streaming path ────────────────────────────
-          const response = await window.electron.ollamaChat({
-            model: selectedModel,
-            messages: requestMessages,
-            tools: TOOLS,
-            temperature: settings.temperature,
-            max_tokens: settings.maxTokens
-          })
+          let response: any
+          if (isNotOllama) {
+            response = await window.electron.providerChat({
+              provider: finalProvider,
+              apiKey: finalApiKey,
+              model: finalModel,
+              messages: requestMessages,
+              tools: TOOLS,
+              temperature: settings.temperature,
+              max_tokens: settings.maxTokens,
+              modalHostname: settings.modalHostname
+            })
+          } else {
+            response = await window.electron.ollamaChat({
+              model: finalModel,
+              messages: requestMessages,
+              tools: TOOLS,
+              temperature: settings.temperature,
+              max_tokens: settings.maxTokens
+            })
+          }
+
+          if (response.error) {
+             throw new Error(response.error)
+          }
 
           const choice = response.choices?.[0]
           if (!choice) break
@@ -1534,7 +1603,7 @@ export default function App() {
 
   // ─── Render ────────────────────────────────────────────────────
   return (
-    <div className="app-container">
+    <div className={`app-container ${settings.permissionLevel === 'ignore' ? 'ignore-mode-active' : ''}`}>
       {/* Toast notifications */}
       <div className="toast-container">
         {toasts.map(t => (
@@ -1684,20 +1753,38 @@ export default function App() {
 
           <div className="sidebar-footer">
             <div className="model-selector">
-              <button className="model-btn" onClick={() => setShowModelDropdown(!showModelDropdown)}>
-                <Bot size={14} />
-                <span className="model-name">{selectedModel}</span>
-                <ChevronDown size={12} />
-              </button>
-              {showModelDropdown && (
-                <div className="model-dropdown">
-                  {models.map(m => (
-                    <button key={m} className={`model-option ${m === selectedModel ? 'active' : ''}`}
-                      onClick={() => { setSelectedModel(m); localStorage.setItem('openclaude-model', m); setShowModelDropdown(false) }}>
-                      {m}
-                    </button>
-                  ))}
-                </div>
+              {settings.provider !== 'ollama' ? (
+                <button className="model-btn" onClick={() => setShowSettings(true)}>
+                  <Globe size={14} />
+                  <span className="model-name" style={{ textTransform: 'capitalize' }}>
+                    {settings.provider}: {
+                      settings.provider === 'anthropic' ? settings.anthropicModel :
+                      settings.provider === 'openai' ? settings.openaiModel :
+                      settings.provider === 'openrouter' ? settings.openrouterModel :
+                      settings.provider === 'modal' ? settings.modalModel :
+                      settings.geminiModel
+                    }
+                  </span>
+                  <SettingsIcon size={12} />
+                </button>
+              ) : (
+                <>
+                  <button className="model-btn" onClick={() => setShowModelDropdown(!showModelDropdown)}>
+                    <Bot size={14} />
+                    <span className="model-name">{selectedModel}</span>
+                    <ChevronDown size={12} />
+                  </button>
+                  {showModelDropdown && (
+                    <div className="model-dropdown">
+                      {models.map(m => (
+                        <button key={m} className={`model-option ${m === selectedModel ? 'active' : ''}`}
+                          onClick={() => { setSelectedModel(m); localStorage.setItem('openclaude-model', m); setShowModelDropdown(false) }}>
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -1705,12 +1792,25 @@ export default function App() {
 
         {/* Chat area */}
         <div className="chat-area">
+          {settings.permissionLevel === 'ignore' && (
+            <div className="ignore-warning-banner">
+              <AlertCircle size={14} />
+              <span>{settings.language === 'en' ? 'Bypass Mode Active: All tools will be auto-approved' : 'Modo Bypass Ativo: Ferramentas serão aprovadas automaticamente'}</span>
+            </div>
+          )}
           <div className="messages-container" ref={messagesContainerRef}>
             {!activeConv || activeConv.messages.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-logo-large">OC</div>
                 <h2>Como posso ajudar?</h2>
-                <p>Modelo atual: <strong>{selectedModel}</strong> via Ollama</p>
+                <p>Modelo atual: <strong>
+                  {settings.provider === 'ollama' ? selectedModel : 
+                   settings.provider === 'anthropic' ? settings.anthropicModel :
+                   settings.provider === 'openai' ? settings.openaiModel :
+                   settings.provider === 'openrouter' ? settings.openrouterModel :
+                   settings.provider === 'modal' ? settings.modalModel :
+                   settings.geminiModel}
+                </strong> via <span style={{ textTransform: 'capitalize' }}>{settings.provider}</span></p>
                 <div className="suggestions-grid">
                   {SUGGESTIONS.map(s => (
                     <button key={s.text} className="suggestion-card" onClick={() => { setInput(s.text); textareaRef.current?.focus() }}>
@@ -1929,6 +2029,77 @@ export default function App() {
                 <Zap size={18} />
                 <span>Agente</span>
               </button>
+
+              <div className="input-actions-divider" />
+              
+              <div className="permission-selector">
+                <button 
+                  className={`permission-btn ${settings.permissionLevel === 'ignore' ? 'ignore' : ''}`}
+                  onClick={() => setShowPermissionMenu(!showPermissionMenu)}
+                  title="Alterar nível de permissão"
+                >
+                  {settings.permissionLevel === 'ignore' ? <AlertCircle size={16} /> :
+                   settings.permissionLevel === 'auto_edits' ? <Code size={16} /> :
+                   settings.permissionLevel === 'planning' ? <ListChecks size={16} /> :
+                   <Wrench size={16} />}
+                  <span>{
+                    settings.permissionLevel === 'ignore' ? (settings.language === 'pt' ? 'Ignorar permissões' : 'Ignore Permissions') :
+                    settings.permissionLevel === 'auto_edits' ? (settings.language === 'pt' ? 'Aceitar edições' : 'Auto-accept edits') :
+                    settings.permissionLevel === 'planning' ? (settings.language === 'pt' ? 'Modo Planejamento' : 'Planning Mode') :
+                    (settings.language === 'pt' ? 'Solicitar permissões' : 'Ask Permissions')
+                  }</span>
+                  <ChevronDown size={14} />
+                </button>
+
+                {showPermissionMenu && (
+                  <div className="permission-menu">
+                    {[
+                      { 
+                        id: 'ask', 
+                        title: settings.language === 'en' ? 'Ask Permissions' : 'Solicitar permissões', 
+                        desc: settings.language === 'en' ? 'Always ask before performing technical actions' : 'Sempre perguntar antes de fazer alterações', 
+                        icon: Wrench 
+                      },
+                      { 
+                        id: 'auto_edits', 
+                        title: settings.language === 'en' ? 'Auto-accept edits' : 'Aceitar edições automaticamente', 
+                        desc: settings.language === 'en' ? 'Automatically accept file writes and git commands' : 'Aceitar automaticamente todas as edições de arquivo', 
+                        icon: Code 
+                      },
+                      { 
+                        id: 'planning', 
+                        title: settings.language === 'en' ? 'Planning mode' : 'Modo de planejamento', 
+                        desc: settings.language === 'en' ? 'Require a task plan before performing significant actions' : 'Criar um plano antes de fazer alterações', 
+                        icon: ListChecks 
+                      },
+                      { 
+                        id: 'ignore', 
+                        title: settings.language === 'en' ? 'Ignore permissions' : 'Ignorar permissões', 
+                        desc: settings.language === 'en' ? 'Bypass all approvals (dangerous)' : 'Aceita todas as permissões', 
+                        icon: AlertCircle, 
+                        extraClass: 'ignore-opt' 
+                      }
+                    ].map(opt => (
+                      <div 
+                        key={opt.id} 
+                        className={`permission-option ${opt.id === settings.permissionLevel ? 'active' : ''} ${opt.extraClass || ''}`}
+                        onClick={() => {
+                          const newSettings = { ...settings, permissionLevel: opt.id as any }
+                          setSettings(newSettings)
+                          setShowPermissionMenu(false)
+                        }}
+                      >
+                        <div className="perm-icon-box"><opt.icon size={16} /></div>
+                        <div className="perm-info">
+                          <span className="perm-title">{opt.title}</span>
+                          <span className="perm-desc">{opt.desc}</span>
+                        </div>
+                        {opt.id === settings.permissionLevel && <CheckCircle2 size={16} className="perm-check" />}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="input-footer">
               <p className="input-hint">OpenClaude pode cometer erros. Verifique informacoes importantes. | Ctrl+N nova conversa | Ctrl+, config</p>

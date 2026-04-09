@@ -689,7 +689,7 @@ ipcMain.handle('load-memory', async () => loadMemory())
 ipcMain.handle('save-memory', async (event, data) => saveMemory(data))
 
 // ─── IPC: Multi-provider chat (OpenAI, Gemini, Anthropic) ──────────
-ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, messages, tools, temperature, max_tokens, stream }) => {
+ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, messages, tools, temperature, max_tokens, stream, modalHostname }) => {
   return new Promise((resolve, reject) => {
     let hostname, apiPath, headers, bodyObj
 
@@ -729,6 +729,25 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
         ...(systemMsg ? { system: systemMsg.content } : {}),
         temperature: temperature ?? 0.7
       }
+    } else if (provider === 'openrouter') {
+      hostname = 'openrouter.ai'
+      apiPath = '/api/v1/chat/completions'
+      headers = {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://github.com/mrtjr/openclaude-desktop',
+        'X-Title': 'OpenClaude Desktop'
+      }
+      bodyObj = { model, messages, tools: tools || undefined, stream: false, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
+    } else if (provider === 'modal') {
+      hostname = modalHostname || 'api.us-west-2.modal.direct'
+      apiPath = '/v1/chat/completions'
+      headers = {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'OpenClaude-Desktop'
+      }
+      bodyObj = { model, messages, tools: tools || undefined, stream: false, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
     } else {
       return resolve({ error: `Provider "${provider}" not supported` })
     }
@@ -766,6 +785,74 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
     })
     req.on('error', (e) => resolve({ error: e.message }))
     req.write(body)
+    req.end()
+  })
+})
+
+// ─── IPC: List provider models (OpenRouter, OpenAI, Gemini, Anthropic) ──
+ipcMain.handle('list-provider-models', async (event, { provider, apiKey, modalHostname }) => {
+  return new Promise((resolve) => {
+    let hostname, apiPath, headers, query = ''
+
+    if (provider === 'openai') {
+      hostname = 'api.openai.com'
+      apiPath = '/v1/models'
+      headers = { 'Authorization': `Bearer ${apiKey}`, 'User-Agent': 'OpenClaude-Desktop' }
+    } else if (provider === 'openrouter') {
+      hostname = 'openrouter.ai'
+      apiPath = '/api/v1/models'
+      headers = { 'Authorization': `Bearer ${apiKey}`, 'User-Agent': 'OpenClaude-Desktop' }
+    } else if (provider === 'modal') {
+      hostname = modalHostname || 'api.us-west-2.modal.direct'
+      apiPath = '/v1/models'
+      headers = { 'Authorization': `Bearer ${apiKey}`, 'User-Agent': 'OpenClaude-Desktop' }
+    } else if (provider === 'anthropic') {
+      hostname = 'api.anthropic.com'
+      apiPath = '/v1/models'
+      headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'User-Agent': 'OpenClaude-Desktop' }
+    } else if (provider === 'gemini') {
+      hostname = 'generativelanguage.googleapis.com'
+      apiPath = `/v1beta/models?key=${apiKey}`
+      headers = { 'User-Agent': 'OpenClaude-Desktop' }
+    } else {
+      return resolve({ error: `Provider "${provider}" not supported for model listing` })
+    }
+
+    const options = {
+      hostname,
+      path: apiPath,
+      method: 'GET',
+      headers
+    }
+
+    const req = https.request(options, (res) => {
+      let data = ''
+      res.on('data', chunk => data += chunk)
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data)
+          if (res.statusCode >= 400) {
+            return resolve({ error: `API error ${res.statusCode}: ${JSON.stringify(parsed)}` })
+          }
+
+          let models = []
+          if (provider === 'openai' || provider === 'openrouter' || provider === 'modal') {
+            models = (parsed.data || []).map(m => m.id).sort()
+          } else if (provider === 'anthropic') {
+            models = (parsed.data || []).map(m => m.id).sort()
+          } else if (provider === 'gemini') {
+            // Filter models that support generateContent
+            models = (parsed.models || [])
+              .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
+              .map(m => m.name.replace('models/', ''))
+              .sort()
+          }
+          resolve({ models, error: null })
+        } catch (e) { resolve({ error: e.message }) }
+      })
+    })
+
+    req.on('error', (e) => resolve({ error: e.message }))
     req.end()
   })
 })

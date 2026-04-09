@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v1.5.0-ff6b35?style=for-the-badge&logo=windows" alt="Download" /></a>
+  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v1.5.6-ff6b35?style=for-the-badge&logo=windows" alt="Download" /></a>
   <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License" />
   <img src="https://img.shields.io/badge/platform-Windows-lightgrey?style=for-the-badge" alt="Platform" />
 </p>
@@ -379,6 +379,13 @@ openclaude-desktop/
 ---
 
 ## Changelog
+
+### v1.5.6 — UX Polish & Security Awareness
+- **Security Visibility**: Added persistent visual warnings (banner + pulsing border) when "Ignore Permissions" (bypass mode) is active.
+- **Bilingual Polish**: Fully translated Planning Mode prompts and permission menu (EN/PT).
+- **Modal Hostname**: Hostname is now configurable in Settings (supports regional overrides).
+- **State Fixes**: Model list and fetch errors now reset correctly when switching providers.
+- **Redundancy Cleanup**: Removed legacy confirmation toggles in favor of the new permission system.
 
 ### v1.5.0 — Robustness & Safety Engine
 - **Context Compaction**: Old messages are summarized by the model instead of being discarded. Persistent memory injected automatically.

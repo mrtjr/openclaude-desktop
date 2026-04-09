@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { X } from 'lucide-react'
+import { X, RefreshCw, Loader2 } from 'lucide-react'
 
-export type Provider = 'ollama' | 'openai' | 'gemini' | 'anthropic'
+export type Provider = 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal'
 export type Language = 'pt' | 'en'
+export type PermissionLevel = 'ask' | 'auto_edits' | 'planning' | 'ignore'
 
 export interface AppSettings {
   autoStart: boolean
@@ -18,10 +19,15 @@ export interface AppSettings {
   geminiModel: string
   anthropicApiKey: string
   anthropicModel: string
+  openrouterApiKey: string
+  openrouterModel: string
+  modalApiKey: string
+  modalModel: string
+  modalHostname: string
   contextLimit: number
   memoryEnabled: boolean
   analyticsEnabled: boolean
-  confirmDangerousTools: boolean
+  permissionLevel: PermissionLevel
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -46,10 +52,15 @@ REGRAS OBRIGATÓRIAS:
   geminiModel: 'gemini-2.0-flash',
   anthropicApiKey: '',
   anthropicModel: 'claude-sonnet-4-20250514',
+  openrouterApiKey: '',
+  openrouterModel: 'google/gemini-2.5-pro',
+  modalApiKey: '',
+  modalModel: 'zai-org/GLM-5.1-FP8',
+  modalHostname: 'api.us-west-2.modal.direct',
   contextLimit: 50,
   memoryEnabled: false,
   analyticsEnabled: true,
-  confirmDangerousTools: true,
+  permissionLevel: 'ask',
 }
 
 export function loadSettings(): AppSettings {
@@ -75,12 +86,22 @@ interface SettingsProps {
 
 export default function Settings({ isOpen, onClose, settings, onSave }: SettingsProps) {
   const [local, setLocal] = useState<AppSettings>({ ...settings })
+  const [fetchedModels, setFetchedModels] = useState<string[]>([])
+  const [isFetching, setIsFetching] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
 
   useEffect(() => {
     if (isOpen) {
       setLocal({ ...settings })
+      setFetchedModels([])
+      setFetchError(null)
     }
   }, [isOpen, settings])
+
+  useEffect(() => {
+    setFetchedModels([])
+    setFetchError(null)
+  }, [local.provider])
 
   if (!isOpen) return null
 
@@ -91,6 +112,41 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
     } catch {}
     onSave(local)
     onClose()
+  }
+
+  const fetchModels = async () => {
+    const apiKey = local.provider === 'openai' ? local.openaiApiKey :
+                   local.provider === 'gemini' ? local.geminiApiKey :
+                   local.provider === 'anthropic' ? local.anthropicApiKey :
+                   local.provider === 'modal' ? local.modalApiKey :
+                   local.provider === 'openrouter' ? local.openrouterApiKey : ''
+    
+    if (!apiKey) {
+      setFetchError(local.language === 'pt' ? 'Insira a API Key primeiro' : 'Enter API Key first')
+      return
+    }
+
+    setIsFetching(true)
+    setFetchError(null)
+    try {
+      const result = await (window as any).electron.listProviderModels({ 
+        provider: local.provider, 
+        apiKey,
+        modalHostname: local.modalHostname 
+      })
+      if (result.error) {
+        setFetchError(result.error)
+      } else if (result.models) {
+        setFetchedModels(result.models)
+        if (result.models.length === 0) {
+          setFetchError(local.language === 'pt' ? 'Nenhum modelo encontrado' : 'No models found')
+        }
+      }
+    } catch (e: any) {
+      setFetchError(e.message)
+    } finally {
+      setIsFetching(false)
+    }
   }
 
   return (
@@ -131,6 +187,8 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
               <option value="openai">OpenAI</option>
               <option value="gemini">Google Gemini</option>
               <option value="anthropic">Anthropic Claude</option>
+              <option value="openrouter">OpenRouter</option>
+              <option value="modal">Modal (Research)</option>
             </select>
           </div>
 
@@ -146,17 +204,37 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                   onChange={(e) => setLocal(s => ({ ...s, openaiApiKey: e.target.value }))}
                   placeholder="sk-..."
                 />
+                <button 
+                  className="settings-fetch-btn" 
+                  onClick={fetchModels} 
+                  disabled={isFetching || !local.openaiApiKey}
+                >
+                  {isFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                  <span>{local.language === 'pt' ? 'Detectar Modelos' : 'Detect Models'}</span>
+                </button>
               </div>
               <div className="settings-group">
                 <label className="settings-label"><span>Modelo OpenAI</span></label>
                 <input
                   type="text"
                   className="settings-input"
+                  list="openai-models"
                   value={local.openaiModel}
                   onChange={(e) => setLocal(s => ({ ...s, openaiModel: e.target.value }))}
                   placeholder="gpt-4o"
                 />
+                <datalist id="openai-models">
+                  {fetchedModels.map(m => <option key={m} value={m} />)}
+                  {!fetchedModels.length && (
+                    <>
+                      <option value="gpt-4o" />
+                      <option value="gpt-4o-mini" />
+                      <option value="gpt-3.5-turbo" />
+                    </>
+                  )}
+                </datalist>
               </div>
+              {fetchError && <div className="settings-error" style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>{fetchError}</div>}
             </>
           )}
 
@@ -172,17 +250,37 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                   onChange={(e) => setLocal(s => ({ ...s, geminiApiKey: e.target.value }))}
                   placeholder="AIza..."
                 />
+                <button 
+                  className="settings-fetch-btn" 
+                  onClick={fetchModels} 
+                  disabled={isFetching || !local.geminiApiKey}
+                >
+                  {isFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                  <span>{local.language === 'pt' ? 'Detectar Modelos' : 'Detect Models'}</span>
+                </button>
               </div>
               <div className="settings-group">
                 <label className="settings-label"><span>Modelo Gemini</span></label>
                 <input
                   type="text"
                   className="settings-input"
+                  list="gemini-models"
                   value={local.geminiModel}
                   onChange={(e) => setLocal(s => ({ ...s, geminiModel: e.target.value }))}
                   placeholder="gemini-2.0-flash"
                 />
+                <datalist id="gemini-models">
+                  {fetchedModels.map(m => <option key={m} value={m} />)}
+                  {!fetchedModels.length && (
+                    <>
+                      <option value="gemini-2.0-flash" />
+                      <option value="gemini-1.5-pro" />
+                      <option value="gemini-1.5-flash" />
+                    </>
+                  )}
+                </datalist>
               </div>
+              {fetchError && <div className="settings-error" style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>{fetchError}</div>}
             </>
           )}
 
@@ -198,17 +296,137 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                   onChange={(e) => setLocal(s => ({ ...s, anthropicApiKey: e.target.value }))}
                   placeholder="sk-ant-..."
                 />
+                <button 
+                  className="settings-fetch-btn" 
+                  onClick={fetchModels} 
+                  disabled={isFetching || !local.anthropicApiKey}
+                >
+                  {isFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                  <span>{local.language === 'pt' ? 'Detectar Modelos' : 'Detect Models'}</span>
+                </button>
               </div>
               <div className="settings-group">
                 <label className="settings-label"><span>Modelo Anthropic</span></label>
                 <input
                   type="text"
                   className="settings-input"
+                  list="anthropic-models"
                   value={local.anthropicModel}
                   onChange={(e) => setLocal(s => ({ ...s, anthropicModel: e.target.value }))}
                   placeholder="claude-sonnet-4-20250514"
                 />
+                <datalist id="anthropic-models">
+                  {fetchedModels.map(m => <option key={m} value={m} />)}
+                  {!fetchedModels.length && (
+                    <>
+                      <option value="claude-3-5-sonnet-20241022" />
+                      <option value="claude-3-opus-20240229" />
+                      <option value="claude-3-haiku-20240307" />
+                    </>
+                  )}
+                </datalist>
               </div>
+              {fetchError && <div className="settings-error" style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>{fetchError}</div>}
+            </>
+          )}
+
+          {/* OpenRouter settings */}
+          {local.provider === 'openrouter' && (
+            <>
+              <div className="settings-group">
+                <label className="settings-label"><span>API Key OpenRouter</span></label>
+                <input
+                  type="password"
+                  className="settings-input"
+                  value={local.openrouterApiKey || ''}
+                  onChange={(e) => setLocal(s => ({ ...s, openrouterApiKey: e.target.value }))}
+                  placeholder="sk-or-v1-..."
+                />
+                <button 
+                  className="settings-fetch-btn" 
+                  onClick={fetchModels} 
+                  disabled={isFetching || !local.openrouterApiKey}
+                >
+                  {isFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                  <span>{local.language === 'pt' ? 'Detectar Modelos' : 'Detect Models'}</span>
+                </button>
+              </div>
+              <div className="settings-group">
+                <label className="settings-label"><span>Modelo OpenRouter</span></label>
+                <input
+                  type="text"
+                  className="settings-input"
+                  list="openrouter-models"
+                  value={local.openrouterModel || ''}
+                  onChange={(e) => setLocal(s => ({ ...s, openrouterModel: e.target.value }))}
+                  placeholder="google/gemini-2.5-pro"
+                />
+                <datalist id="openrouter-models">
+                  {fetchedModels.map(m => <option key={m} value={m} />)}
+                  {!fetchedModels.length && (
+                    <>
+                      <option value="google/gemini-2.0-flash-001" />
+                      <option value="openai/gpt-4o" />
+                      <option value="anthropic/claude-3.5-sonnet" />
+                    </>
+                  )}
+                </datalist>
+              </div>
+              {fetchError && <div className="settings-error" style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>{fetchError}</div>}
+            </>
+          )}
+
+          {/* Modal settings */}
+          {local.provider === 'modal' && (
+            <>
+              <div className="settings-group">
+                <label className="settings-label"><span>API Key Modal</span></label>
+                <input
+                  type="password"
+                  className="settings-input"
+                  value={local.modalApiKey || ''}
+                  onChange={(e) => setLocal(s => ({ ...s, modalApiKey: e.target.value }))}
+                  placeholder="modalresearch_..."
+                />
+                <button 
+                  className="settings-fetch-btn" 
+                  onClick={fetchModels} 
+                  disabled={isFetching || !local.modalApiKey}
+                >
+                  {isFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                  <span>{local.language === 'pt' ? 'Detectar Modelos' : 'Detect Models'}</span>
+                </button>
+              </div>
+              <div className="settings-group">
+                <label className="settings-label"><span>Modelo Modal</span></label>
+                <input
+                  type="text"
+                  className="settings-input"
+                  list="modal-models"
+                  value={local.modalModel || ''}
+                  onChange={(e) => setLocal(s => ({ ...s, modalModel: e.target.value }))}
+                  placeholder="zai-org/GLM-5.1-FP8"
+                />
+                <datalist id="modal-models">
+                  {fetchedModels.map(m => <option key={m} value={m} />)}
+                  {!fetchedModels.length && (
+                    <>
+                      <option value="zai-org/GLM-5.1-FP8" />
+                    </>
+                  )}
+                </datalist>
+              </div>
+              <div className="settings-group">
+                <label className="settings-label"><span>Hostname Modal</span></label>
+                <input
+                  type="text"
+                  className="settings-input"
+                  value={local.modalHostname || ''}
+                  onChange={(e) => setLocal(s => ({ ...s, modalHostname: e.target.value }))}
+                  placeholder="api.us-west-2.modal.direct"
+                />
+              </div>
+              {fetchError && <div className="settings-error" style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>{fetchError}</div>}
             </>
           )}
 
@@ -245,17 +463,6 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
             </label>
           </div>
 
-          {/* Tool Confirmation */}
-          <div className="settings-group">
-            <label className="settings-label">
-              <span>{local.language === 'pt' ? 'Confirmar ferramentas perigosas' : 'Confirm dangerous tools'}</span>
-              <div className={`toggle ${local.confirmDangerousTools ? 'on' : ''}`}
-                onClick={() => setLocal(s => ({ ...s, confirmDangerousTools: !s.confirmDangerousTools }))}>
-                <div className="toggle-knob" />
-              </div>
-            </label>
-          </div>
-
           {/* Analytics */}
           <div className="settings-group">
             <label className="settings-label">
@@ -282,6 +489,22 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
               onChange={(e) => setLocal(s => ({ ...s, temperature: parseFloat(e.target.value) }))}
               className="settings-slider"
             />
+          </div>
+
+          <div className="settings-group">
+            <label className="settings-label">
+              <span>{local.language === 'pt' ? 'Nível de Permissão' : 'Permission Level'}</span>
+            </label>
+            <select
+              className="settings-select"
+              value={local.permissionLevel || 'ask'}
+              onChange={(e) => setLocal(s => ({ ...s, permissionLevel: e.target.value as PermissionLevel }))}
+            >
+              <option value="ask">{local.language === 'pt' ? 'Solicitar permissões' : 'Always ask'}</option>
+              <option value="auto_edits">{local.language === 'pt' ? 'Aceitar edições automaticamente' : 'Auto-accept edits'}</option>
+              <option value="planning">{local.language === 'pt' ? 'Modo de planejamento' : 'Planning mode'}</option>
+              <option value="ignore">{local.language === 'pt' ? 'Ignorar permissões' : 'Ignore all'}</option>
+            </select>
           </div>
 
           {/* Context limit */}

@@ -362,6 +362,155 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 }
 .settings-save-btn:hover { background: var(--accent-hover); }
 
+.settings-fetch-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(255, 107, 53, 0.1);
+  border: 1px solid rgba(255, 107, 53, 0.2);
+  border-radius: 8px;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s;
+  align-self: flex-start;
+  margin-top: -4px;
+}
+.settings-fetch-btn:hover:not(:disabled) {
+  background: rgba(255, 107, 53, 0.2);
+  border-color: var(--accent);
+}
+.settings-fetch-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(1);
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+.settings-error {
+  animation: shake 0.4s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+/* ── Permission Selector ─────────────────────────────────────── */
+.permission-selector {
+  position: relative;
+  display: flex;
+}
+
+.permission-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--surface-light);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.permission-btn:hover {
+  background: var(--surface-lighter);
+  border-color: var(--accent);
+}
+.permission-btn.ignore {
+  background: rgba(255, 107, 53, 0.1);
+  border-color: rgba(255, 107, 53, 0.3);
+  color: var(--accent);
+}
+.permission-btn.ignore:hover {
+  background: rgba(255, 107, 53, 0.2);
+  border-color: var(--accent);
+}
+
+.permission-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  width: 320px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  padding: 6px;
+  z-index: 1000;
+  animation: slideUp 0.2s ease-out;
+}
+
+.permission-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid transparent;
+}
+.permission-option:hover {
+  background: var(--surface-light);
+}
+.permission-option.active {
+  background: rgba(255, 107, 53, 0.08);
+  border-color: rgba(255, 107, 53, 0.2);
+}
+
+.perm-icon-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--surface-lighter);
+  color: var(--text-secondary);
+}
+.active .perm-icon-box {
+  background: var(--accent);
+  color: white;
+}
+.permission-option.ignore-opt:hover {
+  background: rgba(255, 107, 53, 0.12);
+}
+
+.perm-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.perm-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+.perm-desc {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.perm-check {
+  color: var(--accent);
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* ── Toggle switch ────────────────────────────────────────────── */
 .toggle {
   width: 44px;
@@ -647,6 +796,50 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
   border-bottom: 1px solid var(--border);
 }
 .analytics-section-title:first-child { margin-top: 0; }
+
+/* ── Ignore mode improvements ── */
+.app-container.ignore-mode-active {
+  box-shadow: inset 0 0 15px rgba(244, 67, 54, 0.4);
+  animation: ignore-border-pulse 3s infinite;
+}
+
+@keyframes ignore-border-pulse {
+  0% { box-shadow: inset 0 0 5px rgba(244, 67, 54, 0.4); }
+  50% { box-shadow: inset 0 0 20px rgba(244, 67, 54, 0.6); }
+  100% { box-shadow: inset 0 0 5px rgba(244, 67, 54, 0.4); }
+}
+
+.ignore-warning-banner {
+  background: rgba(244, 67, 54, 0.15);
+  border-bottom: 2px solid rgba(244, 67, 54, 0.4);
+  color: #ff5252;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  z-index: 10;
+  animation: slideDownCustom 0.2s ease-out;
+}
+
+@keyframes slideDownCustom {
+  from { transform: translateY(-10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.settings-error {
+  color: #ff4d4d;
+  font-size: 0.8rem;
+  margin-top: 5px;
+  background: rgba(255, 77, 77, 0.1);
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 77, 77, 0.2);
+  animation: shake 0.4s ease-in-out;
+}
 
 /* Cards grid */
 .analytics-cards {

@@ -32,6 +32,7 @@ interface Window {
     loadMemory: () => Promise<any>
     saveMemory: (data: any) => Promise<{ error: string | null }>
     providerChat: (params: any) => Promise<any>
+    listProviderModels: (params: { provider: string; apiKey: string }) => Promise<{ models?: string[]; error?: string | null }>
     // Browser automation
     browserLaunch: () => Promise<any>
     browserNavigate: (url: string) => Promise<any>
