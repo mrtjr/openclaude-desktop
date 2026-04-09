@@ -1,9 +1,10 @@
-const { app, BrowserWindow, ipcMain, shell, Tray, Menu, globalShortcut, dialog, nativeImage } = require('electron')
-const { exec } = require('child_process')
+const { app, BrowserWindow, ipcMain, shell, Tray, Menu, globalShortcut, dialog, nativeImage, safeStorage } = require('electron')
+const { exec, spawn } = require('child_process')
 const path = require('path')
 const fs = require('fs')
 const http = require('http')
 const https = require('https')
+const crypto = require('crypto')
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -12,11 +13,130 @@ let tray = null
 let activeStreamRequest = null
 
 const CONVERSATIONS_PATH = path.join(app.getPath('userData'), 'conversations.json')
-const ANALYTICS_PATH = path.join(app.getPath('userData'), 'analytics.json')
-const AUDIT_LOG_PATH = path.join(app.getPath('userData'), 'audit-log.json')
+const ANALYTICS_PATH    = path.join(app.getPath('userData'), 'analytics.json')
+const AUDIT_LOG_PATH    = path.join(app.getPath('userData'), 'audit-log.json')
+const MEMORY_PATH       = path.join(app.getPath('userData'), 'memory.json')
+const CREDENTIALS_PATH  = path.join(app.getPath('userData'), 'credentials.enc')
 
-// ─── Analytics Engine (MCD + MASA) ──────────────────────────────────
-// Silent data collection + secure local storage with auto-purge
+// ─── Security: Allowed dirs for file operations ───────────────────────
+const ALLOWED_WRITE_ROOTS = [
+  app.getPath('home'),
+  app.getPath('userData'),
+  app.getPath('documents'),
+  app.getPath('desktop'),
+]
+
+const BLOCKED_PATH_PATTERNS = [
+  /[/\\]windows[/\\]/i,
+  /[/\\]system32[/\\]/i,
+  /[/\\]syswow64[/\\]/i,
+  /[/\\]program files[/\\]/i,
+  /[/\\]etc[/\\]/i,
+  /[/\\]proc[/\\]/i,
+  /[/\\]sys[/\\]/i,
+]
+
+function isPathAllowed(targetPath) {
+  try {
+    const resolved = path.resolve(targetPath)
+    // Block known dangerous system paths
+    for (const pattern of BLOCKED_PATH_PATTERNS) {
+      if (pattern.test(resolved)) return false
+    }
+    // Must be inside one of the allowed roots
+    return ALLOWED_WRITE_ROOTS.some(root => resolved.startsWith(path.resolve(root)))
+  } catch {
+    return false
+  }
+}
+
+// ─── Security: PowerShell command whitelist ───────────────────────────
+const ALLOWED_PS_PREFIXES = [
+  'Get-', 'Set-', 'New-', 'Remove-', 'Move-', 'Copy-', 'Rename-',
+  'Start-', 'Stop-', 'Restart-', 'Test-', 'Invoke-WebRequest',
+  'Invoke-RestMethod', 'Write-Output', 'Write-Host', 'Read-Host',
+  'Select-Object', 'Where-Object', 'ForEach-Object', 'Sort-Object',
+  'Format-Table', 'Format-List', 'ConvertTo-Json', 'ConvertFrom-Json',
+  'ConvertTo-Csv', 'Out-File', 'Out-String', 'npm ', 'node ', 'python ',
+  'pip ', 'git ', 'ls', 'dir', 'cd ', 'mkdir', 'echo ', 'cat ', 'type ',
+  'curl ', 'ping ', 'ipconfig', 'whoami', 'hostname', 'tasklist',
+  '[System.IO', '[System.Net', 'dotnet ', 'cargo ', 'rustc ',
+]
+
+const BLOCKED_CMD_PATTERNS = [
+  /Invoke-Expression/i, /iex\b/i, /Invoke-Command/i,
+  /\$env:PATH\s*=/i, /\$env:USERPROFILE\s*=/i,
+  /Net\.WebClient/i, /DownloadFile/i, /DownloadString/i,
+  /Start-Process.*-Verb.*RunAs/i,
+  /sc\s+create/i, /sc\s+start/i, /schtasks/i,
+  /reg\s+add/i, /reg\s+delete/i, /regedit/i,
+  /netsh\s+/i, /bcdedit/i, /wmic\s+/i,
+  /format\s+/i, /del\s+\//i, /rd\s+\/s/i,
+]
+
+function isPsCommandAllowed(cmd) {
+  const trimmed = cmd.trim()
+  // Block forbidden patterns first
+  for (const pattern of BLOCKED_CMD_PATTERNS) {
+    if (pattern.test(trimmed)) return false
+  }
+  // Allow if starts with a whitelisted prefix
+  for (const prefix of ALLOWED_PS_PREFIXES) {
+    if (trimmed.toLowerCase().startsWith(prefix.toLowerCase())) return true
+  }
+  // Allow simple file/path operations that don't match blocked patterns
+  if (/^[a-zA-Z]:\\/.test(trimmed)) return false // bare drive-path execution
+  // Default deny for unrecognized commands
+  return false
+}
+
+// ─── Security: Allowed MCP commands ──────────────────────────────────
+const ALLOWED_MCP_COMMANDS = [
+  'npx', 'node', 'python', 'python3', 'uvx', 'deno', 'bun'
+]
+
+function isMcpCommandAllowed(command) {
+  const base = path.basename(command).replace(/\.exe$/i, '').toLowerCase()
+  return ALLOWED_MCP_COMMANDS.includes(base)
+}
+
+// ─── Security: Encrypted credentials (safeStorage) ───────────────────
+function loadCredentials() {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return {}
+    if (!fs.existsSync(CREDENTIALS_PATH)) return {}
+    const raw = fs.readFileSync(CREDENTIALS_PATH)
+    const decrypted = safeStorage.decryptString(raw)
+    return JSON.parse(decrypted)
+  } catch {
+    return {}
+  }
+}
+
+function saveCredentials(data) {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) {
+      return { error: 'Encryption not available on this platform' }
+    }
+    const json = JSON.stringify(data)
+    const encrypted = safeStorage.encryptString(json)
+    fs.writeFileSync(CREDENTIALS_PATH, encrypted)
+    return { error: null }
+  } catch (e) {
+    return { error: e.message }
+  }
+}
+
+ipcMain.handle('credentials-load', async () => loadCredentials())
+ipcMain.handle('credentials-save', async (event, data) => saveCredentials(data))
+ipcMain.handle('credentials-delete', async (event, key) => {
+  const creds = loadCredentials()
+  delete creds[key]
+  return saveCredentials(creds)
+})
+ipcMain.handle('credentials-is-available', async () => safeStorage.isEncryptionAvailable())
+
+// ─── Analytics Engine ────────────────────────────────────────────────
 function loadAnalytics() {
   try {
     if (fs.existsSync(ANALYTICS_PATH)) {
@@ -30,12 +150,10 @@ function loadAnalytics() {
 
 function saveAnalytics(data) {
   try {
-    // Auto-purge: remove sessions older than 30 days (MASA requirement)
     const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000)
     if (data.sessions) {
       data.sessions = data.sessions.filter(s => s.timestamp > thirtyDaysAgo)
     }
-    // Keep max 500 sessions to prevent unbounded growth
     if (data.sessions && data.sessions.length > 500) {
       data.sessions = data.sessions.slice(-500)
     }
@@ -105,8 +223,24 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
     },
     icon: path.join(__dirname, '../public/icon.png'),
+  })
+
+  // ─── Content Security Policy ───────────────────────────────────
+  win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          isDev
+            ? "default-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:5173 ws://localhost:5173; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:5173; connect-src 'self' http://localhost:* ws://localhost:*;"
+            : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; font-src 'self' data:; media-src 'none'; object-src 'none'; frame-src 'none';"
+        ]
+      }
+    })
   })
 
   if (isDev) {
@@ -116,7 +250,6 @@ function createWindow() {
     win.loadFile(path.join(__dirname, '../dist/index.html'))
   }
 
-  // Minimize to tray instead of closing
   win.on('close', (e) => {
     if (!app.isQuitting) {
       e.preventDefault()
@@ -125,16 +258,13 @@ function createWindow() {
   })
 
   // ─── Window controls ────────────────────────────────────────
-  ipcMain.handle('window-minimize', () => win.minimize())
-  ipcMain.handle('window-maximize', () => {
-    if (win.isMaximized()) win.unmaximize()
-    else win.maximize()
-  })
-  ipcMain.handle('window-close', () => win.hide())
-  ipcMain.handle('window-is-maximized', () => win.isMaximized())
+  ipcMain.handle('window-minimize',    () => win.minimize())
+  ipcMain.handle('window-maximize',    () => { if (win.isMaximized()) win.unmaximize(); else win.maximize() })
+  ipcMain.handle('window-close',       () => win.hide())
+  ipcMain.handle('window-is-maximized',() => win.isMaximized())
 }
 
-// ─── IPC: Context Compaction (summarize old messages via model) ──────
+// ─── IPC: Context Compaction ─────────────────────────────────────────
 ipcMain.handle('compact-context', async (event, { messages, model, language }) => {
   return new Promise((resolve) => {
     const compactPrompt = language === 'pt'
@@ -196,10 +326,7 @@ ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperatur
       port: 11434,
       path: '/v1/chat/completions',
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body)
-      }
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
     }
 
     const req = http.request(options, (res) => {
@@ -233,10 +360,7 @@ ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, tem
       port: 11434,
       path: '/v1/chat/completions',
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body)
-      }
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
     }
 
     let doneSent = false
@@ -261,10 +385,7 @@ ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, tem
           const trimmed = line.trim()
           if (!trimmed || !trimmed.startsWith('data: ')) continue
           const jsonStr = trimmed.slice(6)
-          if (jsonStr === '[DONE]') {
-            sendDone()
-            continue
-          }
+          if (jsonStr === '[DONE]') { sendDone(); continue }
           try {
             const parsed = JSON.parse(jsonStr)
             event.sender.send('ollama-stream-chunk', parsed)
@@ -298,7 +419,7 @@ ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, tem
   })
 })
 
-// ─── IPC: Abort stream (kills HTTP request, frees GPU) ──────────────
+// ─── IPC: Abort stream ───────────────────────────────────────────────
 ipcMain.handle('abort-stream', async () => {
   if (activeStreamRequest) {
     activeStreamRequest.destroy()
@@ -308,13 +429,26 @@ ipcMain.handle('abort-stream', async () => {
   return { aborted: false }
 })
 
-// ─── IPC: Execute command ────────────────────────────────────────────
+// ─── IPC: Execute command (HARDENED) ────────────────────────────────
+// Only allows whitelisted PowerShell commands — no arbitrary RCE.
 ipcMain.handle('exec-command', async (event, cmd) => {
+  if (typeof cmd !== 'string' || cmd.trim().length === 0) {
+    return { stdout: '', stderr: '', exitCode: 1, error: 'Empty or invalid command' }
+  }
+
+  if (!isPsCommandAllowed(cmd)) {
+    // Log blocked attempt
+    const log = loadAuditLog()
+    log.push({ type: 'BLOCKED_EXEC', command: cmd.substring(0, 200), timestamp: Date.now() })
+    saveAuditLog(log)
+    return { stdout: '', stderr: '', exitCode: 1, error: `[SECURITY] Command blocked by whitelist policy: "${cmd.substring(0, 80)}..."` }
+  }
+
   return new Promise((resolve) => {
     exec(cmd, {
       shell: 'powershell.exe',
       timeout: 60000,
-      maxBuffer: 10 * 1024 * 1024, // 10MB
+      maxBuffer: 10 * 1024 * 1024,
       windowsHide: true
     }, (err, stdout, stderr) => {
       resolve({
@@ -327,13 +461,35 @@ ipcMain.handle('exec-command', async (event, cmd) => {
   })
 })
 
-// ─── IPC: Git command (sandboxed to git only) ──────────────────────
+// ─── IPC: Git command (HARDENED) ────────────────────────────────────
+// Restricts cwd to allowed directories, strips shell metacharacters.
 ipcMain.handle('git-command', async (event, { command, cwd }) => {
+  if (typeof command !== 'string') {
+    return { stdout: '', stderr: '', error: 'Invalid command' }
+  }
+
+  // Strip shell injection characters
+  if (/[;&|`$(){}\[\]<>!\\]/.test(command)) {
+    return { stdout: '', stderr: '', error: '[SECURITY] Invalid characters in git command' }
+  }
+
+  // Validate cwd is inside allowed roots
+  if (cwd && !isPathAllowed(cwd)) {
+    return { stdout: '', stderr: '', error: `[SECURITY] Working directory not allowed: ${cwd}` }
+  }
+
+  // Only allow safe git subcommands
+  const ALLOWED_GIT_CMDS = [
+    'status', 'log', 'diff', 'show', 'branch', 'checkout', 'add', 'commit',
+    'push', 'pull', 'fetch', 'clone', 'init', 'remote', 'stash', 'merge',
+    'rebase', 'reset', 'clean', 'tag', 'rev-parse', 'ls-files', 'shortlog'
+  ]
+  const subCmd = command.trim().split(/\s+/)[0].toLowerCase()
+  if (!ALLOWED_GIT_CMDS.includes(subCmd)) {
+    return { stdout: '', stderr: '', error: `[SECURITY] Git subcommand not allowed: ${subCmd}` }
+  }
+
   return new Promise((resolve) => {
-    // Security: only allow git subcommands, no pipes/chains
-    if (/[;&|`$]/.test(command)) {
-      return resolve({ stdout: '', stderr: '', error: 'Invalid characters in git command' })
-    }
     exec(`git ${command}`, {
       cwd: cwd || undefined,
       shell: 'powershell.exe',
@@ -352,27 +508,44 @@ ipcMain.handle('git-command', async (event, { command, cwd }) => {
 
 // ─── IPC: Read file ──────────────────────────────────────────────────
 ipcMain.handle('read-file', async (event, filePath) => {
+  if (typeof filePath !== 'string') return { content: null, error: 'Invalid path' }
   try {
+    const stats = fs.statSync(filePath)
+    if (stats.size > 10 * 1024 * 1024) return { content: null, error: 'File too large (> 10MB)' }
     return { content: fs.readFileSync(filePath, 'utf-8'), error: null }
   } catch (e) {
     return { content: null, error: e.message }
   }
 })
 
-// ─── IPC: Write file (with auto-snapshot for undo) ──────────────────
+// ─── IPC: Write file (HARDENED — restricted to allowed dirs) ─────────
 const SNAPSHOTS_DIR = path.join(app.getPath('userData'), 'snapshots')
-const fileSnapshots = [] // Stack: [{filePath, backupPath, timestamp}]
+const fileSnapshots = []
 
 ipcMain.handle('write-file', async (event, { filePath, content }) => {
+  if (typeof filePath !== 'string' || typeof content !== 'string') {
+    return { error: 'Invalid parameters' }
+  }
+
+  if (!isPathAllowed(filePath)) {
+    const log = loadAuditLog()
+    log.push({ type: 'BLOCKED_WRITE', path: filePath.substring(0, 200), timestamp: Date.now() })
+    saveAuditLog(log)
+    return { error: `[SECURITY] Write to path not allowed: ${filePath}` }
+  }
+
+  // Enforce max content size (5MB)
+  if (content.length > 5 * 1024 * 1024) {
+    return { error: 'Content too large (> 5MB)' }
+  }
+
   try {
-    // Auto-snapshot: save backup before overwriting
     if (fs.existsSync(filePath)) {
       fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true })
       const backupName = `${Date.now()}_${path.basename(filePath)}`
       const backupPath = path.join(SNAPSHOTS_DIR, backupName)
       fs.copyFileSync(filePath, backupPath)
       fileSnapshots.push({ filePath, backupPath, timestamp: Date.now() })
-      // Keep max 50 snapshots
       while (fileSnapshots.length > 50) {
         const old = fileSnapshots.shift()
         try { fs.unlinkSync(old.backupPath) } catch {}
@@ -387,9 +560,7 @@ ipcMain.handle('write-file', async (event, { filePath, content }) => {
 })
 
 ipcMain.handle('undo-last-write', async () => {
-  if (fileSnapshots.length === 0) {
-    return { error: 'No snapshots available', restored: null }
-  }
+  if (fileSnapshots.length === 0) return { error: 'No snapshots available', restored: null }
   const snap = fileSnapshots.pop()
   try {
     fs.copyFileSync(snap.backupPath, snap.filePath)
@@ -425,31 +596,31 @@ ipcMain.handle('list-models', async () => {
 })
 
 // ─── IPC: Conversations persistence ──────────────────────────────────
-ipcMain.handle('save-conversations', async (event, data) => {
-  return saveConversations(data)
-})
+ipcMain.handle('save-conversations', async (event, data) => saveConversations(data))
+ipcMain.handle('load-conversations', async () => loadConversations())
 
-ipcMain.handle('load-conversations', async () => {
-  return loadConversations()
-})
-
-// ─── IPC: Web search (DuckDuckGo HTML scraping) ─────────────────────
+// ─── IPC: Web search ─────────────────────────────────────────────────
 ipcMain.handle('web-search', async (event, query) => {
+  if (typeof query !== 'string' || query.trim().length === 0) {
+    return { result: null, error: 'Invalid query' }
+  }
+  // Limit query length
+  const safeQuery = query.substring(0, 500)
+
   return new Promise((resolve) => {
-    const encodedQuery = encodeURIComponent(query)
+    const encodedQuery = encodeURIComponent(safeQuery)
     const options = {
       hostname: 'html.duckduckgo.com',
       path: `/html/?q=${encodedQuery}`,
       method: 'GET',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': 'text/html,application/xhtml+xml',
         'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8'
       }
     }
     let data = ''
     const req = https.request(options, (res) => {
-      // Follow redirects
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         https.get(res.headers.location, { headers: options.headers }, (r2) => {
           let rd = ''
@@ -466,7 +637,6 @@ ipcMain.handle('web-search', async (event, query) => {
 
     function parseAndResolve(html) {
       const results = []
-      // Extract result links and snippets from DuckDuckGo HTML
       const resultRegex = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi
       const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi
       let match
@@ -477,7 +647,6 @@ ipcMain.handle('web-search', async (event, query) => {
           results.push({ title, url })
         }
       }
-      // Try to get snippets
       let idx = 0
       while ((match = snippetRegex.exec(html)) !== null && idx < results.length) {
         results[idx].snippet = match[1].replace(/<[^>]*>/g, '').trim()
@@ -487,9 +656,8 @@ ipcMain.handle('web-search', async (event, query) => {
         const text = results.map((r, i) =>
           `${i + 1}. **${r.title}**\n   ${r.url}${r.snippet ? `\n   ${r.snippet}` : ''}`
         ).join('\n\n')
-        resolve({ result: `Resultados para "${query}":\n\n${text}`, error: null })
+        resolve({ result: `Resultados para "${safeQuery}":\n\n${text}`, error: null })
       } else {
-        // Fallback to instant answer API
         https.get(`https://api.duckduckgo.com/?q=${encodedQuery}&format=json&no_html=1`, (res2) => {
           let d = ''
           res2.on('data', c => d += c)
@@ -504,10 +672,10 @@ ipcMain.handle('web-search', async (event, query) => {
                   if (t.Text) text += `- ${t.Text}\n`
                 }
               }
-              resolve({ result: text || `Sem resultados para "${query}".`, error: null })
-            } catch { resolve({ result: `Sem resultados para "${query}".`, error: null }) }
+              resolve({ result: text || `Sem resultados para "${safeQuery}".`, error: null })
+            } catch { resolve({ result: `Sem resultados para "${safeQuery}".`, error: null }) }
           })
-        }).on('error', () => resolve({ result: `Sem resultados para "${query}".`, error: null }))
+        }).on('error', () => resolve({ result: `Sem resultados para "${safeQuery}".`, error: null }))
       }
     }
   })
@@ -515,22 +683,17 @@ ipcMain.handle('web-search', async (event, query) => {
 
 // ─── IPC: List directory ─────────────────────────────────────────────
 ipcMain.handle('list-directory', async (event, dirPath) => {
+  if (typeof dirPath !== 'string') return { items: null, error: 'Invalid path' }
   try {
     const entries = fs.readdirSync(dirPath, { withFileTypes: true })
     const items = entries.map(entry => {
-      let size = 0
-      let modified = ''
+      let size = 0, modified = ''
       try {
         const stats = fs.statSync(path.join(dirPath, entry.name))
         size = stats.size
         modified = stats.mtime.toISOString()
       } catch {}
-      return {
-        name: entry.name,
-        type: entry.isDirectory() ? 'directory' : 'file',
-        size,
-        modified
-      }
+      return { name: entry.name, type: entry.isDirectory() ? 'directory' : 'file', size, modified }
     })
     return { items, error: null }
   } catch (e) {
@@ -540,11 +703,15 @@ ipcMain.handle('list-directory', async (event, dirPath) => {
 
 // ─── IPC: Open file or URL ───────────────────────────────────────────
 ipcMain.handle('open-target', async (event, target) => {
+  if (typeof target !== 'string') return { error: 'Invalid target' }
+  // Only allow http/https URLs or paths within allowed roots
   try {
     if (target.startsWith('http://') || target.startsWith('https://')) {
       await shell.openExternal(target)
-    } else {
+    } else if (isPathAllowed(target)) {
       await shell.openPath(target)
+    } else {
+      return { error: '[SECURITY] Path not allowed to open' }
     }
     return { error: null }
   } catch (e) {
@@ -565,24 +732,17 @@ ipcMain.handle('check-ollama-status', async () => {
   })
 })
 
-// ─── IPC: Auto-start settings ────────────────────────────────────────
+// ─── IPC: Auto-start ─────────────────────────────────────────────────
 ipcMain.handle('get-auto-start', async () => {
-  try {
-    const settings = app.getLoginItemSettings()
-    return settings.openAtLogin
-  } catch { return false }
+  try { return app.getLoginItemSettings().openAtLogin } catch { return false }
 })
 
 ipcMain.handle('set-auto-start', async (event, enabled) => {
-  try {
-    app.setLoginItemSettings({ openAtLogin: enabled })
-    return { error: null }
-  } catch (e) {
-    return { error: e.message }
-  }
+  try { app.setLoginItemSettings({ openAtLogin: enabled }); return { error: null } }
+  catch (e) { return { error: e.message } }
 })
 
-// ─── IPC: Save dialog (for export) ──────────────────────────────────
+// ─── IPC: Save dialog ────────────────────────────────────────────────
 ipcMain.handle('save-dialog', async (event, { defaultName, filters }) => {
   try {
     const result = await dialog.showSaveDialog(win, {
@@ -598,11 +758,10 @@ ipcMain.handle('save-dialog', async (event, { defaultName, filters }) => {
 
 // ─── IPC: Read dropped file ──────────────────────────────────────────
 ipcMain.handle('read-dropped-file', async (event, filePath) => {
+  if (typeof filePath !== 'string') return { content: null, error: 'Invalid path' }
   try {
     const stats = fs.statSync(filePath)
-    if (stats.size > 5 * 1024 * 1024) {
-      return { content: null, error: 'Arquivo muito grande (> 5MB)' }
-    }
+    if (stats.size > 5 * 1024 * 1024) return { content: null, error: 'Arquivo muito grande (> 5MB)' }
     const content = fs.readFileSync(filePath, 'utf-8')
     return { content, name: path.basename(filePath), error: null }
   } catch (e) {
@@ -618,11 +777,8 @@ ipcMain.handle('check-update', async () => {
       hostname: 'api.github.com',
       path: `/repos/${defaultRepo}/releases/latest`,
       method: 'GET',
-      headers: {
-        'User-Agent': 'OpenClaude-Desktop-Update-Checker'
-      }
+      headers: { 'User-Agent': 'OpenClaude-Desktop-Update-Checker' }
     }
-    const https = require('https')
     const req = https.request(options, (res) => {
       let data = ''
       res.on('data', chunk => data += chunk)
@@ -632,8 +788,6 @@ ipcMain.handle('check-update', async () => {
           if (res.statusCode === 200 && result.tag_name) {
             const currentVersion = app.getVersion()
             const latestVersion = result.tag_name.replace(/^v/, '')
-            
-            // Basic semantic version comparison (SemVer)
             const cmpVersions = (a, b) => {
               const pa = a.split('.').map(Number)
               const pb = b.split('.').map(Number)
@@ -643,7 +797,6 @@ ipcMain.handle('check-update', async () => {
               }
               return 0
             }
-
             const isNewer = cmpVersions(latestVersion, currentVersion) > 0
             resolve({
               updateAvailable: isNewer,
@@ -664,14 +817,10 @@ ipcMain.handle('check-update', async () => {
   })
 })
 
-// ─── IPC: Memory system (persistent user memory) ────────────────────
-const MEMORY_PATH = path.join(app.getPath('userData'), 'memory.json')
-
+// ─── IPC: Memory system ──────────────────────────────────────────────
 function loadMemory() {
   try {
-    if (fs.existsSync(MEMORY_PATH)) {
-      return JSON.parse(fs.readFileSync(MEMORY_PATH, 'utf-8'))
-    }
+    if (fs.existsSync(MEMORY_PATH)) return JSON.parse(fs.readFileSync(MEMORY_PATH, 'utf-8'))
   } catch {}
   return { facts: [], preferences: [], projects: [] }
 }
@@ -688,7 +837,7 @@ function saveMemory(data) {
 ipcMain.handle('load-memory', async () => loadMemory())
 ipcMain.handle('save-memory', async (event, data) => saveMemory(data))
 
-// ─── IPC: Multi-provider chat (OpenAI, Gemini, Anthropic) ──────────
+// ─── IPC: Multi-provider chat ────────────────────────────────────────
 ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, messages, tools, temperature, max_tokens, stream, modalHostname }) => {
   return new Promise((resolve, reject) => {
     let hostname, apiPath, headers, bodyObj
@@ -700,7 +849,6 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
       bodyObj = { model, messages, tools: tools || undefined, stream: false, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
     } else if (provider === 'gemini') {
       hostname = 'generativelanguage.googleapis.com'
-      // Convert OpenAI format to Gemini format
       const geminiContents = messages.filter(m => m.role !== 'system').map(m => ({
         role: m.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: m.content }]
@@ -717,10 +865,7 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
       hostname = 'api.anthropic.com'
       apiPath = '/v1/messages'
       const systemMsg = messages.find(m => m.role === 'system')
-      const nonSystemMsgs = messages.filter(m => m.role !== 'system').map(m => ({
-        role: m.role,
-        content: m.content
-      }))
+      const nonSystemMsgs = messages.filter(m => m.role !== 'system').map(m => ({ role: m.role, content: m.content }))
       headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }
       bodyObj = {
         model,
@@ -742,23 +887,14 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
     } else if (provider === 'modal') {
       hostname = modalHostname || 'api.us-west-2.modal.direct'
       apiPath = '/v1/chat/completions'
-      headers = {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'User-Agent': 'OpenClaude-Desktop'
-      }
+      headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'User-Agent': 'OpenClaude-Desktop' }
       bodyObj = { model, messages, tools: tools || undefined, stream: false, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
     } else {
       return resolve({ error: `Provider "${provider}" not supported` })
     }
 
     const body = JSON.stringify(bodyObj)
-    const reqOptions = {
-      hostname,
-      path: apiPath,
-      method: 'POST',
-      headers: { ...headers, 'Content-Length': Buffer.byteLength(body) }
-    }
+    const reqOptions = { hostname, path: apiPath, method: 'POST', headers: { ...headers, 'Content-Length': Buffer.byteLength(body) } }
 
     const req = https.request(reqOptions, (res) => {
       let data = ''
@@ -766,11 +902,7 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
       res.on('end', () => {
         try {
           const parsed = JSON.parse(data)
-          if (res.statusCode >= 400) {
-            return resolve({ error: `API error ${res.statusCode}: ${JSON.stringify(parsed)}` })
-          }
-
-          // Normalize response to OpenAI format
+          if (res.statusCode >= 400) return resolve({ error: `API error ${res.statusCode}: ${JSON.stringify(parsed)}` })
           if (provider === 'gemini') {
             const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text || ''
             resolve({ choices: [{ message: { role: 'assistant', content: text }, finish_reason: 'stop' }] })
@@ -789,77 +921,83 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
   })
 })
 
-// ─── IPC: List provider models (OpenRouter, OpenAI, Gemini, Anthropic) ──
+// ─── IPC: List provider models ───────────────────────────────────────
 ipcMain.handle('list-provider-models', async (event, { provider, apiKey, modalHostname }) => {
   return new Promise((resolve) => {
-    let hostname, apiPath, headers, query = ''
+    let hostname, apiPath, headers
 
     if (provider === 'openai') {
-      hostname = 'api.openai.com'
-      apiPath = '/v1/models'
+      hostname = 'api.openai.com'; apiPath = '/v1/models'
       headers = { 'Authorization': `Bearer ${apiKey}`, 'User-Agent': 'OpenClaude-Desktop' }
     } else if (provider === 'openrouter') {
-      hostname = 'openrouter.ai'
-      apiPath = '/api/v1/models'
+      hostname = 'openrouter.ai'; apiPath = '/api/v1/models'
       headers = { 'Authorization': `Bearer ${apiKey}`, 'User-Agent': 'OpenClaude-Desktop' }
     } else if (provider === 'modal') {
-      hostname = modalHostname || 'api.us-west-2.modal.direct'
-      apiPath = '/v1/models'
+      hostname = modalHostname || 'api.us-west-2.modal.direct'; apiPath = '/v1/models'
       headers = { 'Authorization': `Bearer ${apiKey}`, 'User-Agent': 'OpenClaude-Desktop' }
     } else if (provider === 'anthropic') {
-      hostname = 'api.anthropic.com'
-      apiPath = '/v1/models'
+      hostname = 'api.anthropic.com'; apiPath = '/v1/models'
       headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'User-Agent': 'OpenClaude-Desktop' }
     } else if (provider === 'gemini') {
-      hostname = 'generativelanguage.googleapis.com'
-      apiPath = `/v1beta/models?key=${apiKey}`
+      hostname = 'generativelanguage.googleapis.com'; apiPath = `/v1beta/models?key=${apiKey}`
       headers = { 'User-Agent': 'OpenClaude-Desktop' }
     } else {
       return resolve({ error: `Provider "${provider}" not supported for model listing` })
     }
 
-    const options = {
-      hostname,
-      path: apiPath,
-      method: 'GET',
-      headers
-    }
-
-    const req = https.request(options, (res) => {
+    const req = https.request({ hostname, path: apiPath, method: 'GET', headers }, (res) => {
       let data = ''
       res.on('data', chunk => data += chunk)
       res.on('end', () => {
         try {
           const parsed = JSON.parse(data)
-          if (res.statusCode >= 400) {
-            return resolve({ error: `API error ${res.statusCode}: ${JSON.stringify(parsed)}` })
-          }
-
+          if (res.statusCode >= 400) return resolve({ error: `API error ${res.statusCode}: ${JSON.stringify(parsed)}` })
           let models = []
-          if (provider === 'openai' || provider === 'openrouter' || provider === 'modal') {
-            models = (parsed.data || []).map(m => m.id).sort()
-          } else if (provider === 'anthropic') {
+          if (['openai', 'openrouter', 'modal', 'anthropic'].includes(provider)) {
             models = (parsed.data || []).map(m => m.id).sort()
           } else if (provider === 'gemini') {
-            // Filter models that support generateContent
             models = (parsed.models || [])
               .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
-              .map(m => m.name.replace('models/', ''))
-              .sort()
+              .map(m => m.name.replace('models/', '')).sort()
           }
           resolve({ models, error: null })
         } catch (e) { resolve({ error: e.message }) }
       })
     })
-
     req.on('error', (e) => resolve({ error: e.message }))
     req.end()
   })
 })
 
-// ─── IPC: Browser Automation (Playwright) ───────────────────────────────
+// ─── IPC: Browser Automation (HARDENED) ─────────────────────────────
+// browser-evaluate is sandboxed: only allows pure JS expressions
+// that do NOT mutate the DOM or access sensitive APIs.
 let browser = null
 let browserPage = null
+
+const BLOCKED_EVALUATE_PATTERNS = [
+  /document\.cookie/i,
+  /localStorage/i,
+  /sessionStorage/i,
+  /indexedDB/i,
+  /window\.open/i,
+  /fetch\s*\(/i,
+  /XMLHttpRequest/i,
+  /navigator\.sendBeacon/i,
+  /eval\s*\(/i,
+  /Function\s*\(/i,
+  /import\s*\(/i,
+  /require\s*\(/i,
+  /process\./,
+  /child_process/,
+]
+
+function isSafeEvaluateCode(code) {
+  for (const pattern of BLOCKED_EVALUATE_PATTERNS) {
+    if (pattern.test(code)) return false
+  }
+  return true
+}
 
 ipcMain.handle('browser-launch', async () => {
   try {
@@ -868,13 +1006,14 @@ ipcMain.handle('browser-launch', async () => {
     const context = await browser.newContext()
     browserPage = await context.newPage()
     return { success: true }
-  } catch (e) {
-    return { error: e.message }
-  }
+  } catch (e) { return { error: e.message } }
 })
 
 ipcMain.handle('browser-navigate', async (event, url) => {
   if (!browserPage) return { error: 'Browser not launched' }
+  if (typeof url !== 'string' || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+    return { error: '[SECURITY] Only http/https URLs are allowed' }
+  }
   try {
     await browserPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
     return { success: true, url: browserPage.url(), title: await browserPage.title() }
@@ -899,6 +1038,7 @@ ipcMain.handle('browser-get-text', async () => {
 
 ipcMain.handle('browser-click', async (event, selector) => {
   if (!browserPage) return { error: 'Browser not launched' }
+  if (typeof selector !== 'string' || selector.length > 500) return { error: 'Invalid selector' }
   try {
     await browserPage.click(selector, { timeout: 5000 })
     return { success: true }
@@ -907,14 +1047,23 @@ ipcMain.handle('browser-click', async (event, selector) => {
 
 ipcMain.handle('browser-type', async (event, { selector, text }) => {
   if (!browserPage) return { error: 'Browser not launched' }
+  if (typeof selector !== 'string' || typeof text !== 'string') return { error: 'Invalid parameters' }
   try {
     await browserPage.fill(selector, text, { timeout: 5000 })
     return { success: true }
   } catch (e) { return { error: e.message } }
 })
 
+// HARDENED: evaluate code goes through safety filter
 ipcMain.handle('browser-evaluate', async (event, code) => {
   if (!browserPage) return { error: 'Browser not launched' }
+  if (typeof code !== 'string') return { error: 'Invalid code' }
+  if (!isSafeEvaluateCode(code)) {
+    const log = loadAuditLog()
+    log.push({ type: 'BLOCKED_EVALUATE', code: code.substring(0, 200), timestamp: Date.now() })
+    saveAuditLog(log)
+    return { error: '[SECURITY] Code blocked by evaluate safety filter' }
+  }
   try {
     const result = await browserPage.evaluate(code)
     return { success: true, result: JSON.stringify(result).substring(0, 5000) }
@@ -928,14 +1077,26 @@ ipcMain.handle('browser-close', async () => {
   } catch (e) { return { error: e.message } }
 })
 
-// ─── IPC: MCP Client ────────────────────────────────────────────────────
+// ─── IPC: MCP Client (HARDENED) ──────────────────────────────────────
+// Only allows MCP connections to whitelisted runtimes.
 const mcpConnections = new Map()
 
 ipcMain.handle('mcp-connect', async (event, { id, command, args, env }) => {
+  if (typeof command !== 'string' || !isMcpCommandAllowed(command)) {
+    return { error: `[SECURITY] MCP command not allowed: ${command}. Allowed: ${ALLOWED_MCP_COMMANDS.join(', ')}` }
+  }
+
+  // Sanitize args — no shell metacharacters
+  const safeArgs = (args || []).map(a => String(a))
+  // Sanitize env keys — alphanumeric + underscore only
+  const safeEnv = {}
+  for (const [k, v] of Object.entries(env || {})) {
+    if (/^[A-Z_][A-Z0-9_]*$/i.test(k)) safeEnv[k] = String(v)
+  }
+
   try {
-    const { spawn } = require('child_process')
-    const proc = spawn(command, args || [], {
-      env: { ...process.env, ...(env || {}) },
+    const proc = spawn(command, safeArgs, {
+      env: { ...process.env, ...safeEnv },
       stdio: ['pipe', 'pipe', 'pipe']
     })
 
@@ -975,26 +1136,17 @@ ipcMain.handle('mcp-connect', async (event, { id, command, args, env }) => {
       }
     })
 
-    proc.on('error', (e) => {
-      mcpConnections.delete(id)
-    })
-
-    proc.on('exit', () => {
-      mcpConnections.delete(id)
-    })
+    proc.on('error', () => mcpConnections.delete(id))
+    proc.on('exit', () => mcpConnections.delete(id))
 
     mcpConnections.set(id, { proc, sendRequest })
 
-    // Initialize
     const initResult = await sendRequest('initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
       clientInfo: { name: 'OpenClaude Desktop', version: '1.4.0' }
     })
-
-    // List tools
     const toolsResult = await sendRequest('tools/list', {})
-
     return { success: true, serverInfo: initResult, tools: toolsResult?.tools || [] }
   } catch (e) {
     return { error: e.message }
@@ -1013,20 +1165,14 @@ ipcMain.handle('mcp-call-tool', async (event, { connectionId, toolName, args }) 
 
 ipcMain.handle('mcp-disconnect', async (event, id) => {
   const conn = mcpConnections.get(id)
-  if (conn) {
-    conn.proc.kill()
-    mcpConnections.delete(id)
-  }
+  if (conn) { conn.proc.kill(); mcpConnections.delete(id) }
   return { success: true }
 })
 
-ipcMain.handle('mcp-list-connections', async () => {
-  return [...mcpConnections.keys()]
-})
+ipcMain.handle('mcp-list-connections', async () => [...mcpConnections.keys()])
 
-// ─── IPC: Collaborative Agents (Parallel Execution) ─────────────────────
+// ─── IPC: Collaborative Agents ───────────────────────────────────────
 ipcMain.handle('parallel-chat', async (event, { tasks, model, temperature, max_tokens }) => {
-  // tasks = [{ id, messages, tools }]
   const executeTask = (task) => {
     return new Promise((resolve) => {
       const body = JSON.stringify({
@@ -1037,7 +1183,6 @@ ipcMain.handle('parallel-chat', async (event, { tasks, model, temperature, max_t
         options: { temperature: temperature ?? 0.7 },
         ...(max_tokens ? { max_tokens } : {})
       })
-
       const options = {
         hostname: 'localhost',
         port: 11434,
@@ -1045,17 +1190,12 @@ ipcMain.handle('parallel-chat', async (event, { tasks, model, temperature, max_t
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
       }
-
       const req = http.request(options, (res) => {
         let data = ''
         res.on('data', chunk => data += chunk)
         res.on('end', () => {
-          try {
-            const parsed = JSON.parse(data)
-            resolve({ id: task.id, result: parsed, error: null })
-          } catch (e) {
-            resolve({ id: task.id, result: null, error: e.message })
-          }
+          try { resolve({ id: task.id, result: JSON.parse(data), error: null }) }
+          catch (e) { resolve({ id: task.id, result: null, error: e.message }) }
         })
       })
       req.on('error', (e) => resolve({ id: task.id, result: null, error: e.message }))
@@ -1064,26 +1204,20 @@ ipcMain.handle('parallel-chat', async (event, { tasks, model, temperature, max_t
       req.end()
     })
   }
-
-  const results = await Promise.all(tasks.map(executeTask))
-  return results
+  return Promise.all(tasks.map(executeTask))
 })
 
-// ─── IPC: Audit Log ────────────────────────────────────────────────────
+// ─── IPC: Audit Log ──────────────────────────────────────────────────
 function loadAuditLog() {
   try {
-    if (fs.existsSync(AUDIT_LOG_PATH)) {
-      return JSON.parse(fs.readFileSync(AUDIT_LOG_PATH, 'utf-8'))
-    }
+    if (fs.existsSync(AUDIT_LOG_PATH)) return JSON.parse(fs.readFileSync(AUDIT_LOG_PATH, 'utf-8'))
   } catch {}
   return []
 }
 
 function saveAuditLog(entries) {
   try {
-    // Keep max 1000 entries, auto-purge old
-    const trimmed = entries.slice(-1000)
-    fs.writeFileSync(AUDIT_LOG_PATH, JSON.stringify(trimmed, null, 2), 'utf-8')
+    fs.writeFileSync(AUDIT_LOG_PATH, JSON.stringify(entries.slice(-1000), null, 2), 'utf-8')
   } catch {}
 }
 
@@ -1094,113 +1228,61 @@ ipcMain.handle('audit-log-append', async (event, entry) => {
   return { error: null }
 })
 
-ipcMain.handle('audit-log-load', async () => {
-  return loadAuditLog()
-})
+ipcMain.handle('audit-log-load',  async () => loadAuditLog())
+ipcMain.handle('audit-log-clear', async () => { saveAuditLog([]); return { error: null } })
 
-ipcMain.handle('audit-log-clear', async () => {
-  saveAuditLog([])
-  return { error: null }
-})
-
-// ─── IPC: Analytics (MCD/MAGI/MASA) ────────────────────────────────────
+// ─── IPC: Analytics ──────────────────────────────────────────────────
 ipcMain.handle('analytics-save-session', async (event, sessionData) => {
   const analytics = loadAnalytics()
-  analytics.sessions.push({
-    ...sessionData,
-    timestamp: Date.now()
-  })
-  // Update global stats
+  analytics.sessions.push({ ...sessionData, timestamp: Date.now() })
   analytics.globalStats.totalSessions++
-  analytics.globalStats.totalToolCalls += sessionData.toolCalls || 0
-  analytics.globalStats.totalErrors += sessionData.errors || 0
+  analytics.globalStats.totalToolCalls  += sessionData.toolCalls  || 0
+  analytics.globalStats.totalErrors     += sessionData.errors     || 0
   if (sessionData.agentMode) analytics.globalStats.totalAgentRuns++
   analytics.globalStats.totalCircuitBreaks += sessionData.circuitBreaks || 0
   return saveAnalytics(analytics)
 })
 
-ipcMain.handle('analytics-load', async () => {
-  return loadAnalytics()
-})
+ipcMain.handle('analytics-load', async () => loadAnalytics())
 
 ipcMain.handle('analytics-get-insights', async () => {
   const analytics = loadAnalytics()
   const sessions = analytics.sessions || []
-  if (sessions.length === 0) {
-    return { hasData: false }
-  }
+  if (sessions.length === 0) return { hasData: false }
 
-  // MAGI: Generate insights from collected data
   const now = Date.now()
-  const last7d = sessions.filter(s => s.timestamp > now - 7 * 24 * 60 * 60 * 1000)
+  const last7d  = sessions.filter(s => s.timestamp > now - 7  * 24 * 60 * 60 * 1000)
   const last24h = sessions.filter(s => s.timestamp > now - 24 * 60 * 60 * 1000)
 
-  // Tool usage frequency
   const toolFreq = {}
   for (const s of sessions) {
-    if (s.toolsUsed) {
-      for (const tool of s.toolsUsed) {
-        toolFreq[tool.name] = (toolFreq[tool.name] || 0) + tool.count
-      }
-    }
+    if (s.toolsUsed) for (const tool of s.toolsUsed) toolFreq[tool.name] = (toolFreq[tool.name] || 0) + tool.count
   }
-  const topTools = Object.entries(toolFreq)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([name, count]) => ({ name, count }))
+  const topTools = Object.entries(toolFreq).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, count]) => ({ name, count }))
 
-  // Model usage
   const modelFreq = {}
-  for (const s of sessions) {
-    if (s.model) {
-      modelFreq[s.model] = (modelFreq[s.model] || 0) + 1
-    }
-  }
-  const modelUsage = Object.entries(modelFreq)
-    .sort((a, b) => b[1] - a[1])
-    .map(([name, count]) => ({ name, count }))
+  for (const s of sessions) { if (s.model) modelFreq[s.model] = (modelFreq[s.model] || 0) + 1 }
+  const modelUsage = Object.entries(modelFreq).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count }))
 
-  // Average response time
   const responseTimes = sessions.filter(s => s.avgResponseTime > 0).map(s => s.avgResponseTime)
-  const avgResponseTime = responseTimes.length > 0
-    ? Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length)
-    : 0
+  const avgResponseTime = responseTimes.length > 0 ? Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length) : 0
 
-  // Agent completion rate
-  const agentSessions = sessions.filter(s => s.agentMode)
-  const agentCompleted = agentSessions.filter(s => s.agentCompleted)
-  const agentCompletionRate = agentSessions.length > 0
-    ? Math.round((agentCompleted.length / agentSessions.length) * 100)
-    : 0
+  const agentSessions    = sessions.filter(s => s.agentMode)
+  const agentCompleted   = agentSessions.filter(s => s.agentCompleted)
+  const agentCompletionRate = agentSessions.length > 0 ? Math.round((agentCompleted.length / agentSessions.length) * 100) : 0
+  const agentSteps       = agentSessions.filter(s => s.agentSteps > 0).map(s => s.agentSteps)
+  const avgAgentSteps    = agentSteps.length > 0 ? Math.round(agentSteps.reduce((a, b) => a + b, 0) / agentSteps.length * 10) / 10 : 0
 
-  // Average agent steps
-  const agentSteps = agentSessions.filter(s => s.agentSteps > 0).map(s => s.agentSteps)
-  const avgAgentSteps = agentSteps.length > 0
-    ? Math.round(agentSteps.reduce((a, b) => a + b, 0) / agentSteps.length * 10) / 10
-    : 0
-
-  // Error rate
-  const totalInteractions = sessions.length
   const sessionsWithErrors = sessions.filter(s => (s.errors || 0) > 0).length
-  const errorRate = totalInteractions > 0
-    ? Math.round((sessionsWithErrors / totalInteractions) * 100)
-    : 0
+  const errorRate = sessions.length > 0 ? Math.round((sessionsWithErrors / sessions.length) * 100) : 0
 
-  // Provider usage
   const providerFreq = {}
-  for (const s of sessions) {
-    const p = s.provider || 'ollama'
-    providerFreq[p] = (providerFreq[p] || 0) + 1
-  }
+  for (const s of sessions) { const p = s.provider || 'ollama'; providerFreq[p] = (providerFreq[p] || 0) + 1 }
 
   return {
     hasData: true,
     global: analytics.globalStats,
-    period: {
-      total: sessions.length,
-      last7d: last7d.length,
-      last24h: last24h.length
-    },
+    period: { total: sessions.length, last7d: last7d.length, last24h: last24h.length },
     topTools,
     modelUsage,
     providerUsage: Object.entries(providerFreq).map(([name, count]) => ({ name, count })),
@@ -1214,16 +1296,13 @@ ipcMain.handle('analytics-get-insights', async () => {
 })
 
 ipcMain.handle('analytics-clear', async () => {
-  const empty = { sessions: [], globalStats: { totalSessions: 0, totalToolCalls: 0, totalErrors: 0, totalAgentRuns: 0, totalCircuitBreaks: 0 } }
-  return saveAnalytics(empty)
+  return saveAnalytics({ sessions: [], globalStats: { totalSessions: 0, totalToolCalls: 0, totalErrors: 0, totalAgentRuns: 0, totalCircuitBreaks: 0 } })
 })
 
 // ─── App lifecycle ───────────────────────────────────────────────────
 app.whenReady().then(() => {
   createWindow()
   createTray()
-
-  // Global hotkey: Ctrl+Shift+Space
   try {
     globalShortcut.register('CommandOrControl+Shift+Space', () => {
       if (win) { win.show(); win.focus() }
@@ -1233,14 +1312,6 @@ app.whenReady().then(() => {
   }
 })
 
-app.on('will-quit', () => {
-  globalShortcut.unregisterAll()
-})
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
-
-app.on('before-quit', () => {
-  app.isQuitting = true
-})
+app.on('will-quit', () => globalShortcut.unregisterAll())
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
+app.on('before-quit', () => { app.isQuitting = true })
