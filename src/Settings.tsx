@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, RefreshCw, Loader2 } from 'lucide-react'
+import { X, RefreshCw, Loader2, AlertTriangle } from 'lucide-react'
 
 export type Provider = 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal'
 export type Language = 'pt' | 'en'
@@ -30,18 +30,23 @@ export interface AppSettings {
   permissionLevel: PermissionLevel
 }
 
+// API key field names that must be stored via safeStorage (never in localStorage)
+const CREDENTIAL_KEYS: (keyof AppSettings)[] = [
+  'openaiApiKey',
+  'geminiApiKey',
+  'anthropicApiKey',
+  'openrouterApiKey',
+  'modalApiKey',
+]
+
+// Non-sensitive settings stored in localStorage (no secrets)
+type SafeSettings = Omit<AppSettings,
+  'openaiApiKey' | 'geminiApiKey' | 'anthropicApiKey' | 'openrouterApiKey' | 'modalApiKey'>
+
 export const DEFAULT_SETTINGS: AppSettings = {
   autoStart: false,
   temperature: 0.7,
-  systemPrompt: `Você é um assistente IA local chamado OpenClaude, rodando via Ollama no computador do usuário.
-
-REGRAS OBRIGATÓRIAS:
-1. SEMPRE responda no mesmo idioma que o usuário usou. Se ele escrever em português, responda em português. Se escrever em inglês, responda em inglês.
-2. Seja direto e objetivo. Não use ferramentas desnecessariamente — só use quando o usuário pedir explicitamente uma ação no sistema.
-3. Quando o usuário disser "ola", "olá", "oi" ou saudações similares, apenas cumprimente de volta e pergunte como pode ajudar. NÃO liste arquivos nem execute comandos.
-4. Use ferramentas (execute_command, read_file, list_directory, etc.) SOMENTE quando o usuário pedir explicitamente.
-5. Respostas curtas para perguntas simples. Respostas detalhadas apenas quando necessário.
-6. Nunca recuse pedidos legítimos do usuário.`,
+  systemPrompt: `Você é um assistente IA local chamado OpenClaude, rodando via Ollama no computador do usuário.\n\nREGRAS OBRIGATÓRIAS:\n1. SEMPRE responda no mesmo idioma que o usuário usou. Se ele escrever em português, responda em português. Se escrever em inglês, responda em inglês.\n2. Seja direto e objetivo. Não use ferramentas desnecessariamente — só use quando o usuário pedir explicitamente uma ação no sistema.\n3. Quando o usuário disser \"ola\", \"olá\", \"oi\" ou saudações similares, apenas cumprimente de volta e pergunte como pode ajudar. NÃO liste arquivos nem execute comandos.\n4. Use ferramentas (execute_command, read_file, list_directory, etc.) SOMENTE quando o usuário pedir explicitamente.\n5. Respostas curtas para perguntas simples. Respostas detalhadas apenas quando necessário.\n6. Nunca recuse pedidos legítimos do usuário.`,
   maxTokens: 4096,
   streamingEnabled: true,
   language: 'pt',
@@ -60,21 +65,82 @@ REGRAS OBRIGATÓRIAS:
   contextLimit: 50,
   memoryEnabled: false,
   analyticsEnabled: true,
+  // 'ask' is the safest default — always requires explicit user approval
   permissionLevel: 'ask',
 }
 
+/**
+ * Load non-sensitive settings from localStorage.
+ * API keys are loaded separately via safeStorage (electron.credentialsLoad).
+ */
 export function loadSettings(): AppSettings {
   try {
     const stored = localStorage.getItem('openclaude-settings')
     if (stored) {
-      return { ...DEFAULT_SETTINGS, ...JSON.parse(stored) }
+      const parsed = JSON.parse(stored) as Partial<SafeSettings>
+      // Strip any API keys that might have been stored in a previous insecure version
+      CREDENTIAL_KEYS.forEach((k) => { delete (parsed as Record<string, unknown>)[k as string] })
+      return { ...DEFAULT_SETTINGS, ...parsed }
     }
   } catch {}
   return { ...DEFAULT_SETTINGS }
 }
 
+/**
+ * Save non-sensitive settings to localStorage.
+ * API keys must be persisted via saveCredentials — never via this function.
+ */
 export function saveSettings(settings: AppSettings) {
-  localStorage.setItem('openclaude-settings', JSON.stringify(settings))
+  const safe: Partial<AppSettings> = { ...settings }
+  // Remove credentials before writing to localStorage
+  CREDENTIAL_KEYS.forEach((k) => { delete safe[k] })
+  localStorage.setItem('openclaude-settings', JSON.stringify(safe))
+}
+
+/**
+ * Persist a single API key using Electron safeStorage (OS-level encryption).
+ * Falls back silently if safeStorage is unavailable (non-Electron context).
+ */
+export async function saveCredential(key: string, value: string): Promise<void> {
+  try {
+    if ((window as any).electron?.credentialsSave) {
+      await (window as any).electron.credentialsSave(key, value)
+    }
+  } catch (e) {
+    console.error('[credentials] Failed to save credential:', key, e)
+  }
+}
+
+/**
+ * Load a single API key from Electron safeStorage.
+ * Returns empty string if unavailable or not set.
+ */
+export async function loadCredential(key: string): Promise<string> {
+  try {
+    if ((window as any).electron?.credentialsLoad) {
+      const val = await (window as any).electron.credentialsLoad(key)
+      return typeof val === 'string' ? val : ''
+    }
+  } catch (e) {
+    console.error('[credentials] Failed to load credential:', key, e)
+  }
+  return ''
+}
+
+/**
+ * Load all API keys from safeStorage and merge into the settings object.
+ * Call this once after loadSettings() on app startup.
+ */
+export async function loadAllCredentials(base: AppSettings): Promise<AppSettings> {
+  const [openaiApiKey, geminiApiKey, anthropicApiKey, openrouterApiKey, modalApiKey] =
+    await Promise.all([
+      loadCredential('openaiApiKey'),
+      loadCredential('geminiApiKey'),
+      loadCredential('anthropicApiKey'),
+      loadCredential('openrouterApiKey'),
+      loadCredential('modalApiKey'),
+    ])
+  return { ...base, openaiApiKey, geminiApiKey, anthropicApiKey, openrouterApiKey, modalApiKey }
 }
 
 interface SettingsProps {
@@ -89,12 +155,17 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
   const [fetchedModels, setFetchedModels] = useState<string[]>([])
   const [isFetching, setIsFetching] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
+  // Tracks which credential fields were changed so we only persist modified keys
+  const [changedCredentials, setChangedCredentials] = useState<Set<keyof AppSettings>>(new Set())
+  // Controls the "ignore" level confirmation dialog
+  const [showIgnoreWarning, setShowIgnoreWarning] = useState(false)
 
   useEffect(() => {
     if (isOpen) {
       setLocal({ ...settings })
       setFetchedModels([])
       setFetchError(null)
+      setChangedCredentials(new Set())
     }
   }, [isOpen, settings])
 
@@ -105,8 +176,43 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
 
   if (!isOpen) return null
 
+  const handleCredentialChange = (key: keyof AppSettings, value: string) => {
+    setLocal((s) => ({ ...s, [key]: value }))
+    setChangedCredentials((prev) => new Set(prev).add(key))
+  }
+
+  const handlePermissionChange = (level: PermissionLevel) => {
+    if (level === 'ignore') {
+      setShowIgnoreWarning(true)
+      return
+    }
+    setLocal((s) => ({ ...s, permissionLevel: level }))
+  }
+
+  const confirmIgnoreLevel = () => {
+    setLocal((s) => ({ ...s, permissionLevel: 'ignore' }))
+    setShowIgnoreWarning(false)
+  }
+
   const handleSave = async () => {
+    // Persist non-sensitive settings to localStorage
     saveSettings(local)
+
+    // Persist changed API keys via safeStorage (OS-encrypted)
+    const credentialSavePromises: Promise<void>[] = []
+    if (changedCredentials.has('openaiApiKey'))
+      credentialSavePromises.push(saveCredential('openaiApiKey', local.openaiApiKey))
+    if (changedCredentials.has('geminiApiKey'))
+      credentialSavePromises.push(saveCredential('geminiApiKey', local.geminiApiKey))
+    if (changedCredentials.has('anthropicApiKey'))
+      credentialSavePromises.push(saveCredential('anthropicApiKey', local.anthropicApiKey))
+    if (changedCredentials.has('openrouterApiKey'))
+      credentialSavePromises.push(saveCredential('openrouterApiKey', local.openrouterApiKey))
+    if (changedCredentials.has('modalApiKey'))
+      credentialSavePromises.push(saveCredential('modalApiKey', local.modalApiKey))
+
+    await Promise.all(credentialSavePromises)
+
     try {
       await window.electron.setAutoStart(local.autoStart)
     } catch {}
@@ -115,12 +221,13 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
   }
 
   const fetchModels = async () => {
-    const apiKey = local.provider === 'openai' ? local.openaiApiKey :
-                   local.provider === 'gemini' ? local.geminiApiKey :
-                   local.provider === 'anthropic' ? local.anthropicApiKey :
-                   local.provider === 'modal' ? local.modalApiKey :
-                   local.provider === 'openrouter' ? local.openrouterApiKey : ''
-    
+    const apiKey =
+      local.provider === 'openai' ? local.openaiApiKey :
+      local.provider === 'gemini' ? local.geminiApiKey :
+      local.provider === 'anthropic' ? local.anthropicApiKey :
+      local.provider === 'modal' ? local.modalApiKey :
+      local.provider === 'openrouter' ? local.openrouterApiKey : ''
+
     if (!apiKey) {
       setFetchError(local.language === 'pt' ? 'Insira a API Key primeiro' : 'Enter API Key first')
       return
@@ -129,17 +236,19 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
     setIsFetching(true)
     setFetchError(null)
     try {
-      const result = await (window as any).electron.listProviderModels({ 
-        provider: local.provider, 
+      const result = await (window as any).electron.listProviderModels({
+        provider: local.provider,
         apiKey,
-        modalHostname: local.modalHostname 
+        modalHostname: local.modalHostname,
       })
       if (result.error) {
         setFetchError(result.error)
       } else if (result.models) {
         setFetchedModels(result.models)
         if (result.models.length === 0) {
-          setFetchError(local.language === 'pt' ? 'Nenhum modelo encontrado' : 'No models found')
+          setFetchError(
+            local.language === 'pt' ? 'Nenhum modelo encontrado' : 'No models found'
+          )
         }
       }
     } catch (e: any) {
@@ -150,7 +259,10 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
   }
 
   return (
-    <div className="settings-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+    <div
+      className="settings-overlay"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
       <div className="settings-modal">
         <div className="settings-header">
           <h2>Configurações</h2>
@@ -166,7 +278,7 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
             <select
               className="settings-input"
               value={local.language}
-              onChange={(e) => setLocal(s => ({ ...s, language: e.target.value as Language }))}
+              onChange={(e) => setLocal((s) => ({ ...s, language: e.target.value as Language }))}
             >
               <option value="pt">Portugues (Brasil)</option>
               <option value="en">English</option>
@@ -181,7 +293,7 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
             <select
               className="settings-input"
               value={local.provider}
-              onChange={(e) => setLocal(s => ({ ...s, provider: e.target.value as Provider }))}
+              onChange={(e) => setLocal((s) => ({ ...s, provider: e.target.value as Provider }))}
             >
               <option value="ollama">Ollama (Local)</option>
               <option value="openai">OpenAI</option>
@@ -201,12 +313,12 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                   type="password"
                   className="settings-input"
                   value={local.openaiApiKey}
-                  onChange={(e) => setLocal(s => ({ ...s, openaiApiKey: e.target.value }))}
+                  onChange={(e) => handleCredentialChange('openaiApiKey', e.target.value)}
                   placeholder="sk-..."
                 />
-                <button 
-                  className="settings-fetch-btn" 
-                  onClick={fetchModels} 
+                <button
+                  className="settings-fetch-btn"
+                  onClick={fetchModels}
                   disabled={isFetching || !local.openaiApiKey}
                 >
                   {isFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
@@ -220,11 +332,11 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                   className="settings-input"
                   list="openai-models"
                   value={local.openaiModel}
-                  onChange={(e) => setLocal(s => ({ ...s, openaiModel: e.target.value }))}
+                  onChange={(e) => setLocal((s) => ({ ...s, openaiModel: e.target.value }))}
                   placeholder="gpt-4o"
                 />
                 <datalist id="openai-models">
-                  {fetchedModels.map(m => <option key={m} value={m} />)}
+                  {fetchedModels.map((m) => <option key={m} value={m} />)}
                   {!fetchedModels.length && (
                     <>
                       <option value="gpt-4o" />
@@ -234,7 +346,11 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                   )}
                 </datalist>
               </div>
-              {fetchError && <div className="settings-error" style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>{fetchError}</div>}
+              {fetchError && (
+                <div className="settings-error" style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>
+                  {fetchError}
+                </div>
+              )}
             </>
           )}
 
@@ -247,12 +363,12 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                   type="password"
                   className="settings-input"
                   value={local.geminiApiKey}
-                  onChange={(e) => setLocal(s => ({ ...s, geminiApiKey: e.target.value }))}
+                  onChange={(e) => handleCredentialChange('geminiApiKey', e.target.value)}
                   placeholder="AIza..."
                 />
-                <button 
-                  className="settings-fetch-btn" 
-                  onClick={fetchModels} 
+                <button
+                  className="settings-fetch-btn"
+                  onClick={fetchModels}
                   disabled={isFetching || !local.geminiApiKey}
                 >
                   {isFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
@@ -266,11 +382,11 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                   className="settings-input"
                   list="gemini-models"
                   value={local.geminiModel}
-                  onChange={(e) => setLocal(s => ({ ...s, geminiModel: e.target.value }))}
+                  onChange={(e) => setLocal((s) => ({ ...s, geminiModel: e.target.value }))}
                   placeholder="gemini-2.0-flash"
                 />
                 <datalist id="gemini-models">
-                  {fetchedModels.map(m => <option key={m} value={m} />)}
+                  {fetchedModels.map((m) => <option key={m} value={m} />)}
                   {!fetchedModels.length && (
                     <>
                       <option value="gemini-2.0-flash" />
@@ -280,7 +396,11 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                   )}
                 </datalist>
               </div>
-              {fetchError && <div className="settings-error" style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>{fetchError}</div>}
+              {fetchError && (
+                <div className="settings-error" style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>
+                  {fetchError}
+                </div>
+              )}
             </>
           )}
 
@@ -293,12 +413,12 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                   type="password"
                   className="settings-input"
                   value={local.anthropicApiKey}
-                  onChange={(e) => setLocal(s => ({ ...s, anthropicApiKey: e.target.value }))}
+                  onChange={(e) => handleCredentialChange('anthropicApiKey', e.target.value)}
                   placeholder="sk-ant-..."
                 />
-                <button 
-                  className="settings-fetch-btn" 
-                  onClick={fetchModels} 
+                <button
+                  className="settings-fetch-btn"
+                  onClick={fetchModels}
                   disabled={isFetching || !local.anthropicApiKey}
                 >
                   {isFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
@@ -312,11 +432,11 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                   className="settings-input"
                   list="anthropic-models"
                   value={local.anthropicModel}
-                  onChange={(e) => setLocal(s => ({ ...s, anthropicModel: e.target.value }))}
+                  onChange={(e) => setLocal((s) => ({ ...s, anthropicModel: e.target.value }))}
                   placeholder="claude-sonnet-4-20250514"
                 />
                 <datalist id="anthropic-models">
-                  {fetchedModels.map(m => <option key={m} value={m} />)}
+                  {fetchedModels.map((m) => <option key={m} value={m} />)}
                   {!fetchedModels.length && (
                     <>
                       <option value="claude-3-5-sonnet-20241022" />
@@ -326,7 +446,11 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                   )}
                 </datalist>
               </div>
-              {fetchError && <div className="settings-error" style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>{fetchError}</div>}
+              {fetchError && (
+                <div className="settings-error" style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>
+                  {fetchError}
+                </div>
+              )}
             </>
           )}
 
@@ -339,12 +463,12 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                   type="password"
                   className="settings-input"
                   value={local.openrouterApiKey || ''}
-                  onChange={(e) => setLocal(s => ({ ...s, openrouterApiKey: e.target.value }))}
+                  onChange={(e) => handleCredentialChange('openrouterApiKey', e.target.value)}
                   placeholder="sk-or-v1-..."
                 />
-                <button 
-                  className="settings-fetch-btn" 
-                  onClick={fetchModels} 
+                <button
+                  className="settings-fetch-btn"
+                  onClick={fetchModels}
                   disabled={isFetching || !local.openrouterApiKey}
                 >
                   {isFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
@@ -358,11 +482,11 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                   className="settings-input"
                   list="openrouter-models"
                   value={local.openrouterModel || ''}
-                  onChange={(e) => setLocal(s => ({ ...s, openrouterModel: e.target.value }))}
+                  onChange={(e) => setLocal((s) => ({ ...s, openrouterModel: e.target.value }))}
                   placeholder="google/gemini-2.5-pro"
                 />
                 <datalist id="openrouter-models">
-                  {fetchedModels.map(m => <option key={m} value={m} />)}
+                  {fetchedModels.map((m) => <option key={m} value={m} />)}
                   {!fetchedModels.length && (
                     <>
                       <option value="google/gemini-2.0-flash-001" />
@@ -372,7 +496,11 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                   )}
                 </datalist>
               </div>
-              {fetchError && <div className="settings-error" style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>{fetchError}</div>}
+              {fetchError && (
+                <div className="settings-error" style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>
+                  {fetchError}
+                </div>
+              )}
             </>
           )}
 
@@ -385,12 +513,12 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                   type="password"
                   className="settings-input"
                   value={local.modalApiKey || ''}
-                  onChange={(e) => setLocal(s => ({ ...s, modalApiKey: e.target.value }))}
+                  onChange={(e) => handleCredentialChange('modalApiKey', e.target.value)}
                   placeholder="modalresearch_..."
                 />
-                <button 
-                  className="settings-fetch-btn" 
-                  onClick={fetchModels} 
+                <button
+                  className="settings-fetch-btn"
+                  onClick={fetchModels}
                   disabled={isFetching || !local.modalApiKey}
                 >
                   {isFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
@@ -404,11 +532,11 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                   className="settings-input"
                   list="modal-models"
                   value={local.modalModel || ''}
-                  onChange={(e) => setLocal(s => ({ ...s, modalModel: e.target.value }))}
+                  onChange={(e) => setLocal((s) => ({ ...s, modalModel: e.target.value }))}
                   placeholder="zai-org/GLM-5.1-FP8"
                 />
                 <datalist id="modal-models">
-                  {fetchedModels.map(m => <option key={m} value={m} />)}
+                  {fetchedModels.map((m) => <option key={m} value={m} />)}
                   {!fetchedModels.length && (
                     <>
                       <option value="zai-org/GLM-5.1-FP8" />
@@ -422,11 +550,15 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                   type="text"
                   className="settings-input"
                   value={local.modalHostname || ''}
-                  onChange={(e) => setLocal(s => ({ ...s, modalHostname: e.target.value }))}
+                  onChange={(e) => setLocal((s) => ({ ...s, modalHostname: e.target.value }))}
                   placeholder="api.us-west-2.modal.direct"
                 />
               </div>
-              {fetchError && <div className="settings-error" style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>{fetchError}</div>}
+              {fetchError && (
+                <div className="settings-error" style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>
+                  {fetchError}
+                </div>
+              )}
             </>
           )}
 
@@ -434,8 +566,10 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
           <div className="settings-group">
             <label className="settings-label">
               <span>Iniciar com o Windows</span>
-              <div className={`toggle ${local.autoStart ? 'on' : ''}`}
-                onClick={() => setLocal(s => ({ ...s, autoStart: !s.autoStart }))}>
+              <div
+                className={`toggle ${local.autoStart ? 'on' : ''}`}
+                onClick={() => setLocal((s) => ({ ...s, autoStart: !s.autoStart }))}
+              >
                 <div className="toggle-knob" />
               </div>
             </label>
@@ -445,8 +579,10 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
           <div className="settings-group">
             <label className="settings-label">
               <span>Streaming de respostas</span>
-              <div className={`toggle ${local.streamingEnabled ? 'on' : ''}`}
-                onClick={() => setLocal(s => ({ ...s, streamingEnabled: !s.streamingEnabled }))}>
+              <div
+                className={`toggle ${local.streamingEnabled ? 'on' : ''}`}
+                onClick={() => setLocal((s) => ({ ...s, streamingEnabled: !s.streamingEnabled }))}
+              >
                 <div className="toggle-knob" />
               </div>
             </label>
@@ -456,8 +592,10 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
           <div className="settings-group">
             <label className="settings-label">
               <span>Memória persistente</span>
-              <div className={`toggle ${local.memoryEnabled ? 'on' : ''}`}
-                onClick={() => setLocal(s => ({ ...s, memoryEnabled: !s.memoryEnabled }))}>
+              <div
+                className={`toggle ${local.memoryEnabled ? 'on' : ''}`}
+                onClick={() => setLocal((s) => ({ ...s, memoryEnabled: !s.memoryEnabled }))}
+              >
                 <div className="toggle-knob" />
               </div>
             </label>
@@ -466,9 +604,15 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
           {/* Analytics */}
           <div className="settings-group">
             <label className="settings-label">
-              <span>{local.language === 'pt' ? 'Analytics (coleta local)' : 'Analytics (local collection)'}</span>
-              <div className={`toggle ${local.analyticsEnabled ? 'on' : ''}`}
-                onClick={() => setLocal(s => ({ ...s, analyticsEnabled: !s.analyticsEnabled }))}>
+              <span>
+                {local.language === 'pt'
+                  ? 'Analytics (coleta local)'
+                  : 'Analytics (local collection)'}
+              </span>
+              <div
+                className={`toggle ${local.analyticsEnabled ? 'on' : ''}`}
+                onClick={() => setLocal((s) => ({ ...s, analyticsEnabled: !s.analyticsEnabled }))}
+              >
                 <div className="toggle-knob" />
               </div>
             </label>
@@ -486,11 +630,12 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
               max="2"
               step="0.1"
               value={local.temperature}
-              onChange={(e) => setLocal(s => ({ ...s, temperature: parseFloat(e.target.value) }))}
+              onChange={(e) => setLocal((s) => ({ ...s, temperature: parseFloat(e.target.value) }))}
               className="settings-slider"
             />
           </div>
 
+          {/* Permission Level */}
           <div className="settings-group">
             <label className="settings-label">
               <span>{local.language === 'pt' ? 'Nível de Permissão' : 'Permission Level'}</span>
@@ -498,13 +643,73 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
             <select
               className="settings-select"
               value={local.permissionLevel || 'ask'}
-              onChange={(e) => setLocal(s => ({ ...s, permissionLevel: e.target.value as PermissionLevel }))}
+              onChange={(e) => handlePermissionChange(e.target.value as PermissionLevel)}
             >
-              <option value="ask">{local.language === 'pt' ? 'Solicitar permissões' : 'Always ask'}</option>
-              <option value="auto_edits">{local.language === 'pt' ? 'Aceitar edições automaticamente' : 'Auto-accept edits'}</option>
-              <option value="planning">{local.language === 'pt' ? 'Modo de planejamento' : 'Planning mode'}</option>
-              <option value="ignore">{local.language === 'pt' ? 'Ignorar permissões' : 'Ignore all'}</option>
+              <option value="ask">
+                {local.language === 'pt' ? 'Solicitar permissões' : 'Always ask'}
+              </option>
+              <option value="auto_edits">
+                {local.language === 'pt' ? 'Aceitar edições automaticamente' : 'Auto-accept edits'}
+              </option>
+              <option value="planning">
+                {local.language === 'pt' ? 'Modo de planejamento' : 'Planning mode'}
+              </option>
+              <option value="ignore">
+                {local.language === 'pt' ? '⚠️ Ignorar permissões' : '⚠️ Ignore all'}
+              </option>
             </select>
+
+            {/* Warning banner shown when ignore or auto_edits is active */}
+            {local.permissionLevel === 'ignore' && (
+              <div
+                className="settings-warning-banner"
+                style={{
+                  marginTop: '8px',
+                  padding: '10px 12px',
+                  borderRadius: '6px',
+                  background: 'rgba(255, 80, 80, 0.12)',
+                  border: '1px solid rgba(255, 80, 80, 0.35)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px',
+                  fontSize: '0.78rem',
+                  color: '#ff6b6b',
+                  lineHeight: 1.5,
+                }}
+              >
+                <AlertTriangle size={14} style={{ marginTop: '2px', flexShrink: 0 }} />
+                <span>
+                  {local.language === 'pt'
+                    ? 'Modo IGNORAR PERMISSÕES ativo. Todas as ferramentas perigosas (exec, escrita de arquivos, git) serão executadas SEM confirmação. Use apenas em ambiente isolado e controlado.'
+                    : 'IGNORE PERMISSIONS mode is active. All dangerous tools (exec, file write, git) will run WITHOUT confirmation. Use only in an isolated, controlled environment.'}
+                </span>
+              </div>
+            )}
+            {local.permissionLevel === 'auto_edits' && (
+              <div
+                className="settings-warning-banner"
+                style={{
+                  marginTop: '8px',
+                  padding: '10px 12px',
+                  borderRadius: '6px',
+                  background: 'rgba(255, 160, 0, 0.10)',
+                  border: '1px solid rgba(255, 160, 0, 0.30)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px',
+                  fontSize: '0.78rem',
+                  color: '#ffa500',
+                  lineHeight: 1.5,
+                }}
+              >
+                <AlertTriangle size={14} style={{ marginTop: '2px', flexShrink: 0 }} />
+                <span>
+                  {local.language === 'pt'
+                    ? 'Modo AUTO-EDIÇÕES ativo. Operações de escrita de arquivos e comandos git serão executadas automaticamente sem confirmação.'
+                    : 'AUTO-EDITS mode is active. File write and git operations will run automatically without confirmation.'}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Context limit */}
@@ -519,7 +724,9 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
               max="100"
               step="5"
               value={local.contextLimit}
-              onChange={(e) => setLocal(s => ({ ...s, contextLimit: parseInt(e.target.value) }))}
+              onChange={(e) =>
+                setLocal((s) => ({ ...s, contextLimit: parseInt(e.target.value) }))
+              }
               className="settings-slider"
             />
           </div>
@@ -535,7 +742,9 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
               max={32768}
               step={256}
               value={local.maxTokens}
-              onChange={(e) => setLocal(s => ({ ...s, maxTokens: parseInt(e.target.value) || 4096 }))}
+              onChange={(e) =>
+                setLocal((s) => ({ ...s, maxTokens: parseInt(e.target.value) || 4096 }))
+              }
               className="settings-input"
             />
           </div>
@@ -547,7 +756,7 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
             </label>
             <textarea
               value={local.systemPrompt}
-              onChange={(e) => setLocal(s => ({ ...s, systemPrompt: e.target.value }))}
+              onChange={(e) => setLocal((s) => ({ ...s, systemPrompt: e.target.value }))}
               placeholder="Instrucoes do sistema (opcional)..."
               className="settings-textarea"
               rows={4}
@@ -560,6 +769,54 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
           <button className="settings-save-btn" onClick={handleSave}>Salvar</button>
         </div>
       </div>
+
+      {/* Confirmation dialog for "ignore" permission level */}
+      {showIgnoreWarning && (
+        <div
+          className="settings-overlay"
+          style={{ zIndex: 1100 }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowIgnoreWarning(false) }}
+        >
+          <div
+            className="settings-modal"
+            style={{ maxWidth: '420px', padding: '24px' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+              <AlertTriangle size={22} color="#ff6b6b" />
+              <h3 style={{ color: '#ff6b6b', margin: 0 }}>
+                {local.language === 'pt' ? 'Atenção: Risco de Segurança' : 'Warning: Security Risk'}
+              </h3>
+            </div>
+            <p style={{ fontSize: '0.875rem', lineHeight: 1.6, marginBottom: '20px' }}>
+              {local.language === 'pt'
+                ? 'O modo "Ignorar Permissões" desativa todas as confirmações de segurança. O agente poderá executar comandos, modificar arquivos e interagir com o git sem nenhuma aprovação sua. Use apenas se souber exatamente o que está fazendo e em um ambiente controlado.'
+                : 'The "Ignore Permissions" mode disables all security confirmations. The agent will be able to execute commands, modify files, and interact with git without any approval from you. Use only if you know exactly what you are doing and in a controlled environment.'}
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                className="settings-cancel-btn"
+                onClick={() => setShowIgnoreWarning(false)}
+              >
+                {local.language === 'pt' ? 'Cancelar' : 'Cancel'}
+              </button>
+              <button
+                style={{
+                  background: '#ff4d4d',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '8px 16px',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                }}
+                onClick={confirmIgnoreLevel}
+              >
+                {local.language === 'pt' ? 'Entendi, ativar mesmo assim' : 'I understand, activate anyway'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
