@@ -1729,6 +1729,7 @@ export default function App() {
       {showCodeWorkspace && (
         <CodeWorkspace
           settings={settings}
+          ollamaModels={models}
           onClose={() => setShowCodeWorkspace(false)}
           onInsertToChat={(text) => {
             setInput(prev => (prev ? prev + '\n\n' : '') + text)
