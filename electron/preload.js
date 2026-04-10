@@ -38,9 +38,13 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Dialogs
   saveDialog: (opts) => ipcRenderer.invoke('save-dialog', opts),
+  openFileDialog: (opts) => ipcRenderer.invoke('open-file-dialog', opts),
 
   // Dropped files
   readDroppedFile: (path) => ipcRenderer.invoke('read-dropped-file', path),
+
+  // Document parsing (PDF / DOCX)
+  readDocument: (filePath) => ipcRenderer.invoke('read-document', filePath),
 
   // Window controls
   minimize: () => ipcRenderer.invoke('window-minimize'),
@@ -54,9 +58,13 @@ contextBridge.exposeInMainWorld('electron', {
   // Abort stream
   abortStream: () => ipcRenderer.invoke('abort-stream'),
 
-  // Memory system
+  // Memory system (user facts)
   loadMemory: () => ipcRenderer.invoke('load-memory'),
   saveMemory: (data) => ipcRenderer.invoke('save-memory', data),
+
+  // Agent working memory (persistent between sessions)
+  loadAgentMemory: () => ipcRenderer.invoke('load-agent-memory'),
+  saveAgentMemory: (data) => ipcRenderer.invoke('save-agent-memory', data),
 
   // Multi-provider
   providerChat: (params) => ipcRenderer.invoke('provider-chat', params),
@@ -81,7 +89,6 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Collaborative agents
   parallelChat: (params) => ipcRenderer.invoke('parallel-chat', params),
-
 
   // Parliament Mode — Multi-Agent Debate
   parliamentDebate: (params) => ipcRenderer.invoke('parliament-debate', params),
