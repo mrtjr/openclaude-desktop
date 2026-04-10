@@ -1,16 +1,14 @@
 /* ═══════════════════════════════════════════════════════════════
-   OpenClaude Desktop — UI Improvements v3.0
+   OpenClaude Desktop — UI Improvements v3.1
    ✅ Acessibilidade: nenhum texto abaixo de 12px
-   ✅ Fonte: Satoshi via Fontshare (carregada antes do app)
+   ✅ Fonte: Satoshi via Fontshare
    ✅ Sombras tonalizadas com matiz do fundo
    ✅ conv-delete visível em touch
    ✅ send-btn disabled com feedback claro
    ✅ Gradiente reservado apenas para logo e 1 botão primário
    ✅ Bordas alpha-blended
    ✅ Border-radius consistente
-   ✅ update-banner sem !important em cascata
-   ✅ Messages gap corrigido
-   ✅ Nomenclatura amigável via variáveis
+   ✅ Toolbar → botão "Ferramentas +" com popover CSS puro
    ═══════════════════════════════════════════════════════════════ */
 
 /* ── FONTE: Satoshi via Fontshare ────────────────────────────── */
@@ -23,36 +21,24 @@
   --oc-radius-xs:  6px;
   --oc-transition: 160ms cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* Fonte — Satoshi carregada, sistema como fallback */
   --oc-font: 'Satoshi', 'Inter', system-ui, sans-serif;
   --oc-font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
 
-  /* Superfícies — modo escuro */
   --oc-bg:          #0f0f10;
   --oc-surface:     #18181b;
   --oc-surface-2:   #1e1e22;
   --oc-surface-3:   #27272a;
-
-  /* Bordas alpha-blended (não opacas) */
   --oc-border:      rgba(255,255,255,0.07);
   --oc-border-2:    rgba(255,255,255,0.12);
-
-  /* Texto — 3 níveis */
   --oc-text:        #f4f4f5;
   --oc-text-muted:  #a1a1aa;
   --oc-text-faint:  #52525b;
-
-  /* Accent — cor sólida, sem gradiente em elementos secundários */
   --oc-accent:      #7c3aed;
   --oc-accent-2:    #6d28d9;
   --oc-accent-glow: rgba(124,58,237,0.28);
-
-  /* Status */
   --oc-green:  #22c55e;
   --oc-red:    #ef4444;
   --oc-yellow: #f59e0b;
-
-  /* Sombras tonalizadas com matiz do fundo (não preto puro) */
   --oc-shadow-sm: 0 2px 8px  oklch(0.07 0.04 280 / 0.35);
   --oc-shadow-md: 0 8px 24px oklch(0.07 0.04 280 / 0.45);
   --oc-shadow-lg: 0 20px 60px oklch(0.07 0.04 280 / 0.55);
@@ -76,55 +62,27 @@
 
 /* ── 2. BASE ─────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
-
 body {
   font-family: var(--oc-font) !important;
   background: var(--oc-bg) !important;
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── 3. CORREÇÃO ACESSIBILIDADE — nenhum texto abaixo de 12px ── */
-
-/* conv-date: era 10px */
-.conv-date {
+/* ── 3. ACESSIBILIDADE — nenhum texto abaixo de 12px ─────────── */
+.conv-date, .code-lang, .token-counter, .input-hint,
+.audit-time, .ollama-status, .titlebar-center, .model-btn,
+.parl-tab-badge, .parl-duration, .parliament-label {
   font-size: 12px !important;
-  color: var(--oc-text-faint) !important;
-  margin-top: 2px !important;
 }
+.conv-title        { font-size: 13px !important; }
+.code-lang         { font-weight: 600 !important; text-transform: uppercase !important; letter-spacing: 0.06em !important; }
+.token-counter     { font-family: var(--oc-font-mono) !important; white-space: nowrap !important; }
+.audit-time        { font-family: var(--oc-font-mono) !important; }
+.input-hint        { text-align: center !important; margin-top: 6px !important; }
+.conv-date         { color: var(--oc-text-faint) !important; margin-top: 2px !important; }
+.titlebar-center   { font-weight: 500 !important; color: var(--oc-text-muted) !important; }
+.ollama-status     { font-weight: 500 !important; }
 
-/* code-lang: era 11px */
-.code-lang {
-  font-size: 12px !important;
-  font-weight: 600 !important;
-  color: var(--oc-text-muted) !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.06em !important;
-}
-
-/* token-counter: era 11px */
-.token-counter {
-  font-size: 12px !important;
-  color: var(--oc-text-faint) !important;
-  font-family: var(--oc-font-mono) !important;
-  white-space: nowrap !important;
-}
-
-/* input-hint: era 11px */
-.input-hint {
-  font-size: 12px !important;
-  color: var(--oc-text-faint) !important;
-  text-align: center !important;
-  margin-top: 6px !important;
-}
-
-/* audit-time: era 10.5px */
-.audit-time {
-  font-size: 12px !important;
-  color: var(--oc-text-faint) !important;
-  font-family: var(--oc-font-mono) !important;
-}
-
-/* parl-coord-badge: era ~9.9px (0.62rem) */
 .parl-coord-badge {
   font-size: 12px !important;
   padding: 2px 6px !important;
@@ -136,369 +94,321 @@ body {
   letter-spacing: 0.04em !important;
 }
 
-/* Ollama status: era 11px */
-.ollama-status {
-  font-size: 12px !important;
-  font-weight: 500 !important;
-}
+/* ── 4. SOMBRAS TONALIZADAS ──────────────────────────────────── */
+.settings-modal, .analytics-modal, .audit-modal,
+.approval-modal, .parliament-modal, .model-dropdown,
+.permission-menu { box-shadow: var(--oc-shadow-lg) !important; }
+.conv-item.active, .suggestion-card:hover { box-shadow: var(--oc-shadow-sm) !important; }
+.input-container  { box-shadow: var(--oc-shadow-sm) !important; }
+.input-container:focus-within { box-shadow: var(--oc-shadow-sm), 0 0 0 3px var(--oc-accent-glow) !important; }
 
-/* titlebar center: era 11px */
-.titlebar-center {
-  font-size: 12px !important;
-  font-weight: 500 !important;
-  color: var(--oc-text-muted) !important;
-}
+/* ── 5. GRADIENTE SÓ NO LOGO E BOTÃO PRINCIPAL ───────────────── */
+.new-chat-btn      { background: var(--oc-accent) !important; box-shadow: 0 2px 10px var(--oc-accent-glow) !important; }
+.new-chat-btn:hover { background: var(--oc-accent-2) !important; box-shadow: 0 4px 18px var(--oc-accent-glow) !important; transform: translateY(-1px) !important; }
+.settings-save-btn { background: var(--oc-accent) !important; box-shadow: 0 2px 10px var(--oc-accent-glow) !important; }
+.settings-save-btn:hover { background: var(--oc-accent-2) !important; }
+.parl-btn-primary  { background: var(--oc-accent) !important; box-shadow: 0 4px 16px var(--oc-accent-glow) !important; }
+.parl-btn-primary:hover:not(.disabled) { background: var(--oc-accent-2) !important; }
+.toast { background: var(--oc-surface) !important; border: 1px solid var(--oc-border-2) !important; color: var(--oc-text) !important; box-shadow: var(--oc-shadow-md) !important; }
 
-/* model-btn text: era 11.5px */
-.model-btn {
-  font-size: 12px !important;
-}
-
-/* conv-title — garante mínimo */
-.conv-title {
-  font-size: 13px !important;
-}
-
-/* parl-tab-badge: era 0.65rem (~10.4px) */
-.parl-tab-badge {
-  font-size: 12px !important;
-}
-
-/* parl-duration: era 0.68rem (~10.9px) */
-.parl-duration {
-  font-size: 12px !important;
-}
-
-/* parliament-label uppercase: era 0.72rem (~11.5px) */
-.parliament-label {
-  font-size: 12px !important;
-}
-
-/* ── 4. SOMBRAS — tonalizadas com matiz do fundo ─────────────── */
-.settings-modal,
-.analytics-modal,
-.audit-modal,
-.approval-modal,
-.parliament-modal,
-.model-dropdown,
-.permission-menu {
-  box-shadow: var(--oc-shadow-lg) !important;
-}
-
-.conv-item.active,
-.suggestion-card:hover {
-  box-shadow: var(--oc-shadow-sm) !important;
-}
-
-.input-container {
-  box-shadow: var(--oc-shadow-sm) !important;
-}
-
-.input-container:focus-within {
-  box-shadow: var(--oc-shadow-sm), 0 0 0 3px var(--oc-accent-glow) !important;
-}
-
-/* ── 5. GRADIENTE — reservado apenas para logo e botão principal */
-/* Remove gradiente de elementos secundários, usa cor sólida */
-
-.new-chat-btn {
-  background: var(--oc-accent) !important;
-  box-shadow: 0 2px 10px var(--oc-accent-glow) !important;
-}
-.new-chat-btn:hover {
-  background: var(--oc-accent-2) !important;
-  box-shadow: 0 4px 18px var(--oc-accent-glow) !important;
-  transform: translateY(-1px) !important;
-}
-
-.settings-save-btn {
-  background: var(--oc-accent) !important;
-  box-shadow: 0 2px 10px var(--oc-accent-glow) !important;
-}
-.settings-save-btn:hover {
-  background: var(--oc-accent-2) !important;
-  box-shadow: 0 4px 16px var(--oc-accent-glow) !important;
-}
-
-.parl-btn-primary {
-  background: var(--oc-accent) !important;
-  box-shadow: 0 4px 16px var(--oc-accent-glow) !important;
-}
-.parl-btn-primary:hover:not(.disabled) {
-  background: var(--oc-accent-2) !important;
-  box-shadow: 0 6px 20px var(--oc-accent-glow) !important;
-}
-
-/* Toast — cor sólida em vez de gradiente */
-.toast {
-  background: var(--oc-surface) !important;
-  border: 1px solid var(--oc-border-2) !important;
-  color: var(--oc-text) !important;
-  box-shadow: var(--oc-shadow-md) !important;
-}
-
-/* ── 6. UPDATE BANNER — sem !important em cascata ────────────── */
-/* Corrigido via posicionamento estrutural, não força */
+/* ── 6. UPDATE BANNER ────────────────────────────────────────── */
 .update-banner {
-  position: sticky;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 200;
-  background: linear-gradient(90deg,
-    rgba(124,58,237,0.18) 0%,
-    rgba(168,85,247,0.12) 100
-  );
+  position: sticky; top: 0; left: 0; right: 0; z-index: 200;
+  background: linear-gradient(90deg, rgba(124,58,237,0.18) 0%, rgba(168,85,247,0.12) 100%);
   border-bottom: 1px solid rgba(124,58,237,0.3);
   padding: 8px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--oc-text);
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  font-size: 13px; font-weight: 600; color: var(--oc-text);
 }
-
 .update-download-btn {
-  background: var(--oc-accent) !important;
-  color: white !important;
-  border: none !important;
-  padding: 4px 14px !important;
-  border-radius: 7px !important;
-  font-size: 12px !important;
-  font-weight: 600 !important;
-  cursor: pointer !important;
-  transition: all var(--oc-transition) !important;
+  background: var(--oc-accent) !important; color: white !important; border: none !important;
+  padding: 4px 14px !important; border-radius: 7px !important; font-size: 12px !important;
+  font-weight: 600 !important; cursor: pointer !important; transition: all var(--oc-transition) !important;
   margin-left: auto !important;
 }
-.update-download-btn:hover {
-  background: var(--oc-accent-2) !important;
-  transform: translateY(-1px) !important;
+.update-download-btn:hover { background: var(--oc-accent-2) !important; transform: translateY(-1px) !important; }
+
+/* ── 7. CONV-DELETE VISÍVEL EM TOUCH ─────────────────────────── */
+.conv-delete, .conv-action-btn { opacity: 0; transition: opacity var(--oc-transition) !important; }
+.conv-item:hover .conv-delete, .conv-item:hover .conv-action-btn { opacity: 1; }
+@media (hover: none) { .conv-delete, .conv-action-btn { opacity: 1 !important; } }
+
+/* ── 8. SEND-BTN DISABLED ────────────────────────────────────── */
+.send-btn.disabled, .send-btn:disabled {
+  background: var(--oc-surface-3) !important; color: var(--oc-text-faint) !important;
+  cursor: not-allowed !important; opacity: 0.4 !important;
+  transform: none !important; box-shadow: none !important;
 }
 
-/* ── 7. CONV-DELETE — visível em touch ───────────────────────── */
-/* Em mouse: aparece no hover (comportamento atual mantido) */
-.conv-delete,
-.conv-action-btn {
-  opacity: 0;
-  transition: opacity var(--oc-transition) !important;
-}
-.conv-item:hover .conv-delete,
-.conv-item:hover .conv-action-btn {
-  opacity: 1;
-}
+/* ── 9. MESSAGES GAP ─────────────────────────────────────────── */
+.messages-container { gap: 8px !important; padding: 24px 20px !important; scroll-behavior: smooth !important; }
 
-/* Em touch: sempre visível */
-@media (hover: none) {
-  .conv-delete,
-  .conv-action-btn {
-    opacity: 1 !important;
-  }
-}
-
-/* ── 8. SEND-BTN DISABLED — feedback visual claro ────────────── */
-.send-btn.disabled,
-.send-btn:disabled {
-  background: var(--oc-surface-3) !important;
-  color: var(--oc-text-faint) !important;
-  cursor: not-allowed !important;
-  opacity: 0.4 !important;
-  transform: none !important;
-  box-shadow: none !important;
-}
-
-/* ── 9. MESSAGES GAP — de 2px para 8px ──────────────────────── */
-.messages-container {
-  gap: 8px !important;
-  padding: 24px 20px !important;
-  scroll-behavior: smooth !important;
-}
-
-/* ── 10. INPUT AREA — mais respiro ───────────────────────────── */
-.input-area {
-  padding: 14px 20px 16px !important;
-}
+/* ── 10. INPUT AREA ──────────────────────────────────────────── */
+.input-area { padding: 14px 20px 16px !important; }
 
 /* ── 11. BORDAS ALPHA-BLENDED ────────────────────────────────── */
-/* Garante que nenhuma borda seja cor sólida opaca */
-.conv-item.active {
-  border-left-color: var(--oc-accent) !important;
-  box-shadow: inset 0 0 0 1px rgba(124,58,237,0.2) !important;
-}
-
-.settings-input:focus,
-.settings-textarea:focus {
-  border-color: var(--oc-accent) !important;
-  box-shadow: 0 0 0 3px var(--oc-accent-glow) !important;
-}
+.conv-item.active { border-left-color: var(--oc-accent) !important; box-shadow: inset 0 0 0 1px rgba(124,58,237,0.2) !important; }
+.settings-input:focus, .settings-textarea:focus { border-color: var(--oc-accent) !important; box-shadow: 0 0 0 3px var(--oc-accent-glow) !important; }
 
 /* ── 12. BORDER-RADIUS CONSISTENTE ──────────────────────────── */
-/* cards = 12px, inputs = 9px, badges = 20px, botões = 10px */
 .suggestion-card     { border-radius: 12px !important; }
-.settings-modal      { border-radius: 16px !important; }
-.analytics-modal     { border-radius: 16px !important; }
-.audit-modal         { border-radius: 16px !important; }
-.approval-modal      { border-radius: 16px !important; }
-.settings-input      { border-radius: 9px !important; }
-.settings-textarea   { border-radius: 9px !important; }
-.search-input        { border-radius: 8px !important; }
-.model-btn           { border-radius: 8px !important; }
-.agent-badge         { border-radius: 20px !important; }
-.mcp-indicator       { border-radius: 20px !important; }
-.ollama-status       { border-radius: 20px !important; }
-.new-chat-btn        { border-radius: 10px !important; }
-.settings-save-btn   { border-radius: 10px !important; }
-.settings-cancel-btn { border-radius: 10px !important; }
-.send-btn            { border-radius: 10px !important; width: auto !important; padding: 0 18px !important; }
+.settings-modal, .analytics-modal, .audit-modal, .approval-modal { border-radius: 16px !important; }
+.settings-input, .settings-textarea { border-radius: 9px !important; }
+.search-input, .model-btn { border-radius: 8px !important; }
+.agent-badge, .mcp-indicator, .ollama-status { border-radius: 20px !important; }
+.new-chat-btn, .settings-save-btn, .settings-cancel-btn { border-radius: 10px !important; }
+.send-btn { border-radius: 10px !important; width: auto !important; padding: 0 18px !important; }
 
-/* ── 13. STATUS OLLAMA — linguagem amigável ──────────────────── */
+/* ── 13. STATUS OLLAMA AMIGÁVEL ──────────────────────────────── */
 .ollama-status {
-  display: flex !important;
-  align-items: center !important;
-  gap: 6px !important;
-  padding: 3px 10px !important;
-  border-radius: 20px !important;
-  -webkit-app-region: no-drag;
-  transition: all var(--oc-transition) !important;
+  display: flex !important; align-items: center !important; gap: 6px !important;
+  padding: 3px 10px !important; border-radius: 20px !important;
+  -webkit-app-region: no-drag; transition: all var(--oc-transition) !important;
 }
-
-.ollama-status.online {
-  background: rgba(34,197,94,0.10) !important;
-  color: var(--oc-green) !important;
-  border: 1px solid rgba(34,197,94,0.22) !important;
-}
-
-.ollama-status.offline {
-  background: rgba(239,68,68,0.10) !important;
-  color: var(--oc-red) !important;
-  border: 1px solid rgba(239,68,68,0.22) !important;
-}
-
-/* Substitui texto técnico por linguagem amigável */
+.ollama-status.online  { background: rgba(34,197,94,0.10) !important; color: var(--oc-green) !important; border: 1px solid rgba(34,197,94,0.22) !important; }
+.ollama-status.offline { background: rgba(239,68,68,0.10) !important;  color: var(--oc-red) !important;   border: 1px solid rgba(239,68,68,0.22) !important; }
 .ollama-status.online  .status-text { font-size: 0 !important; }
 .ollama-status.offline .status-text { font-size: 0 !important; }
-
-.ollama-status.online  .status-text::before {
-  content: "IA Pronta" !important;
-  font-size: 12px !important;
-}
-.ollama-status.offline .status-text::before {
-  content: "IA Offline — Inicie o Ollama" !important;
-  font-size: 12px !important;
-}
-
-.status-dot {
-  width: 7px !important;
-  height: 7px !important;
-  border-radius: 50% !important;
-  flex-shrink: 0 !important;
-}
-
-.ollama-status.online .status-dot {
-  background: var(--oc-green) !important;
-  box-shadow: 0 0 6px var(--oc-green) !important;
-  animation: pulse-green 2s ease-in-out infinite !important;
-}
-
-.ollama-status.offline .status-dot {
-  background: var(--oc-red) !important;
-  box-shadow: none !important;
-}
-
+.ollama-status.online  .status-text::before { content: "IA Pronta" !important; font-size: 12px !important; }
+.ollama-status.offline .status-text::before { content: "IA Offline — Inicie o Ollama" !important; font-size: 12px !important; }
+.status-dot { width: 7px !important; height: 7px !important; border-radius: 50% !important; flex-shrink: 0 !important; }
+.ollama-status.online  .status-dot { background: var(--oc-green) !important; box-shadow: 0 0 6px var(--oc-green) !important; animation: pulse-green 2s ease-in-out infinite !important; }
+.ollama-status.offline .status-dot { background: var(--oc-red) !important; box-shadow: none !important; }
 @keyframes pulse-green {
   0%, 100% { opacity: 1; box-shadow: 0 0 5px var(--oc-green); }
   50%       { opacity: 0.7; box-shadow: 0 0 10px var(--oc-green); }
 }
 
-/* ── 14. MODO AUTÔNOMO — banner de aviso ─────────────────────── */
+/* ── 14. MODO AUTÔNOMO BANNER ────────────────────────────────── */
 .ignore-warning-banner {
-  background: rgba(245,158,11,0.10) !important;
-  border-bottom: 1px solid rgba(245,158,11,0.25) !important;
-  padding: 7px 16px !important;
-  display: flex !important;
-  align-items: center !important;
-  gap: 10px !important;
-  font-size: 12px !important;
-  color: var(--oc-yellow) !important;
-  font-weight: 600 !important;
+  background: rgba(245,158,11,0.10) !important; border-bottom: 1px solid rgba(245,158,11,0.25) !important;
+  padding: 7px 16px !important; display: flex !important; align-items: center !important; gap: 10px !important;
+  font-size: 12px !important; color: var(--oc-yellow) !important; font-weight: 600 !important;
 }
 
-/* ── 15. TOOL CALL — linguagem amigável ──────────────────────── */
-/* Esconde texto técnico e substitui por mensagem clara */
-.tool-call-header .tool-play + span {
-  /* sobrepõe label com texto amigável via container */
-  opacity: 0.85;
-}
-
-/* ── 16. PARLIAMENT BODY — fallback responsivo ───────────────── */
+/* ── 15. PARLIAMENT RESPONSIVO ───────────────────────────────── */
 @media (max-width: 860px) {
-  .parliament-body {
-    grid-template-columns: 1fr !important;
-  }
-  .parliament-left {
-    border-right: none !important;
-    border-bottom: 1px solid var(--oc-border) !important;
-    max-height: 300px !important;
-  }
+  .parliament-body { grid-template-columns: 1fr !important; }
+  .parliament-left { border-right: none !important; border-bottom: 1px solid var(--oc-border) !important; max-height: 300px !important; }
 }
 
-/* ── 17. SCROLLBAR GLOBAL ────────────────────────────────────── */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--oc-surface-3) transparent;
-}
+/* ── 16. SCROLLBAR GLOBAL ────────────────────────────────────── */
+* { scrollbar-width: thin; scrollbar-color: var(--oc-surface-3) transparent; }
 *::-webkit-scrollbar { width: 5px; height: 5px; }
 *::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb {
-  background: var(--oc-surface-3);
-  border-radius: 10px;
+*::-webkit-scrollbar-thumb { background: var(--oc-surface-3); border-radius: 10px; }
+
+/* ── 17. MODO CLARO ──────────────────────────────────────────── */
+[data-theme="light"] .input-container { box-shadow: 0 2px 10px rgba(0,0,0,0.07) !important; }
+[data-theme="light"] .sidebar         { box-shadow: 2px 0 10px rgba(0,0,0,0.05) !important; }
+[data-theme="light"] .code-block      { background: #f4f4fc !important; }
+[data-theme="light"] .code-header     { background: #ebebf5 !important; }
+
+/* ── 18. TIPOGRAFIA ──────────────────────────────────────────── */
+.message-text, .message-input, .settings-input,
+.settings-textarea, .parliament-problem-input { font-family: var(--oc-font) !important; }
+.code-block code, .code-block pre, .tool-call-args,
+.tool-result pre, .approval-code, .audit-detail,
+.token-counter, .audit-time { font-family: var(--oc-font-mono) !important; }
+
+/* ── 19. AGENT MODE ──────────────────────────────────────────── */
+.agent-toggle-btn { border-radius: 9px !important; font-size: 12px !important; }
+.agent-badge      { font-size: 12px !important; border-radius: 20px !important; }
+
+
+/* ═══════════════════════════════════════════════════════════════
+   TOOLBAR — MENU FERRAMENTAS
+   Colapsa todos os botões avançados em um único botão popover
+   "Ferramentas ▾" abre grid com todas as opções
+   CSS puro: :focus-within + :hover — sem JS
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Wrapper que envolve o botão trigger + o popover */
+.oc-tools-menu {
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
 }
 
-/* ── 18. MODO CLARO — ajustes específicos ────────────────────── */
-[data-theme="light"] .input-container {
-  box-shadow: 0 2px 10px rgba(0,0,0,0.07) !important;
-}
-[data-theme="light"] .sidebar {
-  box-shadow: 2px 0 10px rgba(0,0,0,0.05) !important;
-}
-[data-theme="light"] .code-block {
-  background: #f4f4fc !important;
-}
-[data-theme="light"] .code-header {
-  background: #ebebf5 !important;
-}
-
-/* ── 19. TIPOGRAFIA — Satoshi aplicada globalmente ───────────── */
-.message-text,
-.message-input,
-.settings-input,
-.settings-textarea,
-.parliament-problem-input {
-  font-family: var(--oc-font) !important;
+/* ── Esconde todos os botões avançados da toolbar ────────────── */
+/*
+   Mantém visível SOMENTE o botão Agente (mais usado).
+   Os demais ficam dentro do popover #oc-tools-popover.
+   Ajuste os seletores conforme os class names reais do seu código.
+*/
+.toolbar > button:not([data-tool="agente"]):not(#oc-tools-toggle),
+.toolbar > .toolbar-btn:not([data-tool="agente"]):not(#oc-tools-toggle),
+.toolbar-tools-group > button,
+.toolbar-tools-group > .toolbar-btn {
+  display: none !important;
 }
 
-.code-block code,
-.code-block pre,
-.tool-call-args,
-.tool-result pre,
-.approval-code,
-.audit-detail,
-.token-counter,
-.audit-time {
-  font-family: var(--oc-font-mono) !important;
+/* ── Botão trigger "Ferramentas ▾" ───────────────────────────── */
+#oc-tools-toggle {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 6px 12px !important;
+  border-radius: var(--oc-radius-xs) !important;
+  background: var(--oc-surface-2) !important;
+  border: 1px solid var(--oc-border-2) !important;
+  color: var(--oc-text-muted) !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all var(--oc-transition) !important;
+  white-space: nowrap !important;
+  position: relative !important;
+  outline: none !important;
 }
 
-/* ── 20. AGENT MODE — visual mais limpo ──────────────────────── */
-.agent-toggle-btn {
-  border-radius: 9px !important;
+#oc-tools-toggle::before {
+  content: "⚡" !important;
   font-size: 12px !important;
 }
 
-.agent-badge {
+#oc-tools-toggle::after {
+  content: "Ferramentas ▾" !important;
   font-size: 12px !important;
-  border-radius: 20px !important;
 }
+
+#oc-tools-toggle:hover,
+#oc-tools-toggle:focus {
+  background: var(--oc-surface-3) !important;
+  border-color: var(--oc-accent) !important;
+  color: var(--oc-text) !important;
+  box-shadow: 0 0 0 3px var(--oc-accent-glow) !important;
+}
+
+/* Badge roxo quando alguma ferramenta está ativa */
+#oc-tools-toggle.has-active {
+  border-color: var(--oc-accent) !important;
+  color: var(--oc-accent) !important;
+  background: rgba(124,58,237,0.08) !important;
+}
+
+#oc-tools-toggle.has-active .oc-tools-badge {
+  display: inline-flex !important;
+}
+
+.oc-tools-badge {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--oc-accent);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  margin-left: 2px;
+}
+
+/* ── Popover ─────────────────────────────────────────────────── */
+#oc-tools-popover {
+  position: absolute !important;
+  bottom: calc(100% + 10px) !important;
+  left: 0 !important;
+  z-index: 9000 !important;
+
+  /* Grid 2 colunas com todos os botões */
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 4px !important;
+  padding: 10px !important;
+
+  background: var(--oc-surface) !important;
+  border: 1px solid var(--oc-border-2) !important;
+  border-radius: var(--oc-radius) !important;
+  box-shadow: var(--oc-shadow-lg) !important;
+  min-width: 280px !important;
+
+  /* Fechado por padrão */
+  opacity: 0 !important;
+  visibility: hidden !important;
+  transform: translateY(6px) scale(0.97) !important;
+  transition:
+    opacity 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 150ms,
+    transform 150ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+  pointer-events: none !important;
+}
+
+/* Abre ao focar no trigger ou hover no wrapper */
+.oc-tools-menu:hover #oc-tools-popover,
+.oc-tools-menu:focus-within #oc-tools-popover {
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: translateY(0) scale(1) !important;
+  pointer-events: auto !important;
+}
+
+/* Separador de seção dentro do popover */
+.oc-tools-section-label {
+  grid-column: 1 / -1 !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.08em !important;
+  color: var(--oc-text-faint) !important;
+  padding: 4px 6px 2px !important;
+}
+
+/* Botões dentro do popover */
+#oc-tools-popover button,
+#oc-tools-popover .toolbar-btn {
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  padding: 8px 10px !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  color: var(--oc-text-muted) !important;
+  font-size: 12.5px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: all var(--oc-transition) !important;
+  white-space: nowrap !important;
+  width: 100% !important;
+  text-align: left !important;
+}
+
+#oc-tools-popover button:hover,
+#oc-tools-popover .toolbar-btn:hover {
+  background: var(--oc-surface-2) !important;
+  color: var(--oc-text) !important;
+  border-color: var(--oc-border) !important;
+}
+
+#oc-tools-popover button.active,
+#oc-tools-popover .toolbar-btn.active {
+  background: rgba(124,58,237,0.10) !important;
+  color: var(--oc-accent) !important;
+  border-color: rgba(124,58,237,0.25) !important;
+}
+
+/* ── Instrução de uso no HTML ────────────────────────────────── */
+/*
+  Para ativar, adicione no JSX da toolbar:
+
+  <div class="oc-tools-menu">
+    <button id="oc-tools-toggle" tabindex="0">
+      <span class="oc-tools-badge">3</span>
+    </button>
+    <div id="oc-tools-popover">
+      <span class="oc-tools-section-label">Modos</span>
+      <!-- Agente, Parlamento, Persona, Arena -->
+      <span class="oc-tools-section-label">Ferramentas</span>
+      <!-- Vault, Código, Visão, RAG, Fluxo, ORION -->
+    </div>
+  </div>
+
+  O CSS controla tudo via :hover e :focus-within.
+  Nenhum JS necessário para abrir/fechar.
+*/
 
 /* ── REGRA PRINCIPAL DE UX ───────────────────────────────────── */
 /*
