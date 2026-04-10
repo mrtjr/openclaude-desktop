@@ -3,12 +3,15 @@ name: Build Windows Installer
 on:
   release:
     types: [published]
-  workflow_dispatch:  # allow manual trigger
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build-windows:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout code
@@ -17,26 +20,37 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: '22'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --legacy-peer-deps
 
       - name: Install Playwright Chromium
         run: npx playwright install chromium
+        continue-on-error: true
 
       - name: Build Windows installer
         run: npm run dist:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      - name: Upload installer to release
+      - name: List release output
+        run: dir release
+        shell: cmd
+
+      - name: Upload .exe to release
         uses: softprops/action-gh-release@v2
+        if: github.event_name == 'release'
         with:
-          files: |
-            release/*.exe
-            release/*.zip
-            release/latest.yml
+          files: release/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload .exe as artifact (manual trigger)
+        uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          name: OpenClaude-Desktop-Setup
+          path: release/*.exe
+          retention-days: 7
