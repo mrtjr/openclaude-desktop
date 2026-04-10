@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v1.9.0-e07a5f?style=for-the-badge&logo=windows" alt="Download" /></a>
+  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v2.0.0-e07a5f?style=for-the-badge&logo=windows" alt="Download" /></a>
   <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License" />
   <img src="https://img.shields.io/badge/platform-Windows-lightgrey?style=for-the-badge" alt="Platform" />
 </p>
@@ -56,6 +56,10 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 | Math formulas unreadable | LaTeX rendering with KaTeX (`$...$` and `$$...$$`) |
 | No idea how many tokens | Accurate per-model token count shown in chat footer |
 | MCP config is manual | MCP settings UI: add/remove servers directly in Settings |
+| Can't send images to AI | Image upload with base64 encoding for all vision providers |
+| Can't read PDFs/DOCX | Document parsing: pdf-parse + mammoth via IPC read_document |
+| Can't branch a conversation | Fork any message into a new conversation branch |
+| Agent memory resets on quit | Agent working memory persisted across sessions in JSON |
 
 ---
 
@@ -67,6 +71,12 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 - **Agent Mode** — autonomous multi-step execution (unlimited steps, no artificial cap)
 - **Collaborative Agents** — multiple AI instances working in parallel on different subtasks
 - **Parliament Mode** — 5 specialist agents (Architect, Implementor, Security, Tester, Devil's Advocate) debate in parallel; a Coordinator synthesizes the final verdict
+
+### v2.0.0 — Vision, Documents & Memory
+- **Image Upload + Vision** — attach images directly in the chat via button or drag-and-drop; encoded to base64 and sent to any vision-capable provider (GPT-4o, Gemini Vision, Claude, llava via Ollama). `useImageAttachment` hook handles encoding and `content` array building automatically
+- **PDF/DOCX Parsing** — drop or open any `.pdf`, `.docx`, `.doc`, `.txt`, `.md`, or `.csv` file; the main process reads it via `pdf-parse` (PDF) or `mammoth` (DOCX) and injects the text into the chat context via the `read_document` IPC handler (20 MB limit)
+- **Conversation Branching (Fork)** — hover any message and click **⑂ Fork here** to clone the conversation up to that point into a new branch; the fork preserves full history and records `forkedFrom` metadata; managed by `useConversationFork` hook
+- **Agent Memory Across Sessions** — working memory and episodic summaries are persisted in `agent-memory.json` inside `userData`; loaded automatically on startup; manageable via the new **Memory** tab in Settings (`AgentMemoryPanel`); `useAgentMemory` hook exposes `buildMemoryContext()` to inject memory into the system prompt
 
 ### v1.9.0 — Quality of Life
 - **LaTeX Math Rendering** — inline (`$...$`) and block (`$$...$$`) formulas rendered via KaTeX directly in the chat; enabled by `marked-katex-extension` integrated with the existing `marked` pipeline
@@ -137,14 +147,16 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 - **JSON auto-correction** — intercepts and teaches the model to fix malformed tool calls
 - **Circuit breaker** — detects repeated identical tool calls (3x) and forces strategy change
 - **Context truncation** — intelligently trims large tool outputs (keeps start + end)
-- **Working memory** — short-term memory injected each agent loop iteration
+- **Working memory** — short-term memory injected each agent loop iteration; now persisted across sessions
 - **Small model detection** — extra guardrails for 7B-14B models
 
 ### UI/UX
 - **Dark & Light themes** — toggle with one click, persisted
 - **Conversation pinning** — pin important chats to the top
-- **Message actions** — copy, delete individual messages, regenerate responses
-- **Drag & drop** — drop files directly into the chat
+- **Conversation branching** — fork any message into a new parallel branch
+- **Message actions** — copy, delete individual messages, regenerate responses, fork branch
+- **Image attachments** — attach images via button, drag & drop, or clipboard paste
+- **Drag & drop** — drop files and images directly into the chat
 - **Collapsible sidebar** — more screen space when you need it
 - **Code highlighting** — syntax highlighting for 190+ languages with copy button
 - **LaTeX math** — inline and block formulas rendered with KaTeX
@@ -161,7 +173,7 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 - **Git sandboxing** — git commands run in isolated handler, no shell injection possible
 - **Audit trail** — every tool execution logged with full details
 - **Real abort** — stop generation mid-stream (kills HTTP request server-side)
-- **Persistent memory** — auto-injected into context when enabled
+- **Persistent memory** — auto-injected into context when enabled; survives app restarts
 - **Analytics auto-purge** — 30-day retention + 500 session cap
 
 ---
@@ -180,7 +192,8 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 git clone https://github.com/mrtjr/openclaude-desktop
 cd openclaude-desktop
 npm install
-npx playwright install chromium   # for browser automation
+npm install pdf-parse mammoth          # document parsing
+npx playwright install chromium        # browser automation
 npm run dev
 ```
 
@@ -190,6 +203,7 @@ npm run dev
 git clone https://github.com/mrtjr/openclaude-desktop
 cd openclaude-desktop
 npm install
+npm install pdf-parse mammoth
 npx playwright install chromium
 npm run dist:win    # outputs to release/
 ```
@@ -199,7 +213,7 @@ npm run dist:win    # outputs to release/
 ## Multi-Provider Setup
 
 | Provider | How to configure |
-|----------|-----------------|
+|----------|--------------------|
 | **Ollama** (default) | Install Ollama and pull a model. No API key needed. |
 | **OpenAI** | Settings > Provider: OpenAI > paste `sk-...` API key |
 | **Google Gemini** | Settings > Provider: Gemini > paste `AIza...` API key |
@@ -207,7 +221,7 @@ npm run dist:win    # outputs to release/
 | **OpenRouter** | Settings > Provider: OpenRouter > paste `sk-or-v1-...` API key |
 | **Modal (Research)** | Settings > Provider: Modal > paste key + hostname |
 
-All providers are normalized to the same response format — switch freely without losing features. **All 6 providers support Agent Mode and streaming.**
+All providers are normalized to the same response format — switch freely without losing features. **All 6 providers support Agent Mode, streaming, and image/vision input.**
 
 ---
 
@@ -223,6 +237,7 @@ All providers are normalized to the same response format — switch freely witho
 | `qwen2.5-coder:7b` | 4.7 GB | 8 GB | Code generation | No |
 | `qwen2.5-coder:32b` | 19 GB | 24 GB | Advanced coding | No |
 | `dolphin3:8b` | 4.9 GB | 8 GB | Unrestricted chat | Yes |
+| `llava:7b` | 4.7 GB | 8 GB | Vision + image analysis | No |
 
 ### Creating an uncensored model with tool calling
 
@@ -245,9 +260,9 @@ ollama create my-uncensored-model -f Modelfile
 
 | Provider | Recommended model | Notes |
 |----------|------------------|-------|
-| OpenAI | `gpt-4o` | Best overall quality |
-| Gemini | `gemini-2.0-flash` | Fast, good for code |
-| Anthropic | `claude-opus-4-5` | Best reasoning |
+| OpenAI | `gpt-4o` | Best overall quality; native vision support |
+| Gemini | `gemini-2.0-flash` | Fast, good for code and vision |
+| Anthropic | `claude-opus-4-5` | Best reasoning; native vision support |
 | OpenRouter | `google/gemini-2.5-pro` | Best value via aggregator |
 | Modal | `zai-org/GLM-5.1-FP8` | Research models |
 
@@ -284,6 +299,7 @@ Unlike competitors with hidden caps, OpenClaude runs until the job is done. A bu
 | `list_directory` | Browse files and folders |
 | `open_file_or_url` | Open files or URLs with default app |
 | `web_search` | Search the web via DuckDuckGo |
+| `read_document` | Parse PDF, DOCX, DOC, TXT, MD, CSV via IPC (20 MB limit) |
 
 ### Browser Tools (Playwright)
 | Tool | What it does |
@@ -299,7 +315,7 @@ Unlike competitors with hidden caps, OpenClaude runs until the job is done. A bu
 | `plan_tasks` | Decompose a goal into tracked subtasks |
 | `update_task_status` | Update subtask progress |
 | `delegate_subtasks` | Run multiple AI agents in parallel |
-| `update_working_memory` | Store short-term context between steps |
+| `update_working_memory` | Store short-term context between steps (now persistent) |
 
 ---
 
@@ -366,6 +382,7 @@ This is essential for local models (7B-14B) that tend to ignore system prompt in
 | Markdown | marked + highlight.js |
 | Math rendering | KaTeX 0.16 + marked-katex-extension |
 | Token counting | tiktoken (OpenAI) + @anthropic-ai/tokenizer |
+| Document parsing | pdf-parse (PDF) + mammoth (DOCX) |
 | Security | DOMPurify |
 | Installer | electron-builder (NSIS) |
 
@@ -376,17 +393,25 @@ This is essential for local models (7B-14B) that tend to ignore system prompt in
 ```
 openclaude-desktop/
 ├── electron/
-│   ├── main.js          # Main process: IPC, Ollama, Playwright, MCP, parallel agents
-│   └── preload.js       # Context bridge (40+ secure API methods)
+│   ├── main.js               # Main process: IPC, Ollama, Playwright, MCP, parallel agents
+│   ├── ipc-document.js       # IPC handlers: open-file-dialog, read-document (PDF/DOCX/images)
+│   ├── ipc-agent-memory.js   # IPC handlers: load/save/append agent memory (agent-memory.json)
+│   └── preload.js            # Context bridge (40+ secure API methods)
 ├── src/
-│   ├── App.tsx           # Main UI: chat, tools, task plan, voice, agent mode, LaTeX, token counter
-│   ├── Analytics.tsx     # Analytics dashboard (MAGI insights engine)
-│   ├── Settings.tsx      # Settings: providers, language, API keys, memory, analytics, MCP tab
-│   ├── index.css         # Dark/light themes, task plan, voice, analytics, KaTeX styles
-│   └── vite-env.d.ts     # TypeScript declarations (50+ API types)
-├── public/               # Static assets
-├── Modelfile-uncensored  # Template for creating uncensored models
-└── package.json          # Dependencies & build config
+│   ├── App.tsx                # Main UI: chat, tools, task plan, voice, agent mode, LaTeX, token counter
+│   ├── Analytics.tsx          # Analytics dashboard (MAGI insights engine)
+│   ├── Settings.tsx           # Settings: providers, language, API keys, memory, analytics, MCP tab
+│   ├── AgentMemoryPanel.tsx   # Memory tab UI: working memory list, episode history, clear button
+│   ├── hooks/
+│   │   ├── useImageAttachment.ts    # Image upload + base64 encoding for vision providers
+│   │   ├── useConversationFork.ts   # Fork conversation at any message index
+│   │   └── useAgentMemory.ts        # Load/save/inject agent memory across sessions
+│   ├── index.css              # Dark/light themes, task plan, voice, analytics, KaTeX styles
+│   └── vite-env.d.ts          # TypeScript declarations (50+ API types)
+├── public/                    # Static assets
+├── ROADMAP.md                 # Full feature roadmap with tiers and backlog
+├── Modelfile-uncensored       # Template for creating uncensored models
+└── package.json               # Dependencies & build config
 ```
 
 ---
@@ -422,10 +447,25 @@ openclaude-desktop/
 | LaTeX math rendering | KaTeX | No | Yes | No |
 | Token counter | Per-provider | No | No | No |
 | MCP settings UI | Visual | N/A | N/A | N/A |
+| Image upload + vision | Yes | Yes | Yes | Yes |
+| PDF/DOCX parsing | Native IPC | Limited | No | Yes |
+| Conversation branching | Fork at any msg | No | No | No |
+| Agent memory persistence | Cross-session | No | No | No |
 
 ---
 
 ## Changelog
+
+### v2.0.0 — Vision, Documents & Memory (April 2026)
+**4 medium-tier features from the roadmap:**
+
+- **Image Upload + Vision** — A new attachment button in the chat toolbar lets you pick any image file; it is encoded to base64 and injected into the message `content` array in the format expected by GPT-4o, Gemini Vision, Claude, and llava (Ollama). Drag-and-drop and clipboard paste also supported. `useImageAttachment` hook handles all encoding and content building logic in `src/hooks/useImageAttachment.ts`. The IPC layer (`electron/ipc-document.js`) exposes `open-file-dialog` and `read-document` for file selection.
+
+- **PDF/DOCX Parsing** — Drop or open any document file in the chat; the main process reads it via `pdf-parse` (PDF) or `mammoth` (DOCX/DOC) and returns plain text via the `read-document` IPC handler. Text/Markdown/CSV files are read directly. All formats enforce a 20 MB limit. Install with `npm install pdf-parse mammoth`.
+
+- **Conversation Branching (Fork)** — Hover any message bubble and click **⑂ Fork here** to clone the conversation history up to that point into a new, independent branch. The fork is saved immediately with a `"Fork: <title> (msg N)"` label and a `forkedFrom` metadata record. Managed by `useConversationFork` hook (`src/hooks/useConversationFork.ts`).
+
+- **Agent Memory Across Sessions** — The agent's working memory (key/value store) and episodic summaries are now persisted in `agent-memory.json` inside Electron's `userData` directory. They are loaded automatically on startup and injected into the system prompt via `buildMemoryContext()`. A new **Memory** tab in Settings (`AgentMemoryPanel`) lets you view, edit, and clear both working memory and episode history. `useAgentMemory` hook (`src/hooks/useAgentMemory.ts`) manages all read/write operations via IPC (`electron/ipc-agent-memory.js`).
 
 ### v1.9.0 — Quality of Life (April 2026)
 **3 polish features shipped:**
@@ -526,16 +566,18 @@ openclaude-desktop/
 
 - [x] Agent Mode for all cloud providers (Gemini, Anthropic, OpenAI, OpenRouter, Modal)
 - [x] Streaming for all cloud providers
-- [ ] Image upload with vision model support
-- [ ] PDF/DOCX document parsing
-- [ ] Conversation branching (fork at any message)
+- [x] Image upload with vision model support
+- [x] PDF/DOCX document parsing
+- [x] Conversation branching (fork at any message)
 - [ ] Plugin system
 - [x] LaTeX math rendering
 - [ ] Linux & macOS builds
 - [x] Accurate token counting per model
 - [x] MCP settings UI (add/remove servers in Settings)
 - [x] Parliament Mode (Multi-Agent Debate with Coordinator synthesis)
-- [ ] Agent memory persistence across sessions
+- [x] Agent memory persistence across sessions
+
+See [ROADMAP.md](ROADMAP.md) for the full feature backlog with tiers and priorities.
 
 ---
 
