@@ -25,10 +25,6 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
-      - name: Install Playwright Chromium
-        run: npx playwright install chromium
-        continue-on-error: true
-
       - name: Build Windows installer
         run: npm run dist:win
         env:
