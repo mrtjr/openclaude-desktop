@@ -82,6 +82,25 @@ contextBridge.exposeInMainWorld('electron', {
   // Collaborative agents
   parallelChat: (params) => ipcRenderer.invoke('parallel-chat', params),
 
+
+  // Parliament Mode — Multi-Agent Debate
+  parliamentDebate: (params) => ipcRenderer.invoke('parliament-debate', params),
+  onParliamentRoleDone: (callback) => {
+    const handler = (event, result) => callback(result)
+    ipcRenderer.on('parliament-role-done', handler)
+    return () => ipcRenderer.removeListener('parliament-role-done', handler)
+  },
+  onParliamentCoordinatorDone: (callback) => {
+    const handler = (event, result) => callback(result)
+    ipcRenderer.on('parliament-coordinator-done', handler)
+    return () => ipcRenderer.removeListener('parliament-coordinator-done', handler)
+  },
+  onParliamentCoordinatorStart: (callback) => {
+    const handler = (event, data) => callback(data)
+    ipcRenderer.on('parliament-coordinator-start', handler)
+    return () => ipcRenderer.removeListener('parliament-coordinator-start', handler)
+  },
+
   // Audit Log
   auditLogAppend: (entry) => ipcRenderer.invoke('audit-log-append', entry),
   auditLogLoad: () => ipcRenderer.invoke('audit-log-load'),

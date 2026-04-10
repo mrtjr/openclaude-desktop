@@ -6,12 +6,12 @@
 
 <p align="center">
   <strong>The most powerful open-source AI desktop app.</strong><br/>
-  Local models via Ollama. Cloud providers. Browser automation. Parallel agents. Voice I/O.<br/>
+  Local models via Ollama. Cloud providers. Browser automation. Parliament Mode. Voice I/O.<br/>
   No telemetry. No cloud lock-in. Your data stays on your machine.
 </p>
 
 <p align="center">
-  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v1.6.0-e07a5f?style=for-the-badge&logo=windows" alt="Download" /></a>
+  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v1.7.0-e07a5f?style=for-the-badge&logo=windows" alt="Download" /></a>
   <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License" />
   <img src="https://img.shields.io/badge/platform-Windows-lightgrey?style=for-the-badge" alt="Platform" />
 </p>
@@ -40,6 +40,7 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 | No agent capabilities | Agent Mode with up to 25 autonomous steps |
 | Can't browse the web | Playwright browser automation built-in |
 | Single-threaded AI | Collaborative parallel agents |
+| Single perspective AI | Parliament Mode: 5 specialist agents debate in parallel |
 | Text-only interaction | Voice input (STT) and voice output (TTS) |
 | No ecosystem integration | MCP client for Claude-compatible servers |
 | No usage insights | Self-evolution analytics with local-only dashboard |
@@ -53,6 +54,7 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 - **Streaming responses** — real-time word-by-word output
 - **Agent Mode** — autonomous multi-step execution (unlimited steps, no artificial cap)
 - **Collaborative Agents** — multiple AI instances working in parallel on different subtasks
+- **Parliament Mode** — 5 specialist agents (Architect, Implementor, Security, Tester, Devil's Advocate) debate in parallel; a Coordinator synthesizes the final verdict
 - **Task Planning** — decompose complex goals into tracked subtasks with visual progress
 - **17 built-in tools** — commands, files, web search, browser, task planning, git, undo, parallel agents
 - **Mandatory language setting** — forces all responses in Portuguese or English (4-layer enforcement)
@@ -384,6 +386,14 @@ openclaude-desktop/
 
 ## Changelog
 
+### v1.7.0 — Parliament Mode: Multi-Agent Debate
+- **Parliament Mode** — Entirely new feature: send any problem to 5 specialist AI agents simultaneously. Each agent analyzes exclusively from its domain: Architect (system design), Implementor (practical code), Security Reviewer (vulnerabilities & risks), Tester (quality & edge cases), Devil's Advocate (challenges assumptions). A Coordinator agent synthesizes all perspectives into Consensus, Divergences, Recommendation, and Next Steps.
+- **Configurable per-agent providers** — Each Parliament role (including Coordinator) can use a different provider and model independently. Mix Ollama locally with cloud models in the same debate.
+- **Real-time role progress** — Each agent card updates live as it completes (IPC events from main process). Coordinator activates only after all roles finish.
+- **Synthesis tab** — Dedicated tab with the Coordinator's final structured analysis, separate from the individual role panels.
+- **Export to chat** — One click exports the full Parliament debate transcript (all 5 roles + synthesis) into the current conversation.
+- **Parliament button** — New toolbar button alongside Agent Mode. Opens as a full-screen overlay with left config panel and right results panel.
+
 ### v1.6.0 — Full Provider Parity
 - **Agent Mode for Gemini**: Function calling now works with Gemini — tools are converted from OpenAI format to Gemini `functionDeclarations` automatically.
 - **Agent Mode for Anthropic**: Tool use now fully supported — request/response converted between OpenAI and Anthropic native formats transparently.
@@ -466,6 +476,7 @@ openclaude-desktop/
 - [ ] Linux & macOS builds
 - [ ] Accurate token counting per model
 - [ ] MCP settings UI (add/remove servers in Settings)
+- [x] Parliament Mode (Multi-Agent Debate with Coordinator synthesis)
 - [ ] Agent memory persistence across sessions
 
 ---

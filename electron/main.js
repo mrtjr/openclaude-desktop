@@ -1376,6 +1376,207 @@ ipcMain.handle('analytics-clear', async () => {
   return saveAnalytics(empty)
 })
 
+
+// ─── Parliament Mode: shared provider call utility ───────────────────────────
+async function callProviderOnce({ provider, apiKey, model, messages, modalHostname }) {
+  return new Promise((resolve) => {
+    if (provider === 'ollama') {
+      const body = JSON.stringify({ model, messages, stream: false, options: { temperature: 0.7 } })
+      const opts = {
+        hostname: 'localhost', port: 11434,
+        path: '/v1/chat/completions', method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+      }
+      const req = http.request(opts, (res) => {
+        let data = ''
+        res.on('data', chunk => data += chunk)
+        res.on('end', () => {
+          try { resolve(JSON.parse(data).choices?.[0]?.message?.content || '') }
+          catch { resolve('') }
+        })
+      })
+      req.on('error', (e) => resolve(`Erro Ollama: ${e.message}`))
+      req.write(body)
+      req.end()
+      return
+    }
+
+    let hostname, apiPath, headers, bodyObj
+    if (provider === 'openai') {
+      hostname = 'api.openai.com'; apiPath = '/v1/chat/completions'
+      headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+      bodyObj = { model, messages, stream: false, temperature: 0.7, max_tokens: 4096 }
+    } else if (provider === 'gemini') {
+      hostname = 'generativelanguage.googleapis.com'
+      const geminiContents = messages.filter(m => m.role !== 'system').map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content || '' }]
+      }))
+      const systemInstruction = messages.find(m => m.role === 'system')
+      apiPath = `/v1beta/models/${model}:generateContent?key=${apiKey}`
+      headers = { 'Content-Type': 'application/json' }
+      bodyObj = {
+        contents: geminiContents,
+        generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
+        ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction.content }] } } : {})
+      }
+    } else if (provider === 'anthropic') {
+      hostname = 'api.anthropic.com'; apiPath = '/v1/messages'
+      const systemMsg = messages.find(m => m.role === 'system')
+      const anthropicMsgs = messages.filter(m => m.role !== 'system').map(m => ({ role: m.role, content: m.content || '' }))
+      headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }
+      bodyObj = { model, max_tokens: 4096, messages: anthropicMsgs, temperature: 0.7, ...(systemMsg ? { system: systemMsg.content } : {}) }
+    } else if (provider === 'openrouter') {
+      hostname = 'openrouter.ai'; apiPath = '/api/v1/chat/completions'
+      headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://github.com/mrtjr/openclaude-desktop', 'X-Title': 'OpenClaude Desktop' }
+      bodyObj = { model, messages, stream: false, temperature: 0.7, max_tokens: 4096 }
+    } else if (provider === 'modal') {
+      hostname = modalHostname || 'api.us-west-2.modal.direct'; apiPath = '/v1/chat/completions'
+      headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+      bodyObj = { model, messages, stream: false, temperature: 0.7, max_tokens: 4096 }
+    } else {
+      return resolve(`Provider "${provider}" nao suportado`)
+    }
+
+    const body = JSON.stringify(bodyObj)
+    const reqOpts = { hostname, path: apiPath, method: 'POST', headers: { ...headers, 'Content-Length': Buffer.byteLength(body) } }
+    const req = https.request(reqOpts, (res) => {
+      let data = ''
+      res.on('data', chunk => data += chunk)
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data)
+          if (res.statusCode >= 400) return resolve(`Erro API ${res.statusCode}: ${JSON.stringify(parsed).slice(0, 300)}`)
+          if (provider === 'gemini') {
+            resolve((parsed.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join(''))
+          } else if (provider === 'anthropic') {
+            resolve((parsed.content || []).filter(c => c.type === 'text').map(c => c.text).join(''))
+          } else {
+            resolve(parsed.choices?.[0]?.message?.content || '')
+          }
+        } catch (e) { resolve(`Erro de parse: ${e.message}`) }
+      })
+    })
+    req.on('error', (e) => resolve(`Erro de rede: ${e.message}`))
+    req.write(body)
+    req.end()
+  })
+}
+
+
+// ─── Parliament Mode: System Prompts ────────────────────────────────────────
+const PARLIAMENT_ROLE_PROMPTS = {
+  arquiteto: `Voce e o ARQUITETO no Parliament Mode. Analise o problema exclusivamente pelo prisma de DESIGN DE SISTEMAS E ARQUITETURA.
+
+Foque em: estrutura e componentes, padroes arquiteturais (MVC, microservices, event-driven, etc.), escalabilidade e manutenabilidade, trade-offs de design e justificativas.
+Use diagramas textuais (ASCII) quando ajudar. Seja tecnico e preciso.`,
+
+  implementador: `Voce e o IMPLEMENTADOR no Parliament Mode. Analise o problema exclusivamente pelo prisma de IMPLEMENTACAO PRATICA.
+
+Foque em: como implementar concretamente (linguagens, bibliotecas, APIs), passos praticos e ordem de implementacao, blockers tecnicos e como resolve-los, exemplos de codigo quando relevante.
+Seja especifico e orientado a execucao imediata.`,
+
+  seguranca: `Voce e o REVISOR DE SEGURANCA no Parliament Mode. Analise o problema exclusivamente pelo prisma de SEGURANCA E RISCO.
+
+Foque em: vulnerabilidades potenciais e superficies de ataque, dados sensiveis e protecao, conformidade regulatoria (LGPD, GDPR, OWASP), medidas de mitigacao concretas.
+Seja critico e nao ignore riscos por parecerem improvaveis. Pior caso primeiro.`,
+
+  testador: `Voce e o TESTADOR no Parliament Mode. Analise o problema exclusivamente pelo prisma de QUALIDADE E TESTES.
+
+Foque em: estrategia de testes (unitario, integracao, e2e, carga), casos de borda e cenarios de falha, metricas de qualidade e cobertura, automatizacao e CI/CD.
+Seja sistematico. Considere sempre o caso infeliz.`,
+
+  diabo: `Voce e o ADVOGADO DO DIABO no Parliament Mode. Seu papel e QUESTIONAR e DESAFIAR tudo.
+
+Foque em: premissas questionaveis ou falsas, alternativas que podem ser superiores, complexidade desnecessaria (over-engineering), o que poderia dar completamente errado.
+Seja cetico e direto. Voce fortalece a solucao atraves da critica construtiva. Nao valide o que nao merece validacao.`,
+
+  coordenador: `Voce e o COORDENADOR FINAL do Parliament Mode. Voce recebeu analises de 5 especialistas distintos e deve sintetizar tudo em uma visao consolidada e acionavel.
+
+SUA RESPOSTA DEVE TER EXATAMENTE ESTA ESTRUTURA:
+
+## Consensos
+(Pontos em que os especialistas concordam — o que e solido e deve ser feito)
+
+## Divergencias
+(Visoes conflitantes — explique cada lado e por que existe o conflito)
+
+## Sintese e Recomendacao
+(Sua decisao final, balanceando todas as perspectivas com justificativa)
+
+## Proximos Passos
+(3 a 5 acoes concretas, priorizadas, com responsavel sugerido por cada acao)
+
+Seja decisivo. Nao fique em cima do muro. O objetivo e uma decisao clara e fundamentada.`
+}
+
+// ─── Parliament Mode IPC Handler ─────────────────────────────────────────────
+ipcMain.handle('parliament-debate', async (event, { problem, roles, coordinator }) => {
+  // Run all role agents in parallel
+  const rolePromises = roles.map(async (role) => {
+    const systemPrompt = PARLIAMENT_ROLE_PROMPTS[role.id] || `Voce e ${role.name}. Analise o problema com seu papel especifico.`
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `PROBLEMA / QUESTAO:\n\n${problem}` }
+    ]
+    try {
+      const response = await callProviderOnce({
+        provider: role.provider,
+        apiKey: role.apiKey || '',
+        model: role.model,
+        messages,
+        modalHostname: role.modalHostname
+      })
+      const result = { roleId: role.id, roleName: role.name, emoji: role.emoji, response, status: 'done' }
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('parliament-role-done', result)
+      }
+      return result
+    } catch (err) {
+      const result = { roleId: role.id, roleName: role.name, emoji: role.emoji, response: '', error: err.message, status: 'error' }
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('parliament-role-done', result)
+      }
+      return result
+    }
+  })
+
+  const roleResults = await Promise.all(rolePromises)
+
+  // Notify frontend that coordinator is starting
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('parliament-coordinator-start', {})
+  }
+
+  // Build coordinator context
+  const rolesContext = roleResults.map(r =>
+    `## ${r.emoji} ${r.roleName}\n\n${r.response || `[Erro: ${r.error || 'sem resposta'}]`}`
+  ).join('\n\n---\n\n')
+
+  const coordinatorMessages = [
+    { role: 'system', content: PARLIAMENT_ROLE_PROMPTS.coordenador },
+    { role: 'user', content: `PROBLEMA ORIGINAL:\n\n${problem}\n\n${'='.repeat(60)}\n\nCONTRIBUICAO DOS ESPECIALISTAS:\n\n${rolesContext}` }
+  ]
+
+  let coordinatorResponse = ''
+  try {
+    coordinatorResponse = await callProviderOnce({
+      provider: coordinator.provider,
+      apiKey: coordinator.apiKey || '',
+      model: coordinator.model,
+      messages: coordinatorMessages,
+      modalHostname: coordinator.modalHostname
+    })
+  } catch (err) {
+    coordinatorResponse = `Erro no Coordenador: ${err.message}`
+  }
+
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('parliament-coordinator-done', { response: coordinatorResponse })
+  }
+
+  return { roles: roleResults, coordinator: coordinatorResponse }
+})
+
 // ─── App lifecycle ───────────────────────────────────────────────────
 app.whenReady().then(() => {
   createWindow()

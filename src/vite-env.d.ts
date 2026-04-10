@@ -50,6 +50,11 @@ interface Window {
     mcpListConnections: () => Promise<string[]>
     // Collaborative agents
     parallelChat: (params: any) => Promise<any>
+    // Parliament Mode — Multi-Agent Debate
+    parliamentDebate: (params: any) => Promise<{ roles: any[]; coordinator: string; sessionId: string }>
+    onParliamentRoleDone: (callback: (result: any) => void) => () => void
+    onParliamentCoordinatorDone: (callback: (result: any) => void) => () => void
+    onParliamentCoordinatorStart: (callback: (data: any) => void) => () => void
     // Audit Log
     auditLogAppend: (entry: any) => Promise<{ error: string | null }>
     auditLogLoad: () => Promise<any[]>

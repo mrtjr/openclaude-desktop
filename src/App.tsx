@@ -3,9 +3,10 @@ import { marked } from 'marked'
 import hljs from 'highlight.js'
 import DOMPurify from 'dompurify'
 import 'highlight.js/styles/github-dark.css'
-import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, FileCode, Info, ArrowUpCircle, Zap, BotOff, Copy, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Image, Trash, Mic, MicOff, Volume2, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3 } from 'lucide-react'
+import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, FileCode, Info, ArrowUpCircle, Zap, BotOff, Copy, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Image, Trash, Mic, MicOff, Volume2, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Scale } from 'lucide-react'
 import SettingsModal, { loadSettings, type AppSettings } from './Settings'
 import AnalyticsDashboard from './Analytics'
+import ParliamentMode from './Parliament'
 
 // ─── Toast notification system ──────────────────────────────────
 let toastId = 0
@@ -463,6 +464,7 @@ export default function App() {
   })
   const [isAgentMode, setIsAgentMode] = useState(false)
   const [showAnalytics, setShowAnalytics] = useState(false)
+  const [showParliament, setShowParliament] = useState(false)
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
   const [showPermissionMenu, setShowPermissionMenu] = useState(false)
   const [isListening, setIsListening] = useState(false)
@@ -1649,6 +1651,19 @@ export default function App() {
         language={settings.language}
       />
 
+      {/* Parliament Mode — Multi-Agent Debate */}
+      {showParliament && (
+        <ParliamentMode
+          settings={settings}
+          ollamaModels={models}
+          onClose={() => setShowParliament(false)}
+          onInsertToChat={(text) => {
+            setInput(prev => (prev ? prev + '\n\n' : '') + text)
+            setShowParliament(false)
+          }}
+        />
+      )}
+
       {/* Titlebar */}
       <div className="titlebar">
         <div className="titlebar-drag">
@@ -2043,6 +2058,15 @@ export default function App() {
               >
                 <Zap size={18} />
                 <span>Agente</span>
+              </button>
+
+              <button
+                className={`agent-toggle-btn parliament-mode-btn ${showParliament ? 'active' : ''}`}
+                onClick={() => setShowParliament(true)}
+                title="Abrir Parliament Mode — Multi-Agent Debate"
+              >
+                <Scale size={18} />
+                <span>Parlamento</span>
               </button>
 
               <div className="input-actions-divider" />
