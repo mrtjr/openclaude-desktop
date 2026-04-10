@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v1.8.0-e07a5f?style=for-the-badge&logo=windows" alt="Download" /></a>
+  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v1.9.0-e07a5f?style=for-the-badge&logo=windows" alt="Download" /></a>
   <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License" />
   <img src="https://img.shields.io/badge/platform-Windows-lightgrey?style=for-the-badge" alt="Platform" />
 </p>
@@ -23,6 +23,7 @@
   <img src="https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white" alt="Vite" />
   <img src="https://img.shields.io/badge/Playwright-green?logo=playwright&logoColor=white" alt="Playwright" />
   <img src="https://img.shields.io/badge/MCP-compatible-purple" alt="MCP" />
+  <img src="https://img.shields.io/badge/KaTeX-0.16-blue?logo=latex&logoColor=white" alt="KaTeX" />
 </p>
 
 ---
@@ -52,6 +53,9 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 | No code review flow | Code Workspace: AI-assisted diff editor with accept/reject |
 | No automation | Workflow Builder: drag-and-drop visual AI pipeline editor |
 | Manual repetitive tasks | ORION: autonomous computer-control agent (PowerShell actions) |
+| Math formulas unreadable | LaTeX rendering with KaTeX (`$...$` and `$$...$$`) |
+| No idea how many tokens | Accurate per-model token count shown in chat footer |
+| MCP config is manual | MCP settings UI: add/remove servers directly in Settings |
 
 ---
 
@@ -63,6 +67,11 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 - **Agent Mode** — autonomous multi-step execution (unlimited steps, no artificial cap)
 - **Collaborative Agents** — multiple AI instances working in parallel on different subtasks
 - **Parliament Mode** — 5 specialist agents (Architect, Implementor, Security, Tester, Devil's Advocate) debate in parallel; a Coordinator synthesizes the final verdict
+
+### v1.9.0 — Quality of Life
+- **LaTeX Math Rendering** — inline (`$...$`) and block (`$$...$$`) formulas rendered via KaTeX directly in the chat; enabled by `marked-katex-extension` integrated with the existing `marked` pipeline
+- **Accurate Token Counting** — real-time token counter in the chat footer using `tiktoken` (OpenAI cl100k / o200k) and `@anthropic-ai/tokenizer` (Claude); adapts automatically to the active provider
+- **MCP Settings UI** — dedicated **MCP** tab in Settings with a visual list of connected servers; add/remove server entries (name + command) via IPC without editing JSON manually
 
 ### v1.8.0 — Tier 1: Productivity Powerhouse
 - **Prompt Vault** — library of reusable prompts with `{{variable}}` interpolation, categories, and import/export JSON
@@ -80,7 +89,7 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 - **Task Planning** — decompose complex goals into tracked subtasks with visual progress
 - **17 built-in tools** — commands, files, web search, browser, task planning, git, undo, parallel agents
 - **Mandatory language setting** — forces all responses in Portuguese or English (4-layer enforcement)
-- **Self-Evolution Analytics** ��� silent performance tracking with insights dashboard
+- **Self-Evolution Analytics** — silent performance tracking with insights dashboard
 - **Context Compaction** — smart summarization of old messages (never lose context)
 - **Tool Permissions** — approval required for dangerous operations (execute, write, git)
 - **File Snapshots + Undo** — automatic backup before every write, one-click restore
@@ -100,6 +109,7 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 - Full **JSON-RPC 2.0** protocol (initialize, tools/list, tools/call)
 - Multiple simultaneous connections
 - Use community MCP servers for filesystem, GitHub, databases, and more
+- **Visual Settings UI** — add/remove MCP servers directly from the Settings panel
 
 ### Voice I/O
 - **Speech-to-text** — click the mic button and speak (Web Speech API)
@@ -137,6 +147,8 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 - **Drag & drop** — drop files directly into the chat
 - **Collapsible sidebar** — more screen space when you need it
 - **Code highlighting** — syntax highlighting for 190+ languages with copy button
+- **LaTeX math** — inline and block formulas rendered with KaTeX
+- **Token counter** — live token count in the chat footer (adapts per provider)
 - **System tray** — minimize to tray, restore with `Ctrl+Shift+Space`
 - **Smart auto-scroll** — only scrolls if you're at the bottom
 - **Search with debounce** — fast conversation search
@@ -296,8 +308,10 @@ Unlike competitors with hidden caps, OpenClaude runs until the job is done. A bu
 OpenClaude can connect to any MCP server, giving it access to the growing ecosystem of Claude-compatible tools:
 
 ```
-Settings > MCP > Connect to server
+Settings > MCP > Add server
 ```
+
+Fill in the server **name** and **command** (e.g. `npx -y @modelcontextprotocol/server-filesystem /home`) and click **Add**. No JSON editing required.
 
 **Examples of MCP servers you can connect:**
 - `@modelcontextprotocol/server-filesystem` — file system access
@@ -350,6 +364,8 @@ This is essential for local models (7B-14B) that tend to ignore system prompt in
 | MCP protocol | JSON-RPC 2.0 over stdio |
 | Voice | Web Speech API (STT + TTS) |
 | Markdown | marked + highlight.js |
+| Math rendering | KaTeX 0.16 + marked-katex-extension |
+| Token counting | tiktoken (OpenAI) + @anthropic-ai/tokenizer |
 | Security | DOMPurify |
 | Installer | electron-builder (NSIS) |
 
@@ -363,10 +379,10 @@ openclaude-desktop/
 │   ├── main.js          # Main process: IPC, Ollama, Playwright, MCP, parallel agents
 │   └── preload.js       # Context bridge (40+ secure API methods)
 ├── src/
-│   ├── App.tsx           # Main UI: chat, tools, task plan, voice, agent mode
+│   ├── App.tsx           # Main UI: chat, tools, task plan, voice, agent mode, LaTeX, token counter
 │   ├── Analytics.tsx     # Analytics dashboard (MAGI insights engine)
-│   ├── Settings.tsx      # Settings: providers, language, API keys, memory, analytics
-│   ├── index.css         # Dark/light themes, task plan, voice, analytics styles
+│   ├── Settings.tsx      # Settings: providers, language, API keys, memory, analytics, MCP tab
+│   ├── index.css         # Dark/light themes, task plan, voice, analytics, KaTeX styles
 │   └── vite-env.d.ts     # TypeScript declarations (50+ API types)
 ├── public/               # Static assets
 ├── Modelfile-uncensored  # Template for creating uncensored models
@@ -403,10 +419,19 @@ openclaude-desktop/
 | File undo/snapshots | Yes | No | No | No |
 | Git native tool | Sandboxed | No | No | No |
 | Audit log | Full | No | No | No |
+| LaTeX math rendering | KaTeX | No | Yes | No |
+| Token counter | Per-provider | No | No | No |
+| MCP settings UI | Visual | N/A | N/A | N/A |
 
 ---
 
 ## Changelog
+
+### v1.9.0 — Quality of Life (April 2026)
+**3 polish features shipped:**
+- **LaTeX Math Rendering** — `$...$` (inline) and `$$...$$` (block) formulas now render as beautiful math via KaTeX. Powered by `marked-katex-extension` hooked into the existing `marked` pipeline in `App.tsx`. KaTeX CSS auto-loaded. Works in all messages including agent output.
+- **Accurate Token Counting** — A live token counter now appears in the chat footer. Uses `tiktoken` (`cl100k_base` / `o200k_base`) for OpenAI-family models and `@anthropic-ai/tokenizer` for Claude. Automatically switches tokenizer when you change provider.
+- **MCP Settings UI** — A new **MCP** tab in `Settings.tsx` lists all configured servers with their name and command. Add a new server by typing its name and command; remove any server with one click. Changes are persisted via IPC and take effect on next connection.
 
 ### v1.8.0 — Tier 1 + 2 + 3 Features (2025)
 **8 major features added across 3 tiers:**
@@ -418,8 +443,6 @@ openclaude-desktop/
 - RAG Local: Ollama-powered local embeddings and cosine similarity search
 - Workflow Builder: SVG drag-and-drop visual pipeline builder with 5 node types
 - ORION: autonomous computer-control agent with PowerShell action execution
-
-### v1.7.0 — Parliament Mode
 
 ### v1.7.0 — Parliament Mode: Multi-Agent Debate
 - **Parliament Mode** — Entirely new feature: send any problem to 5 specialist AI agents simultaneously. Each agent analyzes exclusively from its domain: Architect (system design), Implementor (practical code), Security Reviewer (vulnerabilities & risks), Tester (quality & edge cases), Devil's Advocate (challenges assumptions). A Coordinator agent synthesizes all perspectives into Consensus, Divergences, Recommendation, and Next Steps.
@@ -507,10 +530,10 @@ openclaude-desktop/
 - [ ] PDF/DOCX document parsing
 - [ ] Conversation branching (fork at any message)
 - [ ] Plugin system
-- [ ] LaTeX math rendering
+- [x] LaTeX math rendering
 - [ ] Linux & macOS builds
-- [ ] Accurate token counting per model
-- [ ] MCP settings UI (add/remove servers in Settings)
+- [x] Accurate token counting per model
+- [x] MCP settings UI (add/remove servers in Settings)
 - [x] Parliament Mode (Multi-Agent Debate with Coordinator synthesis)
 - [ ] Agent memory persistence across sessions
 
