@@ -3,10 +3,18 @@ import { marked } from 'marked'
 import hljs from 'highlight.js'
 import DOMPurify from 'dompurify'
 import 'highlight.js/styles/github-dark.css'
-import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, FileCode, Info, ArrowUpCircle, Zap, BotOff, Copy, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Image, Trash, Mic, MicOff, Volume2, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Scale } from 'lucide-react'
+import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, FileCode, Info, ArrowUpCircle, Zap, BotOff, Copy, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Image, Trash, Mic, MicOff, Volume2, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Scale, Camera, Database, BookMarked, Swords, FolderOpen, GitBranch, Monitor, UserCog } from 'lucide-react'
 import SettingsModal, { loadSettings, type AppSettings } from './Settings'
 import AnalyticsDashboard from './Analytics'
 import ParliamentMode from './Parliament'
+import PromptVault from './PromptVault'
+import PersonaEngine, { type Persona } from './PersonaEngine'
+import ModelArena from './ModelArena'
+import CodeWorkspace from './CodeWorkspace'
+import VisionMode from './VisionMode'
+import RAGPanel from './RAGPanel'
+import ORION from './ORION'
+import WorkflowBuilder from './WorkflowBuilder'
 
 // ─── Toast notification system ──────────────────────────────────
 let toastId = 0
@@ -465,6 +473,18 @@ export default function App() {
   const [isAgentMode, setIsAgentMode] = useState(false)
   const [showAnalytics, setShowAnalytics] = useState(false)
   const [showParliament, setShowParliament] = useState(false)
+  // ── v1.8.0 feature states ────────────────────────────────────────────────
+  const [showVault, setShowVault] = useState(false)
+  const [showPersona, setShowPersona] = useState(false)
+  const [showArena, setShowArena] = useState(false)
+  const [showRAG, setShowRAG] = useState(false)
+  const [showWorkflow, setShowWorkflow] = useState(false)
+  const [showOrion, setShowOrion] = useState(false)
+  const [showVision, setShowVision] = useState(false)
+  const [showCodeWorkspace, setShowCodeWorkspace] = useState(false)
+  const [activePersonaId, setActivePersonaId] = useState<string | null>(null)
+  const [activePersona, setActivePersona] = useState<Persona | null>(null)
+  const [ragEnabled, setRagEnabled] = useState(false)
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
   const [showPermissionMenu, setShowPermissionMenu] = useState(false)
   const [isListening, setIsListening] = useState(false)
@@ -635,6 +655,16 @@ export default function App() {
       if (e.ctrlKey && e.key === ',') {
         e.preventDefault()
         setShowSettings(true)
+      }
+      // Ctrl+Shift+V: Vision Mode
+      if (e.ctrlKey && e.shiftKey && e.key === 'V') {
+        e.preventDefault()
+        setShowVision(true)
+      }
+      // Ctrl+P: Persona Engine
+      if (e.ctrlKey && e.key === 'p') {
+        e.preventDefault()
+        setShowPersona(true)
       }
     }
     window.addEventListener('keydown', handleGlobalKeys)
@@ -1664,6 +1694,89 @@ export default function App() {
         />
       )}
 
+      {/* ─── v1.8.0 Feature Modals ─────────────────────────────────── */}
+      {showVault && (
+        <PromptVault
+          onClose={() => setShowVault(false)}
+          onInsert={(text) => {
+            setInput(prev => (prev ? prev + '\n\n' : '') + text)
+            setShowVault(false)
+          }}
+        />
+      )}
+
+      {showPersona && (
+        <PersonaEngine
+          settings={settings}
+          ollamaModels={models}
+          activePersonaId={activePersonaId}
+          onClose={() => setShowPersona(false)}
+          onActivatePersona={(persona) => {
+            setActivePersona(persona)
+            setActivePersonaId(persona?.id ?? null)
+          }}
+        />
+      )}
+
+      {showArena && (
+        <ModelArena
+          settings={settings}
+          ollamaModels={models}
+          onClose={() => setShowArena(false)}
+        />
+      )}
+
+      {showCodeWorkspace && (
+        <CodeWorkspace
+          settings={settings}
+          onClose={() => setShowCodeWorkspace(false)}
+          onInsertToChat={(text) => {
+            setInput(prev => (prev ? prev + '\n\n' : '') + text)
+            setShowCodeWorkspace(false)
+          }}
+        />
+      )}
+
+      {showVision && (
+        <VisionMode
+          settings={settings}
+          ollamaModels={models}
+          onClose={() => setShowVision(false)}
+          onInsertToChat={(text) => {
+            setInput(prev => (prev ? prev + '\n\n' : '') + text)
+            setShowVision(false)
+          }}
+        />
+      )}
+
+      {showRAG && (
+        <RAGPanel
+          settings={settings}
+          ollamaModels={models}
+          onClose={() => setShowRAG(false)}
+          ragEnabled={ragEnabled}
+          onToggleRAG={setRagEnabled}
+        />
+      )}
+
+      {showWorkflow && (
+        <WorkflowBuilder
+          settings={settings}
+          onClose={() => setShowWorkflow(false)}
+          onInsertToChat={(text) => {
+            setInput(prev => (prev ? prev + '\n\n' : '') + text)
+            setShowWorkflow(false)
+          }}
+        />
+      )}
+
+      {showOrion && (
+        <ORION
+          settings={settings}
+          onClose={() => setShowOrion(false)}
+        />
+      )}
+
       {/* Titlebar */}
       <div className="titlebar">
         <div className="titlebar-drag">
@@ -2067,6 +2180,81 @@ export default function App() {
               >
                 <Scale size={18} />
                 <span>Parlamento</span>
+              </button>
+
+              <div className="input-actions-divider" />
+
+              {/* v1.8.0 Feature Buttons */}
+              <button
+                className={`agent-toggle-btn feature-btn ${showVault ? 'active' : ''}`}
+                onClick={() => setShowVault(true)}
+                title="Prompt Vault — Biblioteca de prompts (Tier 1)"
+              >
+                <BookMarked size={16} />
+                <span>Vault</span>
+              </button>
+
+              <button
+                className={`agent-toggle-btn feature-btn ${showPersona || activePersona ? 'active' : ''}`}
+                onClick={() => setShowPersona(true)}
+                title={activePersona ? `Persona: ${activePersona.name} ativo (Ctrl+P)` : "Persona Engine — Assistentes especializados (Ctrl+P)"}
+              >
+                <UserCog size={16} />
+                <span>{activePersona ? activePersona.name : 'Persona'}</span>
+              </button>
+
+              <button
+                className={`agent-toggle-btn feature-btn ${showArena ? 'active' : ''}`}
+                onClick={() => setShowArena(true)}
+                title="Model Arena — Comparar modelos em paralelo (Tier 1)"
+              >
+                <Swords size={16} />
+                <span>Arena</span>
+              </button>
+
+              <button
+                className={`agent-toggle-btn feature-btn ${showCodeWorkspace ? 'active' : ''}`}
+                onClick={() => setShowCodeWorkspace(true)}
+                title="Code Workspace — Editor com diff IA (Tier 2)"
+              >
+                <FolderOpen size={16} />
+                <span>Código</span>
+              </button>
+
+              <button
+                className={`agent-toggle-btn feature-btn ${showVision ? 'active' : ''}`}
+                onClick={() => setShowVision(true)}
+                title="Vision Mode — Análise de tela com IA (Ctrl+Shift+V) (Tier 2)"
+              >
+                <Camera size={16} />
+                <span>Visão</span>
+              </button>
+
+              <button
+                className={`agent-toggle-btn feature-btn ${ragEnabled ? 'active' : ''}`}
+                onClick={() => setShowRAG(true)}
+                title={ragEnabled ? "RAG Local: Ativo — clique para configurar" : "RAG Local — Embeddings para contexto (Tier 2)"}
+              >
+                <Database size={16} />
+                <span>RAG{ragEnabled ? ' ●' : ''}</span>
+              </button>
+
+              <button
+                className={`agent-toggle-btn feature-btn ${showWorkflow ? 'active' : ''}`}
+                onClick={() => setShowWorkflow(true)}
+                title="Workflow Builder — Automação visual (Tier 3)"
+              >
+                <GitBranch size={16} />
+                <span>Fluxo</span>
+              </button>
+
+              <button
+                className={`agent-toggle-btn feature-btn orion-btn ${showOrion ? 'active' : ''}`}
+                onClick={() => setShowOrion(true)}
+                title="ORION — Agente de controle de computador (Tier 3)"
+              >
+                <Monitor size={16} />
+                <span>ORION</span>
               </button>
 
               <div className="input-actions-divider" />

@@ -111,4 +111,40 @@ contextBridge.exposeInMainWorld('electron', {
   analyticsLoad: () => ipcRenderer.invoke('analytics-load'),
   analyticsGetInsights: () => ipcRenderer.invoke('analytics-get-insights'),
   analyticsClear: () => ipcRenderer.invoke('analytics-clear'),
+
+  // ─── v1.8.0 Feature Bridges ─────────────────────────────────────────────
+
+  // Prompt Vault
+  vaultLoad: () => ipcRenderer.invoke('vault-load'),
+  vaultSave: (prompts) => ipcRenderer.invoke('vault-save', prompts),
+
+  // Persona Engine
+  personaLoad: () => ipcRenderer.invoke('persona-load'),
+  personaSave: (personas) => ipcRenderer.invoke('persona-save', personas),
+
+  // Model Arena
+  arenaLoad: () => ipcRenderer.invoke('arena-load'),
+  arenaSave: (scores) => ipcRenderer.invoke('arena-save', scores),
+
+  // Workflow Builder
+  workflowLoad: () => ipcRenderer.invoke('workflow-load'),
+  workflowSave: (workflows) => ipcRenderer.invoke('workflow-save', workflows),
+
+  // Code Workspace
+  workspaceTree: (dirPath) => ipcRenderer.invoke('workspace-tree', dirPath),
+
+  // Vision Mode & Screen capture
+  captureScreen: () => ipcRenderer.invoke('capture-screen'),
+  visionChat: (params) => ipcRenderer.invoke('vision-chat', params),
+
+  // RAG Local
+  ragEmbed: (params) => ipcRenderer.invoke('rag-embed', params),
+  ragIndexLoad: () => ipcRenderer.invoke('rag-index-load'),
+  ragIndexSave: (chunks) => ipcRenderer.invoke('rag-index-save', chunks),
+  ragSearch: (params) => ipcRenderer.invoke('rag-search', params),
+  ragClear: () => ipcRenderer.invoke('rag-clear'),
+
+  // ORION: Computer Control
+  orionCapture: () => ipcRenderer.invoke('orion-capture'),
+  orionRunAction: (params) => ipcRenderer.invoke('orion-run-action', params),
 })

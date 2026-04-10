@@ -64,5 +64,31 @@ interface Window {
     analyticsLoad: () => Promise<any>
     analyticsGetInsights: () => Promise<any>
     analyticsClear: () => Promise<{ error: string | null }>
+    // Prompt Vault
+    vaultLoad: () => Promise<{ prompts: import('./PromptVault').VaultPrompt[] }>
+    vaultSave: (prompts: import('./PromptVault').VaultPrompt[]) => Promise<{ error: string | null }>
+    // Persona Engine
+    personaLoad: () => Promise<{ personas: import('./PersonaEngine').Persona[] }>
+    personaSave: (personas: import('./PersonaEngine').Persona[]) => Promise<{ error: string | null }>
+    // Model Arena
+    arenaLoad: () => Promise<{ scores: import('./ModelArena').ArenaScore[] }>
+    arenaSave: (scores: import('./ModelArena').ArenaScore[]) => Promise<{ error: string | null }>
+    // Code Workspace
+    workspaceTree: (dirPath: string) => Promise<{ tree: import('./CodeWorkspace').TreeNode[]; error: string | null }>
+    // Vision Mode
+    captureScreen: () => Promise<{ base64: string | null; error: string | null }>
+    visionChat: (params: { provider: string; apiKey: string; model: string; prompt: string; imageBase64: string; modalHostname?: string }) => Promise<{ response: string | null; error: string | null }>
+    // RAG
+    ragEmbed: (params: { model: string; text: string }) => Promise<{ embedding: number[]; error: string | null }>
+    ragIndexLoad: () => Promise<{ chunks: any[] }>
+    ragIndexSave: (chunks: any[]) => Promise<{ error: string | null }>
+    ragSearch: (params: { queryEmbedding: number[]; topK: number }) => Promise<{ results: { text: string; score: number; source: string }[] }>
+    ragClear: () => Promise<{ error: string | null }>
+    // ORION
+    orionCapture: () => Promise<{ base64: string | null; error: string | null }>
+    orionRunAction: (params: { type: string; params: Record<string, any> }) => Promise<{ output: string; error: string | null }>
+    // Workflow
+    workflowLoad: () => Promise<{ workflows: any[] }>
+    workflowSave: (workflows: any[]) => Promise<{ error: string | null }>
   }
 }

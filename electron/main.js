@@ -1577,6 +1577,355 @@ ipcMain.handle('parliament-debate', async (event, { problem, roles, coordinator 
   return { roles: roleResults, coordinator: coordinatorResponse }
 })
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v1.8.0 — Tier 1+2+3 Feature Backends
+// ═══════════════════════════════════════════════════════════════════════════
+
+const os = require('os')
+
+// ─── Data paths ──────────────────────────────────────────────────────────────
+const VAULT_PATH      = path.join(app.getPath('userData'), 'prompt-vault.json')
+const RAG_INDEX_PATH  = path.join(app.getPath('userData'), 'rag-index.json')
+const ARENA_PATH      = path.join(app.getPath('userData'), 'arena-scores.json')
+const WORKFLOWS_PATH  = path.join(app.getPath('userData'), 'workflows.json')
+const PERSONAS_PATH   = path.join(app.getPath('userData'), 'personas.json')
+
+// ─── Prompt Vault ────────────────────────────────────────────────────────────
+ipcMain.handle('vault-load', async () => {
+  try {
+    if (fs.existsSync(VAULT_PATH)) return { prompts: JSON.parse(fs.readFileSync(VAULT_PATH, 'utf-8')) }
+    return { prompts: [] }
+  } catch (e) { return { prompts: [], error: e.message } }
+})
+
+ipcMain.handle('vault-save', async (event, prompts) => {
+  try { fs.writeFileSync(VAULT_PATH, JSON.stringify(prompts, null, 2), 'utf-8'); return { error: null } }
+  catch (e) { return { error: e.message } }
+})
+
+// ─── Persona Engine ──────────────────────────────────────────────────────────
+ipcMain.handle('persona-load', async () => {
+  try {
+    if (fs.existsSync(PERSONAS_PATH)) return { personas: JSON.parse(fs.readFileSync(PERSONAS_PATH, 'utf-8')) }
+    return { personas: [] }
+  } catch (e) { return { personas: [], error: e.message } }
+})
+
+ipcMain.handle('persona-save', async (event, personas) => {
+  try { fs.writeFileSync(PERSONAS_PATH, JSON.stringify(personas, null, 2), 'utf-8'); return { error: null } }
+  catch (e) { return { error: e.message } }
+})
+
+// ─── Model Arena ─────────────────────────────────────────────────────────────
+ipcMain.handle('arena-load', async () => {
+  try {
+    if (fs.existsSync(ARENA_PATH)) return { scores: JSON.parse(fs.readFileSync(ARENA_PATH, 'utf-8')) }
+    return { scores: [] }
+  } catch (e) { return { scores: [], error: e.message } }
+})
+
+ipcMain.handle('arena-save', async (event, scores) => {
+  try { fs.writeFileSync(ARENA_PATH, JSON.stringify(scores, null, 2), 'utf-8'); return { error: null } }
+  catch (e) { return { error: e.message } }
+})
+
+// ─── Workflow Builder ─────────────────────────────────────────────────────────
+ipcMain.handle('workflow-load', async () => {
+  try {
+    if (fs.existsSync(WORKFLOWS_PATH)) return { workflows: JSON.parse(fs.readFileSync(WORKFLOWS_PATH, 'utf-8')) }
+    return { workflows: [] }
+  } catch (e) { return { workflows: [], error: e.message } }
+})
+
+ipcMain.handle('workflow-save', async (event, workflows) => {
+  try { fs.writeFileSync(WORKFLOWS_PATH, JSON.stringify(workflows, null, 2), 'utf-8'); return { error: null } }
+  catch (e) { return { error: e.message } }
+})
+
+// ─── Code Workspace: Recursive directory tree ─────────────────────────────────
+ipcMain.handle('workspace-tree', async (event, dirPath) => {
+  const IGNORE = new Set(['node_modules', '.git', 'dist', 'release', 'build', '.cache', '__pycache__'])
+  function buildTree(p, depth = 0) {
+    if (depth > 6) return []
+    try {
+      return fs.readdirSync(p, { withFileTypes: true })
+        .filter(e => !IGNORE.has(e.name) && !e.name.startsWith('.') && !e.name.endsWith('.tsbuildinfo'))
+        .sort((a, b) => {
+          if (a.isDirectory() && !b.isDirectory()) return -1
+          if (!a.isDirectory() && b.isDirectory()) return 1
+          return a.name.localeCompare(b.name)
+        })
+        .map(e => ({
+          name: e.name,
+          path: path.join(p, e.name),
+          type: e.isDirectory() ? 'dir' : 'file',
+          children: e.isDirectory() ? buildTree(path.join(p, e.name), depth + 1) : undefined
+        }))
+    } catch { return [] }
+  }
+  try {
+    return { tree: buildTree(dirPath), error: null }
+  } catch (e) {
+    return { tree: [], error: e.message }
+  }
+})
+
+// ─── RAG Local: Ollama embeddings + cosine similarity ────────────────────────
+ipcMain.handle('rag-embed', async (event, { model, text }) => {
+  return new Promise((resolve) => {
+    const body = JSON.stringify({ model, input: text })
+    const opts = {
+      hostname: 'localhost', port: 11434,
+      path: '/api/embed', method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+    }
+    const req = http.request(opts, (res) => {
+      let data = ''
+      res.on('data', c => data += c)
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data)
+          const embedding = parsed.embeddings?.[0] || parsed.embedding || []
+          resolve({ embedding, error: embedding.length ? null : 'Modelo sem suporte a embeddings' })
+        } catch (e) { resolve({ embedding: [], error: e.message }) }
+      })
+    })
+    req.on('error', e => resolve({ embedding: [], error: `Ollama offline: ${e.message}` }))
+    req.write(body)
+    req.end()
+  })
+})
+
+ipcMain.handle('rag-index-load', async () => {
+  try {
+    if (fs.existsSync(RAG_INDEX_PATH)) return { chunks: JSON.parse(fs.readFileSync(RAG_INDEX_PATH, 'utf-8')) }
+    return { chunks: [] }
+  } catch (e) { return { chunks: [], error: e.message } }
+})
+
+ipcMain.handle('rag-index-save', async (event, chunks) => {
+  try { fs.writeFileSync(RAG_INDEX_PATH, JSON.stringify(chunks), 'utf-8'); return { error: null } }
+  catch (e) { return { error: e.message } }
+})
+
+ipcMain.handle('rag-search', async (event, { queryEmbedding, topK = 5 }) => {
+  try {
+    if (!fs.existsSync(RAG_INDEX_PATH)) return { results: [] }
+    const chunks = JSON.parse(fs.readFileSync(RAG_INDEX_PATH, 'utf-8'))
+    if (!chunks.length) return { results: [] }
+
+    function cosineSim(a, b) {
+      let dot = 0, na = 0, nb = 0
+      const len = Math.min(a.length, b.length)
+      for (let i = 0; i < len; i++) { dot += a[i]*b[i]; na += a[i]*a[i]; nb += b[i]*b[i] }
+      return na && nb ? dot / (Math.sqrt(na) * Math.sqrt(nb)) : 0
+    }
+
+    const scored = chunks
+      .filter(c => c.embedding && c.embedding.length > 0)
+      .map(c => ({ text: c.content, source: c.source, score: cosineSim(queryEmbedding, c.embedding) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK)
+
+    return { results: scored }
+  } catch (e) { return { results: [], error: e.message } }
+})
+
+ipcMain.handle('rag-clear', async () => {
+  try { fs.writeFileSync(RAG_INDEX_PATH, '[]', 'utf-8'); return { error: null } }
+  catch (e) { return { error: e.message } }
+})
+
+// ─── Vision Mode: Screen Capture ─────────────────────────────────────────────
+ipcMain.handle('capture-screen', async () => {
+  try {
+    const { desktopCapturer, screen } = require('electron')
+    const display = screen.getPrimaryDisplay()
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: display.bounds.width, height: display.bounds.height }
+    })
+    if (!sources.length) return { base64: null, error: 'Nenhuma fonte de tela encontrada' }
+    const dataUrl = sources[0].thumbnail.toDataURL()
+    const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '')
+    return { base64, error: null }
+  } catch (e) { return { base64: null, error: e.message } }
+})
+
+// Vision Chat — sends image + prompt to any provider
+ipcMain.handle('vision-chat', async (event, { provider, apiKey, model, prompt, imageBase64, modalHostname }) => {
+  return new Promise((resolve) => {
+    if (provider === 'ollama') {
+      // Ollama native API for vision models (llava, bakllava, etc.)
+      const body = JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: prompt, images: [imageBase64] }],
+        stream: false
+      })
+      const opts = {
+        hostname: 'localhost', port: 11434,
+        path: '/api/chat', method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+      }
+      const req = http.request(opts, (res) => {
+        let data = ''
+        res.on('data', c => data += c)
+        res.on('end', () => {
+          try { resolve({ response: JSON.parse(data).message?.content || '', error: null }) }
+          catch (e) { resolve({ response: null, error: e.message }) }
+        })
+      })
+      req.on('error', e => resolve({ response: null, error: e.message }))
+      req.write(body)
+      req.end()
+      return
+    }
+
+    let hostname, apiPath, headers, bodyObj
+
+    if (provider === 'openai' || provider === 'openrouter' || provider === 'modal') {
+      hostname = provider === 'openai' ? 'api.openai.com'
+                : provider === 'openrouter' ? 'openrouter.ai'
+                : (modalHostname || 'api.us-west-2.modal.direct')
+      apiPath = provider === 'openrouter' ? '/api/v1/chat/completions' : '/v1/chat/completions'
+      headers = {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        ...(provider === 'openrouter' ? { 'HTTP-Referer': 'https://github.com/mrtjr/openclaude-desktop', 'X-Title': 'OpenClaude Desktop' } : {})
+      }
+      bodyObj = {
+        model, stream: false, max_tokens: 2048, temperature: 0.7,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: `data:image/png;base64,${imageBase64}`, detail: 'high' } },
+            { type: 'text', text: prompt }
+          ]
+        }]
+      }
+    } else if (provider === 'gemini') {
+      hostname = 'generativelanguage.googleapis.com'
+      apiPath = `/v1beta/models/${model}:generateContent?key=${apiKey}`
+      headers = { 'Content-Type': 'application/json' }
+      bodyObj = {
+        contents: [{
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType: 'image/png', data: imageBase64 } },
+            { text: prompt }
+          ]
+        }],
+        generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
+      }
+    } else if (provider === 'anthropic') {
+      hostname = 'api.anthropic.com'
+      apiPath = '/v1/messages'
+      headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }
+      bodyObj = {
+        model, max_tokens: 2048, temperature: 0.7,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/png', data: imageBase64 } },
+            { type: 'text', text: prompt }
+          ]
+        }]
+      }
+    } else {
+      return resolve({ response: null, error: `Provider "${provider}" não suportado para visão` })
+    }
+
+    const body = JSON.stringify(bodyObj)
+    const reqOpts = { hostname, path: apiPath, method: 'POST', headers: { ...headers, 'Content-Length': Buffer.byteLength(body) } }
+    const req = https.request(reqOpts, (res) => {
+      let data = ''
+      res.on('data', c => data += c)
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data)
+          if (res.statusCode >= 400) return resolve({ response: null, error: `API ${res.statusCode}: ${JSON.stringify(parsed).slice(0, 200)}` })
+          let text = ''
+          if (provider === 'gemini') {
+            text = (parsed.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('')
+          } else if (provider === 'anthropic') {
+            text = (parsed.content || []).filter(c => c.type === 'text').map(c => c.text).join('')
+          } else {
+            text = parsed.choices?.[0]?.message?.content || ''
+          }
+          resolve({ response: text, error: null })
+        } catch (e) { resolve({ response: null, error: e.message }) }
+      })
+    })
+    req.on('error', e => resolve({ response: null, error: e.message }))
+    req.write(body)
+    req.end()
+  })
+})
+
+// ─── ORION: Computer Control Agent ────────────────────────────────────────────
+ipcMain.handle('orion-capture', async () => {
+  try {
+    const { desktopCapturer, screen } = require('electron')
+    const display = screen.getPrimaryDisplay()
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: Math.min(display.bounds.width, 1280), height: Math.min(display.bounds.height, 720) }
+    })
+    if (!sources.length) return { base64: null, error: 'Nenhuma fonte de tela' }
+    const base64 = sources[0].thumbnail.toDataURL().replace(/^data:image\/\w+;base64,/, '')
+    return { base64, error: null }
+  } catch (e) { return { base64: null, error: e.message } }
+})
+
+ipcMain.handle('orion-run-action', async (event, { type, params }) => {
+  const { exec: execChild } = require('child_process')
+
+  let script = ''
+  switch (type) {
+    case 'move_mouse':
+      script = `Add-Type -AssemblyName System.Windows.Forms\n[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${Math.round(params.x || 0)}, ${Math.round(params.y || 0)})`
+      break
+    case 'click': {
+      const cx = Math.round(params.x || 0), cy = Math.round(params.y || 0)
+      script = `Add-Type -AssemblyName System.Windows.Forms\n[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${cx}, ${cy})\nAdd-Type -TypeDefinition @"\nusing System; using System.Runtime.InteropServices;\npublic class MC18 { [DllImport(\"user32.dll\")] public static extern void mouse_event(int f,int x,int y,int c,int e); }\n"@\n[MC18]::mouse_event(2,0,0,0,0); Start-Sleep -Milliseconds 80; [MC18]::mouse_event(4,0,0,0,0)`
+      break
+    }
+    case 'type_text': {
+      const safeText = (params.text || '').replace(/\\/g, '\\\\').replace(/"/g, '`"').replace(/\n/g, '{ENTER}').replace(/\t/g, '{TAB}')
+      script = `Add-Type -AssemblyName System.Windows.Forms\n[System.Windows.Forms.SendKeys]::SendWait("${safeText}")`
+      break
+    }
+    case 'key_press':
+      script = `Add-Type -AssemblyName System.Windows.Forms\n[System.Windows.Forms.SendKeys]::SendWait("${params.key || '{ENTER}'}")`
+      break
+    case 'wait':
+      script = `Start-Sleep -Milliseconds ${Math.min(params.ms || 1000, 30000)}`
+      break
+    case 'scroll':
+      script = `Add-Type -TypeDefinition @"\nusing System; using System.Runtime.InteropServices;\npublic class SC18 { [DllImport(\"user32.dll\")] public static extern void mouse_event(int f,int x,int y,int c,int e); }\n"@\n[SC18]::mouse_event(0x0800,0,0,${(params.delta || 3) * 120},0)`
+      break
+    case 'open_app':
+      script = `Start-Process "${(params.app || '').replace(/"/g, '')}"`
+      break
+    default:
+      return { output: `Ação '${type}' não reconhecida`, error: null }
+  }
+
+  const scriptPath = path.join(os.tmpdir(), `orion_${Date.now()}.ps1`)
+  return new Promise((resolve) => {
+    try {
+      fs.writeFileSync(scriptPath, script, 'utf-8')
+      execChild(`powershell.exe -ExecutionPolicy Bypass -NonInteractive -File "${scriptPath}"`, { timeout: 15000 }, (err, stdout, stderr) => {
+        try { fs.unlinkSync(scriptPath) } catch {}
+        if (err && !stdout && !stderr) return resolve({ output: '', error: err.message })
+        resolve({ output: (stdout || stderr || 'OK').trim(), error: null })
+      })
+    } catch (e) { resolve({ output: '', error: e.message }) }
+  })
+})
+
+
 // ─── App lifecycle ───────────────────────────────────────────────────
 app.whenReady().then(() => {
   createWindow()

@@ -6,12 +6,12 @@
 
 <p align="center">
   <strong>The most powerful open-source AI desktop app.</strong><br/>
-  Local models via Ollama. Cloud providers. Browser automation. Parliament Mode. Voice I/O.<br/>
+  Local models via Ollama. Cloud providers. Vision AI. RAG. Multi-Agent Debate. Workflow Builder. Voice I/O.<br/>
   No telemetry. No cloud lock-in. Your data stays on your machine.
 </p>
 
 <p align="center">
-  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v1.7.0-e07a5f?style=for-the-badge&logo=windows" alt="Download" /></a>
+  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v1.8.0-e07a5f?style=for-the-badge&logo=windows" alt="Download" /></a>
   <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License" />
   <img src="https://img.shields.io/badge/platform-Windows-lightgrey?style=for-the-badge" alt="Platform" />
 </p>
@@ -44,6 +44,14 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 | Text-only interaction | Voice input (STT) and voice output (TTS) |
 | No ecosystem integration | MCP client for Claude-compatible servers |
 | No usage insights | Self-evolution analytics with local-only dashboard |
+| No reusable prompts | Prompt Vault with variables, categories, import/export |
+| Hard to compare models | Model Arena: run same prompt on multiple models at once |
+| Can't see your screen | Vision Mode: capture + analyze screen with any vision AI |
+| No document context | RAG Local: Ollama embeddings, chunk & index files for context |
+| No specialized roles | Persona Engine: switch between expert AI personas (Ctrl+P) |
+| No code review flow | Code Workspace: AI-assisted diff editor with accept/reject |
+| No automation | Workflow Builder: drag-and-drop visual AI pipeline editor |
+| Manual repetitive tasks | ORION: autonomous computer-control agent (PowerShell actions) |
 
 ---
 
@@ -55,6 +63,20 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 - **Agent Mode** — autonomous multi-step execution (unlimited steps, no artificial cap)
 - **Collaborative Agents** — multiple AI instances working in parallel on different subtasks
 - **Parliament Mode** — 5 specialist agents (Architect, Implementor, Security, Tester, Devil's Advocate) debate in parallel; a Coordinator synthesizes the final verdict
+
+### v1.8.0 — Tier 1: Productivity Powerhouse
+- **Prompt Vault** — library of reusable prompts with `{{variable}}` interpolation, categories, and import/export JSON
+- **Persona Engine** — 4 built-in specialist personas (Security, Full-Stack Dev, Data Scientist, Tech Writer); create custom personas with their own system prompt, provider, and model — switch with `Ctrl+P`
+- **Model Arena** — send the same prompt to multiple models in parallel, vote for winner, track a persistent leaderboard
+
+### v1.8.0 — Tier 2: Intelligence Expansion
+- **Code Workspace** — 3-panel editor with file tree, AI diff generation, hunk-level accept/reject, and chat insert
+- **Vision Mode** — screen capture + analysis with any vision-capable model (Ollama llava, GPT-4o, Gemini Vision, Claude); 5 preset prompts; history strip — `Ctrl+Shift+V`
+- **RAG Local** — index any text/code file with Ollama embeddings; cosine similarity search; inject context into chat; toggle on/off from toolbar
+
+### v1.8.0 — Tier 3: Automation & Orchestration
+- **Workflow Builder** — SVG drag-and-drop canvas with 5 node types (trigger, prompt, tool, condition, output), bezier edges, topological execution, inspector panel, and persistent storage
+- **ORION** — autonomous computer-control agent: capture screen loop, send vision AI analysis to any provider, execute PowerShell actions (mouse, click, type, key press, scroll, open app), supervised approval mode
 - **Task Planning** — decompose complex goals into tracked subtasks with visual progress
 - **17 built-in tools** — commands, files, web search, browser, task planning, git, undo, parallel agents
 - **Mandatory language setting** — forces all responses in Portuguese or English (4-layer enforcement)
@@ -385,6 +407,19 @@ openclaude-desktop/
 ---
 
 ## Changelog
+
+### v1.8.0 — Tier 1 + 2 + 3 Features (2025)
+**8 major features added across 3 tiers:**
+- Prompt Vault: reusable prompt library with `{{variable}}` interpolation
+- Persona Engine: 4 built-in + custom AI personas with `Ctrl+P` switcher
+- Model Arena: parallel model comparison with vote system and leaderboard
+- Code Workspace: AI-powered diff editor with file tree and accept/reject hunks
+- Vision Mode: screen capture + multi-provider vision AI analysis (`Ctrl+Shift+V`)
+- RAG Local: Ollama-powered local embeddings and cosine similarity search
+- Workflow Builder: SVG drag-and-drop visual pipeline builder with 5 node types
+- ORION: autonomous computer-control agent with PowerShell action execution
+
+### v1.7.0 — Parliament Mode
 
 ### v1.7.0 — Parliament Mode: Multi-Agent Debate
 - **Parliament Mode** — Entirely new feature: send any problem to 5 specialist AI agents simultaneously. Each agent analyzes exclusively from its domain: Architect (system design), Implementor (practical code), Security Reviewer (vulnerabilities & risks), Tester (quality & edge cases), Devil's Advocate (challenges assumptions). A Coordinator agent synthesizes all perspectives into Consensus, Divergences, Recommendation, and Next Steps.
