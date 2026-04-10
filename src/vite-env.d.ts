@@ -34,6 +34,9 @@ interface Window {
     providerChat: (params: any) => Promise<any>
     providerChatStream: (params: any) => Promise<any>
     listProviderModels: (params: { provider: string; apiKey: string }) => Promise<{ models?: string[]; error?: string | null }>
+    // MCP Settings
+    saveMcpServers: (servers: { name: string; command: string }[]) => Promise<{ error: string | null }>
+    loadMcpServers: () => Promise<{ servers: { name: string; command: string }[] }>
     // Browser automation
     browserLaunch: () => Promise<any>
     browserNavigate: (url: string) => Promise<any>
