@@ -700,34 +700,57 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
       bodyObj = { model, messages, tools: tools || undefined, stream: false, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
     } else if (provider === 'gemini') {
       hostname = 'generativelanguage.googleapis.com'
-      // Convert OpenAI format to Gemini format
-      const geminiContents = messages.filter(m => m.role !== 'system').map(m => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }]
-      }))
+      // Convert OpenAI messages to Gemini format (with tool call support)
+      const geminiContents = messages.filter(m => m.role !== 'system').map(m => {
+        if (m.role === 'tool') {
+          return { role: 'user', parts: [{ functionResponse: { name: m.name || 'tool', response: { content: m.content || '' } } }] }
+        }
+        if (m.role === 'assistant' && m.tool_calls?.length) {
+          return { role: 'model', parts: m.tool_calls.map(tc => ({ functionCall: { name: tc.function.name, args: (() => { try { return JSON.parse(tc.function.arguments || '{}') } catch { return {} } })() } })) }
+        }
+        return { role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content || '' }] }
+      })
       const systemInstruction = messages.find(m => m.role === 'system')
+      // Convert OpenAI tools to Gemini functionDeclarations
+      const geminiTools = tools?.length ? [{ functionDeclarations: tools.map(t => ({ name: t.function.name, description: t.function.description || '', parameters: t.function.parameters })) }] : undefined
       apiPath = `/v1beta/models/${model}:generateContent?key=${apiKey}`
       headers = { 'Content-Type': 'application/json' }
       bodyObj = {
         contents: geminiContents,
         generationConfig: { temperature: temperature ?? 0.7, maxOutputTokens: max_tokens || 4096 },
-        ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction.content }] } } : {})
+        ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction.content }] } } : {}),
+        ...(geminiTools ? { tools: geminiTools } : {})
       }
     } else if (provider === 'anthropic') {
       hostname = 'api.anthropic.com'
       apiPath = '/v1/messages'
       const systemMsg = messages.find(m => m.role === 'system')
-      const nonSystemMsgs = messages.filter(m => m.role !== 'system').map(m => ({
-        role: m.role,
-        content: m.content
-      }))
+      // Convert OpenAI message format to Anthropic format (with tool call support)
+      const anthropicMsgs = []
+      for (const m of messages.filter(msg => msg.role !== 'system')) {
+        if (m.role === 'assistant' && m.tool_calls?.length) {
+          const content = []
+          if (m.content) content.push({ type: 'text', text: m.content })
+          for (const tc of m.tool_calls) {
+            content.push({ type: 'tool_use', id: tc.id, name: tc.function.name, input: (() => { try { return JSON.parse(tc.function.arguments || '{}') } catch { return {} } })() })
+          }
+          anthropicMsgs.push({ role: 'assistant', content })
+        } else if (m.role === 'tool') {
+          anthropicMsgs.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: m.tool_call_id || '', content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }] })
+        } else {
+          anthropicMsgs.push({ role: m.role, content: m.content || '' })
+        }
+      }
+      // Convert OpenAI tools to Anthropic tools format
+      const anthropicTools = tools?.length ? tools.map(t => ({ name: t.function.name, description: t.function.description || '', input_schema: t.function.parameters || { type: 'object', properties: {} } })) : undefined
       headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }
       bodyObj = {
         model,
         max_tokens: max_tokens || 4096,
-        messages: nonSystemMsgs,
+        messages: anthropicMsgs,
         ...(systemMsg ? { system: systemMsg.content } : {}),
-        temperature: temperature ?? 0.7
+        temperature: temperature ?? 0.7,
+        ...(anthropicTools ? { tools: anthropicTools } : {})
       }
     } else if (provider === 'openrouter') {
       hostname = 'openrouter.ai'
@@ -772,11 +795,27 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
 
           // Normalize response to OpenAI format
           if (provider === 'gemini') {
-            const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text || ''
-            resolve({ choices: [{ message: { role: 'assistant', content: text }, finish_reason: 'stop' }] })
+            const candidate = parsed.candidates?.[0]
+            const parts = candidate?.content?.parts || []
+            const functionCalls = parts.filter(p => p.functionCall)
+            if (functionCalls.length > 0) {
+              const tool_calls = functionCalls.map((p, i) => ({ id: `gemini_fc_${i}_${Date.now()}`, type: 'function', function: { name: p.functionCall.name, arguments: JSON.stringify(p.functionCall.args || {}) } }))
+              resolve({ choices: [{ message: { role: 'assistant', content: null, tool_calls }, finish_reason: 'tool_calls' }] })
+            } else {
+              const text = parts.map(p => p.text || '').join('')
+              resolve({ choices: [{ message: { role: 'assistant', content: text }, finish_reason: 'stop' }] })
+            }
           } else if (provider === 'anthropic') {
-            const text = parsed.content?.map(c => c.text).join('') || ''
-            resolve({ choices: [{ message: { role: 'assistant', content: text }, finish_reason: parsed.stop_reason === 'end_turn' ? 'stop' : parsed.stop_reason }] })
+            const content = parsed.content || []
+            const textBlocks = content.filter(c => c.type === 'text')
+            const toolUseBlocks = content.filter(c => c.type === 'tool_use')
+            const text = textBlocks.map(c => c.text).join('')
+            if (toolUseBlocks.length > 0) {
+              const tool_calls = toolUseBlocks.map(t => ({ id: t.id, type: 'function', function: { name: t.name, arguments: JSON.stringify(t.input || {}) } }))
+              resolve({ choices: [{ message: { role: 'assistant', content: text || null, tool_calls }, finish_reason: 'tool_calls' }] })
+            } else {
+              resolve({ choices: [{ message: { role: 'assistant', content: text }, finish_reason: parsed.stop_reason === 'end_turn' ? 'stop' : parsed.stop_reason }] })
+            }
           } else {
             resolve(parsed)
           }
@@ -784,6 +823,125 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
       })
     })
     req.on('error', (e) => resolve({ error: e.message }))
+    req.write(body)
+    req.end()
+  })
+})
+
+// ─── IPC: Multi-provider chat STREAMING (OpenAI/OpenRouter/Modal/Anthropic) ─
+ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, messages, tools, temperature, max_tokens, modalHostname }) => {
+  return new Promise((resolve) => {
+    let hostname, apiPath, headers, bodyObj
+
+    if (provider === 'openai') {
+      hostname = 'api.openai.com'
+      apiPath = '/v1/chat/completions'
+      headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+      bodyObj = { model, messages, tools: tools?.length ? tools : undefined, stream: true, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
+    } else if (provider === 'openrouter') {
+      hostname = 'openrouter.ai'
+      apiPath = '/api/v1/chat/completions'
+      headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://github.com/mrtjr/openclaude-desktop', 'X-Title': 'OpenClaude Desktop' }
+      bodyObj = { model, messages, tools: tools?.length ? tools : undefined, stream: true, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
+    } else if (provider === 'modal') {
+      hostname = modalHostname || 'api.us-west-2.modal.direct'
+      apiPath = '/v1/chat/completions'
+      headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'User-Agent': 'OpenClaude-Desktop' }
+      bodyObj = { model, messages, tools: tools?.length ? tools : undefined, stream: true, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
+    } else if (provider === 'anthropic') {
+      hostname = 'api.anthropic.com'
+      apiPath = '/v1/messages'
+      const systemMsg = messages.find(m => m.role === 'system')
+      const anthropicMsgs = []
+      for (const m of messages.filter(msg => msg.role !== 'system')) {
+        if (m.role === 'assistant' && m.tool_calls?.length) {
+          const content = []
+          if (m.content) content.push({ type: 'text', text: m.content })
+          for (const tc of m.tool_calls) {
+            content.push({ type: 'tool_use', id: tc.id, name: tc.function.name, input: (() => { try { return JSON.parse(tc.function.arguments || '{}') } catch { return {} } })() })
+          }
+          anthropicMsgs.push({ role: 'assistant', content })
+        } else if (m.role === 'tool') {
+          anthropicMsgs.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: m.tool_call_id || '', content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }] })
+        } else {
+          anthropicMsgs.push({ role: m.role, content: m.content || '' })
+        }
+      }
+      const anthropicTools = tools?.length ? tools.map(t => ({ name: t.function.name, description: t.function.description || '', input_schema: t.function.parameters || { type: 'object', properties: {} } })) : undefined
+      headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }
+      bodyObj = { model, max_tokens: max_tokens || 4096, messages: anthropicMsgs, ...(systemMsg ? { system: systemMsg.content } : {}), temperature: temperature ?? 0.7, stream: true, ...(anthropicTools ? { tools: anthropicTools } : {}) }
+    } else {
+      return resolve({ error: `Provider "${provider}" does not support streaming` })
+    }
+
+    const body = JSON.stringify(bodyObj)
+    const reqOptions = { hostname, path: apiPath, method: 'POST', headers: { ...headers, 'Content-Length': Buffer.byteLength(body) } }
+
+    let doneSent = false
+    const sendDone = (error) => {
+      if (doneSent) return
+      doneSent = true
+      activeStreamRequest = null
+      try { event.sender.send('ollama-stream-chunk', { done: true, ...(error ? { error } : {}) }) } catch {}
+    }
+
+    const req = https.request(reqOptions, (res) => {
+      let buffer = ''
+      // Anthropic streaming state
+      let anthropicToolAccum = {} // { [index]: { id, name, argsStr } }
+
+      res.on('data', (chunk) => {
+        buffer += chunk.toString()
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed || !trimmed.startsWith('data: ')) continue
+          const jsonStr = trimmed.slice(6)
+          if (jsonStr === '[DONE]') { sendDone(); continue }
+          try {
+            const parsed = JSON.parse(jsonStr)
+
+            if (provider === 'anthropic') {
+              // Normalize Anthropic SSE events to OpenAI chunk format
+              const evType = parsed.type
+              if (evType === 'content_block_delta') {
+                const delta = parsed.delta
+                if (delta?.type === 'text_delta') {
+                  event.sender.send('ollama-stream-chunk', { choices: [{ delta: { content: delta.text }, finish_reason: null }] })
+                } else if (delta?.type === 'input_json_delta') {
+                  const idx = parsed.index
+                  if (anthropicToolAccum[idx]) anthropicToolAccum[idx].argsStr += delta.partial_json
+                }
+              } else if (evType === 'content_block_start' && parsed.content_block?.type === 'tool_use') {
+                const idx = parsed.index
+                anthropicToolAccum[idx] = { id: parsed.content_block.id, name: parsed.content_block.name, argsStr: '' }
+              } else if (evType === 'message_delta' && parsed.delta?.stop_reason) {
+                // If we have accumulated tool calls, emit them
+                const toolEntries = Object.values(anthropicToolAccum)
+                if (toolEntries.length > 0) {
+                  const tool_calls = toolEntries.map(t => ({ id: t.id, type: 'function', function: { name: t.name, arguments: t.argsStr } }))
+                  event.sender.send('ollama-stream-chunk', { choices: [{ delta: { tool_calls }, finish_reason: 'tool_calls' }] })
+                }
+                sendDone()
+              } else if (evType === 'message_stop') {
+                sendDone()
+              }
+            } else {
+              // OpenAI-compatible SSE — pass through directly
+              event.sender.send('ollama-stream-chunk', parsed)
+              if (parsed.choices?.[0]?.finish_reason) sendDone()
+            }
+          } catch {}
+        }
+      })
+
+      res.on('end', () => { sendDone(); resolve({ ok: true }) })
+    })
+
+    req.on('error', (err) => { sendDone(err.message); resolve({ ok: false, error: err.message }) })
+    activeStreamRequest = req
     req.write(body)
     req.end()
   })

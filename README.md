@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v1.5.6-ff6b35?style=for-the-badge&logo=windows" alt="Download" /></a>
+  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v1.6.0-e07a5f?style=for-the-badge&logo=windows" alt="Download" /></a>
   <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License" />
   <img src="https://img.shields.io/badge/platform-Windows-lightgrey?style=for-the-badge" alt="Platform" />
 </p>
@@ -168,8 +168,10 @@ npm run dist:win    # outputs to release/
 | **OpenAI** | Settings > Provider: OpenAI > paste `sk-...` API key |
 | **Google Gemini** | Settings > Provider: Gemini > paste `AIza...` API key |
 | **Anthropic Claude** | Settings > Provider: Anthropic > paste `sk-ant-...` API key |
+| **OpenRouter** | Settings > Provider: OpenRouter > paste `sk-or-v1-...` API key |
+| **Modal (Research)** | Settings > Provider: Modal > paste key + hostname |
 
-All providers are normalized to the same response format — switch freely without losing features.
+All providers are normalized to the same response format — switch freely without losing features. **All 6 providers support Agent Mode and streaming.**
 
 ---
 
@@ -209,7 +211,9 @@ ollama create my-uncensored-model -f Modelfile
 |----------|------------------|-------|
 | OpenAI | `gpt-4o` | Best overall quality |
 | Gemini | `gemini-2.0-flash` | Fast, good for code |
-| Anthropic | `claude-sonnet-4-20250514` | Excellent reasoning |
+| Anthropic | `claude-opus-4-5` | Best reasoning |
+| OpenRouter | `google/gemini-2.5-pro` | Best value via aggregator |
+| Modal | `zai-org/GLM-5.1-FP8` | Research models |
 
 ---
 
@@ -380,6 +384,16 @@ openclaude-desktop/
 
 ## Changelog
 
+### v1.6.0 — Full Provider Parity
+- **Agent Mode for Gemini**: Function calling now works with Gemini — tools are converted from OpenAI format to Gemini `functionDeclarations` automatically.
+- **Agent Mode for Anthropic**: Tool use now fully supported — request/response converted between OpenAI and Anthropic native formats transparently.
+- **Cloud Provider Streaming**: OpenAI, OpenRouter, Modal, and Anthropic now stream responses word-by-word (same as Ollama). Anthropic SSE events normalized to OpenAI chunk format.
+- **Visual Redesign**: Refined dark/light themes with deeper contrast, gradient accents, glassmorphism modals, improved typography, table rendering, and blockquote support.
+- **Repository Cleanup**: Removed Vite boilerplate files (`counter.ts`, `style.css`, `main.ts`, placeholder SVGs).
+- **Build Scripts Fixed**: `build-installer.ps1` and `create-icon.ps1` now use `$PSScriptRoot` instead of hardcoded `D:\claude-desktop` path.
+- **`.gitignore` Updated**: Added `*.tsbuildinfo` to prevent TypeScript build artifacts from being committed.
+- **Typo Fix**: "informacoes" → "informações" in the input footer.
+
 ### v1.5.6 — UX Polish & Security Awareness
 - **Security Visibility**: Added persistent visual warnings (banner + pulsing border) when "Ignore Permissions" (bypass mode) is active.
 - **Bilingual Polish**: Fully translated Planning Mode prompts and permission menu (EN/PT).
@@ -442,6 +456,8 @@ openclaude-desktop/
 
 ## Roadmap
 
+- [x] Agent Mode for all cloud providers (Gemini, Anthropic, OpenAI, OpenRouter, Modal)
+- [x] Streaming for all cloud providers
 - [ ] Image upload with vision model support
 - [ ] PDF/DOCX document parsing
 - [ ] Conversation branching (fork at any message)

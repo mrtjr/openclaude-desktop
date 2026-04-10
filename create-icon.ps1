@@ -93,9 +93,9 @@ $font = New-Object System.Drawing.Font('Arial', 140, [System.Drawing.FontStyle]:
 $textSize = $g.MeasureString('C', $font)
 $g.DrawString('C', $font, $whiteBrush, (256 - $textSize.Width) / 2, (256 - $textSize.Height) / 2)
 $g.Dispose()
-$bmp.Save('D:\claude-desktop\public\icon.png', [System.Drawing.Imaging.ImageFormat]::Png)
+$bmp.Save("$PSScriptRoot\public\icon.png", [System.Drawing.Imaging.ImageFormat]::Png)
 $bmp.Dispose()
 Write-Host "PNG created"
 
 # Create proper ICO
-Create-Ico -outputPath 'D:\claude-desktop\public\icon.ico'
+Create-Ico -outputPath "$PSScriptRoot\public\icon.ico"

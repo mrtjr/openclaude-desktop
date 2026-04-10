@@ -1186,7 +1186,9 @@ export default function App() {
 
         let continueLoop = true
         let allMessages: any[] = [...systemMessages, ...memoryMessages, ...primingMessages, ...trimmedHistory]
-        const useStreaming = isNotOllama ? false : settings.streamingEnabled
+        // Cloud providers (OpenAI/OpenRouter/Modal/Anthropic) now support streaming via providerChatStream
+        const cloudStreamingSupported = ['openai', 'openrouter', 'modal', 'anthropic'].includes(finalProvider)
+        const useStreaming = isNotOllama ? (cloudStreamingSupported && settings.streamingEnabled) : settings.streamingEnabled
         let steps = 0
         let idleSteps = 0 // steps with no real tool execution (only memory updates, errors, etc.)
         const recentToolCalls: string[] = []
@@ -1273,13 +1275,26 @@ export default function App() {
             })
             streamCleanupRef.current = cleanup
 
-            window.electron.ollamaChatStream({
-              model: finalModel,
-              messages: requestMessages,
-              tools: TOOLS,
-              temperature: settings.temperature,
-              max_tokens: settings.maxTokens
-            }).catch((err: any) => {
+            // Route to the correct streaming handler based on provider
+            const streamCall = isNotOllama
+              ? window.electron.providerChatStream({
+                  provider: finalProvider,
+                  apiKey: finalApiKey,
+                  model: finalModel,
+                  messages: requestMessages,
+                  tools: TOOLS,
+                  temperature: settings.temperature,
+                  max_tokens: settings.maxTokens,
+                  modalHostname: settings.modalHostname
+                })
+              : window.electron.ollamaChatStream({
+                  model: finalModel,
+                  messages: requestMessages,
+                  tools: TOOLS,
+                  temperature: settings.temperature,
+                  max_tokens: settings.maxTokens
+                })
+            streamCall.catch((err: any) => {
               cleanup()
               streamCleanupRef.current = null
               reject(err)
@@ -2102,7 +2117,7 @@ export default function App() {
               </div>
             </div>
             <div className="input-footer">
-              <p className="input-hint">OpenClaude pode cometer erros. Verifique informacoes importantes. | Ctrl+N nova conversa | Ctrl+, config</p>
+              <p className="input-hint">OpenClaude pode cometer erros. Verifique informações importantes. | Ctrl+N nova conversa | Ctrl+, config</p>
               {input.length > 0 && (
                 <span className="token-counter">{Math.ceil(input.length / 4)} / 4096 tokens</span>
               )}

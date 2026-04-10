@@ -60,6 +60,7 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Multi-provider
   providerChat: (params) => ipcRenderer.invoke('provider-chat', params),
+  providerChatStream: (params) => ipcRenderer.invoke('provider-chat-stream', params),
   listProviderModels: (params) => ipcRenderer.invoke('list-provider-models', params),
 
   // Browser automation
