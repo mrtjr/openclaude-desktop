@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v2.0.0-e07a5f?style=for-the-badge&logo=windows" alt="Download" /></a>
+  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v2.1.0-e07a5f?style=for-the-badge&logo=windows" alt="Download" /></a>
   <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License" />
   <img src="https://img.shields.io/badge/platform-Windows-lightgrey?style=for-the-badge" alt="Platform" />
 </p>
@@ -35,10 +35,10 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 | Problem | OpenClaude Solution |
 |---------|-------------------|
 | Privacy concerns | Runs 100% locally via Ollama. Zero telemetry. |
-| Vendor lock-in | Multi-provider: Ollama, OpenAI, Gemini, Anthropic |
+| Vendor lock-in | Multi-provider: Ollama, OpenAI, Gemini, Anthropic, OpenRouter, Modal |
 | CLI is intimidating | Beautiful desktop GUI with dark/light themes |
 | Models are censored | Works with uncensored/abliterated models |
-| No agent capabilities | Agent Mode with up to 25 autonomous steps |
+| No agent capabilities | Agent Mode with unlimited autonomous steps |
 | Can't browse the web | Playwright browser automation built-in |
 | Single-threaded AI | Collaborative parallel agents |
 | Single perspective AI | Parliament Mode: 5 specialist agents debate in parallel |
@@ -65,8 +65,14 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 
 ## Features
 
+### v2.1.0 — Code Architecture & Command Palette
+- **Command Palette** — press `Ctrl+K` to instantly search and access all features, tools, permissions, and settings from a single overlay; fuzzy search, keyboard navigation, grouped by category (AI, Knowledge, Automation, System)
+- **Clean Input Bar** — simplified input area: `+` button opens Command Palette instead of cluttered dropdown; voice, TTS, and permissions moved to Command Palette
+- **Code Modularization** — types, constants, tools, prompts, and utilities extracted to dedicated modules (`src/types/`, `src/constants/`, `src/utils/`); App.tsx reduced by ~400 lines
+- **Bug Fixes** — `fetchedModels` now cached per-provider (switching back preserves results); `fetchError` displayed consistently across all providers; missing TypeScript declarations added (`openFileDialog`, `readDocument`, `loadAgentMemory`, `saveAgentMemory`)
+
 ### Core AI
-- **Multi-provider** — Ollama (local), OpenAI, Google Gemini, Anthropic Claude
+- **Multi-provider** — Ollama (local), OpenAI, Google Gemini, Anthropic Claude, OpenRouter, Modal
 - **Streaming responses** — real-time word-by-word output
 - **Agent Mode** — autonomous multi-step execution (unlimited steps, no artificial cap)
 - **Collaborative Agents** — multiple AI instances working in parallel on different subtasks

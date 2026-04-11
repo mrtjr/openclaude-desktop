@@ -487,6 +487,7 @@ body {
 }
 .settings-fetch-btn:hover:not(:disabled) { background: rgba(224,122,95,0.2); border-color: var(--accent); }
 .settings-fetch-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.settings-fetch-error { color: #ff4d4d; font-size: 0.8rem; margin-top: 5px; animation: shake 0.4s ease-in-out; }
 
 .animate-spin { animation: spin 1s linear infinite; }
 .settings-error { animation: shake 0.4s ease-in-out; }
@@ -2033,3 +2034,382 @@ body {
 
 [data-theme="light"] .orion-modal { background: #0a0a14; }
 
+/* ═══════════════════════════════════════════════════════════════════
+   v2.1 INPUT PILL DESIGN — Claude.ai + ChatGPT-inspired
+   Fixes: typing bug, overflow, z-index, clean UX
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Input area wrapper — z-index fix (critical bug fix for typing) */
+.input-area {
+  padding: 8px 16px 12px;
+  background: var(--bg-primary);
+  position: relative;
+  z-index: 10; /* ensures it's above any modal backdrops */
+  pointer-events: all; /* explicit fix */
+  flex-shrink: 0;
+}
+
+.input-wrapper {
+  max-width: 820px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ── Status bar (Manus AI pattern: shows only active states) ── */
+.input-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 0 4px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: none;
+  text-transform: uppercase;
+}
+
+.status-pill.agent { background: rgba(224,122,95,0.15); color: var(--accent); border: 1px solid var(--accent-border); }
+.status-pill.danger { background: rgba(224,92,92,0.15); color: #e05c5c; border: 1px solid rgba(224,92,92,0.3); }
+.status-pill.persona { background: rgba(155,93,229,0.15); color: var(--accent-2); border: 1px solid rgba(155,93,229,0.3); }
+.status-pill.rag { background: rgba(82,183,136,0.15); color: var(--green); border: 1px solid rgba(82,183,136,0.3); }
+.status-pill.steps { background: rgba(255,255,255,0.05); color: var(--text-secondary); border: 1px solid var(--border); }
+.status-pill.stop-pill { cursor: pointer; background: rgba(224,92,92,0.2); color: #e05c5c; border: 1px solid rgba(224,92,92,0.4); transition: all 0.15s; }
+.status-pill.stop-pill:hover { background: rgba(224,92,92,0.35); }
+
+/* ── Main pill container (Claude.ai style border+shadow) ── */
+.input-pill {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  background: var(--bg-input);
+  border: 1.5px solid var(--border-light);
+  border-radius: 18px;
+  padding: 8px 10px 8px 12px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  position: relative;
+  z-index: 10; /* z-index fix */
+  pointer-events: all; /* z-index fix */
+}
+
+.input-pill:focus-within {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+/* ── Left/Right action groups ── */
+.input-left-actions,
+.input-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* ── Icon buttons (voice, +, clear) ── */
+.input-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.input-icon-btn:hover { background: var(--bg-elevated); color: var(--text-primary); }
+.input-icon-btn.active { background: var(--accent-dim); color: var(--accent); }
+.input-icon-btn.voice-on { color: #e05c5c; }
+.input-icon-btn.voice-on:hover { background: rgba(224,92,92,0.1); }
+
+/* ── Textarea (override old styles) ── */
+.input-pill .message-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  color: var(--text-primary);
+  font-size: 0.925rem;
+  line-height: 1.55;
+  padding: 4px 0;
+  max-height: 200px;
+  overflow-y: auto;
+  align-self: center;
+  pointer-events: all; /* critical fix */
+}
+
+/* ── Mode toggle (Chat/Agente mini pill) ── */
+.mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 20px;
+  border: 1.5px solid var(--border-light);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.mode-toggle:hover { border-color: var(--accent-border); color: var(--text-primary); }
+.mode-toggle.agent-on {
+  background: var(--accent-dim);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+/* ── Circular send button (ChatGPT style) ── */
+.send-circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.send-circle:hover { background: var(--accent-hover); transform: scale(1.05); }
+.send-circle.disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; transform: none; }
+.send-circle.stop { background: #e05c5c; }
+.send-circle.stop:hover { background: #c94c4c; }
+
+/* ── Feature dropdown menu ── */
+.feature-menu-wrapper { position: relative; }
+
+.feature-dropdown {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  width: 280px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: var(--shadow-lg);
+  z-index: 500;
+  animation: slideUpFade 0.15s ease;
+}
+
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.feature-dropdown-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 4px 4px 8px;
+}
+
+.feature-dropdown-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 10px 0 8px;
+}
+
+.feature-dropdown-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: none;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.12s;
+  text-align: left;
+}
+.feature-item:hover { background: var(--bg-input); color: var(--text-primary); }
+.feature-item.active { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-border); }
+.feature-item.special { grid-column: span 2; justify-content: center; background: rgba(155,93,229,0.08); color: var(--accent-2); }
+.feature-item.special:hover { background: rgba(155,93,229,0.15); }
+
+/* ── Permission chips ── */
+.feature-perm-grid {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.perm-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1.5px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.perm-chip:hover { border-color: var(--accent-border); color: var(--text-primary); }
+.perm-chip.active { background: var(--accent-dim); border-color: var(--accent-border); color: var(--accent); }
+.perm-chip.danger { border-color: rgba(224,92,92,0.3); color: #e05c5c; }
+.perm-chip.danger.active { background: rgba(224,92,92,0.15); border-color: #e05c5c; }
+.perm-chip.danger:hover { background: rgba(224,92,92,0.1); }
+
+/* ── Input footer ── */
+.input-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.input-hint {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.token-counter {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* ── Light theme overrides ── */
+[data-theme="light"] .input-pill {
+  background: #ffffff;
+  border-color: #e2e8f0;
+}
+[data-theme="light"] .input-pill:focus-within {
+  border-color: var(--accent-border);
+}
+[data-theme="light"] .feature-dropdown {
+  background: #ffffff;
+  border-color: #e2e8f0;
+}
+[data-theme="light"] .feature-item {
+  background: #f8f9fa;
+  color: #4a5568;
+}
+[data-theme="light"] .feature-item:hover {
+  background: #f1f5f9;
+  color: #1a202c;
+}
+[data-theme="light"] .input-icon-btn { color: #718096; }
+[data-theme="light"] .input-icon-btn:hover { background: #f7fafc; color: #2d3748; }
+[data-theme="light"] .mode-toggle { border-color: #e2e8f0; color: #718096; }
+[data-theme="light"] .perm-chip { border-color: #e2e8f0; color: #718096; }
+
+/* ── Command Palette ─────────────────────────────────────────────── */
+.cmd-palette-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: min(20vh, 160px);
+  animation: fadeIn 0.12s ease-out;
+}
+.cmd-palette {
+  width: min(560px, 90vw); max-height: 70vh;
+  background: var(--surface, #13131f); border: 1px solid var(--border, #252538);
+  border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  display: flex; flex-direction: column; overflow: hidden;
+  animation: slideDown 0.15s ease-out;
+}
+@keyframes slideDown { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.cmd-search-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 18px; border-bottom: 1px solid var(--border, #252538);
+}
+.cmd-search-icon { color: var(--text-dim, #5a5a7a); flex-shrink: 0; }
+.cmd-search-input {
+  flex: 1; background: none; border: none; outline: none;
+  color: var(--text, #eeeef5); font-size: 15px; font-family: inherit;
+}
+.cmd-search-input::placeholder { color: var(--text-dim, #5a5a7a); }
+.cmd-kbd {
+  font-size: 10px; padding: 2px 6px; border-radius: 4px;
+  background: rgba(255,255,255,0.06); border: 1px solid var(--border, #252538);
+  color: var(--text-dim, #5a5a7a); font-family: monospace;
+}
+
+.cmd-results {
+  flex: 1; overflow-y: auto; padding: 8px;
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+.cmd-empty {
+  text-align: center; padding: 32px; color: var(--text-dim, #5a5a7a); font-size: 14px;
+}
+.cmd-group { margin-bottom: 4px; }
+.cmd-group-label {
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-dim, #5a5a7a); padding: 8px 10px 4px; user-select: none;
+}
+.cmd-item {
+  display: flex; align-items: center; gap: 12px; padding: 8px 10px;
+  border-radius: 10px; cursor: pointer; transition: background 0.1s;
+}
+.cmd-item:hover, .cmd-item.selected { background: var(--surface-light, #1a1a2e); }
+.cmd-item.special { }
+.cmd-item.special.selected { background: rgba(224,122,95,0.12); }
+
+.cmd-item-icon {
+  width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface-lighter, #222240); color: var(--text-secondary, #9898b8);
+  flex-shrink: 0; transition: all 0.15s;
+}
+.cmd-item-icon.active { background: var(--accent, #e07a5f); color: white; }
+.cmd-item-info { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.cmd-item-label { font-size: 14px; font-weight: 500; color: var(--text, #eeeef5); }
+.cmd-item-desc { font-size: 11px; color: var(--text-dim, #5a5a7a); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmd-item-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent, #e07a5f); flex-shrink: 0;
+}
+
+.cmd-footer {
+  display: flex; gap: 16px; padding: 8px 18px;
+  border-top: 1px solid var(--border, #252538);
+  font-size: 11px; color: var(--text-dim, #5a5a7a);
+}
+
+/* Light theme overrides */
+[data-theme="light"] .cmd-palette { background: #fff; border-color: #e2e8f0; box-shadow: 0 20px 60px rgba(0,0,0,0.15); }
+[data-theme="light"] .cmd-search-input { color: #1a202c; }
+[data-theme="light"] .cmd-item:hover, [data-theme="light"] .cmd-item.selected { background: #f7fafc; }
+[data-theme="light"] .cmd-item-icon { background: #f1f5f9; color: #4a5568; }
+[data-theme="light"] .cmd-item-label { color: #1a202c; }
+[data-theme="light"] .cmd-footer { border-color: #e2e8f0; }

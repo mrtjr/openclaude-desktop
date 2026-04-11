@@ -87,7 +87,7 @@ type SettingsTab = 'general' | 'provider' | 'mcp'
 
 export default function Settings({ isOpen, onClose, settings, onSave }: SettingsProps) {
   const [local, setLocal] = useState<AppSettings>({ ...settings })
-  const [fetchedModels, setFetchedModels] = useState<string[]>([])
+  const [fetchedModels, setFetchedModels] = useState<Record<string, string[]>>({})
   const [isFetching, setIsFetching] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
@@ -97,13 +97,12 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
   useEffect(() => {
     if (isOpen) {
       setLocal({ ...settings })
-      setFetchedModels([])
+      setFetchedModels({})
       setFetchError(null)
     }
   }, [isOpen, settings])
 
   useEffect(() => {
-    setFetchedModels([])
     setFetchError(null)
   }, [local.provider])
 
@@ -145,7 +144,7 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
       if (result.error) {
         setFetchError(result.error)
       } else if (result.models) {
-        setFetchedModels(result.models)
+        setFetchedModels(prev => ({ ...prev, [local.provider]: result.models }))
         if (result.models.length === 0) {
           setFetchError(local.language === 'pt' ? 'Nenhum modelo encontrado' : 'No models found')
         }
@@ -391,11 +390,11 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                     <input type="text" className="settings-input" list="openai-models" value={local.openaiModel}
                       onChange={(e) => setLocal(s => ({ ...s, openaiModel: e.target.value }))} placeholder="gpt-4o" />
                     <datalist id="openai-models">
-                      {fetchedModels.map(m => <option key={m} value={m} />)}
-                      {!fetchedModels.length && (<><option value="gpt-4o" /><option value="gpt-4o-mini" /><option value="gpt-3.5-turbo" /></>)}
+                      {(fetchedModels['openai'] || []).map(m => <option key={m} value={m} />)}
+                      {!(fetchedModels['openai'] || []).length && (<><option value="gpt-4o" /><option value="gpt-4o-mini" /><option value="gpt-3.5-turbo" /></>)}
                     </datalist>
                   </div>
-                  {fetchError && <div style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>{fetchError}</div>}
+                  {fetchError && <div className="settings-fetch-error">{fetchError}</div>}
                 </>
               )}
 
@@ -416,11 +415,11 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                     <input type="text" className="settings-input" list="gemini-models" value={local.geminiModel}
                       onChange={(e) => setLocal(s => ({ ...s, geminiModel: e.target.value }))} placeholder="gemini-2.0-flash" />
                     <datalist id="gemini-models">
-                      {fetchedModels.map(m => <option key={m} value={m} />)}
-                      {!fetchedModels.length && (<><option value="gemini-2.0-flash" /><option value="gemini-1.5-pro" /><option value="gemini-1.5-flash" /></>)}
+                      {(fetchedModels['gemini'] || []).map(m => <option key={m} value={m} />)}
+                      {!(fetchedModels['gemini'] || []).length && (<><option value="gemini-2.0-flash" /><option value="gemini-1.5-pro" /><option value="gemini-1.5-flash" /></>)}
                     </datalist>
                   </div>
-                  {fetchError && <div style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>{fetchError}</div>}
+                  {fetchError && <div className="settings-fetch-error">{fetchError}</div>}
                 </>
               )}
 
@@ -441,11 +440,11 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                     <input type="text" className="settings-input" list="anthropic-models" value={local.anthropicModel}
                       onChange={(e) => setLocal(s => ({ ...s, anthropicModel: e.target.value }))} placeholder="claude-sonnet-4-20250514" />
                     <datalist id="anthropic-models">
-                      {fetchedModels.map(m => <option key={m} value={m} />)}
-                      {!fetchedModels.length && (<><option value="claude-3-5-sonnet-20241022" /><option value="claude-3-opus-20240229" /><option value="claude-3-haiku-20240307" /></>)}
+                      {(fetchedModels['anthropic'] || []).map(m => <option key={m} value={m} />)}
+                      {!(fetchedModels['anthropic'] || []).length && (<><option value="claude-3-5-sonnet-20241022" /><option value="claude-3-opus-20240229" /><option value="claude-3-haiku-20240307" /></>)}
                     </datalist>
                   </div>
-                  {fetchError && <div style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>{fetchError}</div>}
+                  {fetchError && <div className="settings-fetch-error">{fetchError}</div>}
                 </>
               )}
 
@@ -466,11 +465,11 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                     <input type="text" className="settings-input" list="openrouter-models" value={local.openrouterModel || ''}
                       onChange={(e) => setLocal(s => ({ ...s, openrouterModel: e.target.value }))} placeholder="google/gemini-2.5-pro" />
                     <datalist id="openrouter-models">
-                      {fetchedModels.map(m => <option key={m} value={m} />)}
-                      {!fetchedModels.length && (<><option value="google/gemini-2.0-flash-001" /><option value="openai/gpt-4o" /><option value="anthropic/claude-3.5-sonnet" /></>)}
+                      {(fetchedModels['openrouter'] || []).map(m => <option key={m} value={m} />)}
+                      {!(fetchedModels['openrouter'] || []).length && (<><option value="google/gemini-2.0-flash-001" /><option value="openai/gpt-4o" /><option value="anthropic/claude-3.5-sonnet" /></>)}
                     </datalist>
                   </div>
-                  {fetchError && <div style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>{fetchError}</div>}
+                  {fetchError && <div className="settings-fetch-error">{fetchError}</div>}
                 </>
               )}
 
@@ -491,8 +490,8 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                     <input type="text" className="settings-input" list="modal-models" value={local.modalModel || ''}
                       onChange={(e) => setLocal(s => ({ ...s, modalModel: e.target.value }))} placeholder="zai-org/GLM-5.1-FP8" />
                     <datalist id="modal-models">
-                      {fetchedModels.map(m => <option key={m} value={m} />)}
-                      {!fetchedModels.length && <option value="zai-org/GLM-5.1-FP8" />}
+                      {(fetchedModels['modal'] || []).map(m => <option key={m} value={m} />)}
+                      {!(fetchedModels['modal'] || []).length && <option value="zai-org/GLM-5.1-FP8" />}
                     </datalist>
                   </div>
                   <div className="settings-group">
@@ -500,7 +499,7 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                     <input type="text" className="settings-input" value={local.modalHostname || ''}
                       onChange={(e) => setLocal(s => ({ ...s, modalHostname: e.target.value }))} placeholder="api.us-west-2.modal.direct" />
                   </div>
-                  {fetchError && <div style={{ color: '#ff4d4d', fontSize: '0.8rem', marginTop: '5px' }}>{fetchError}</div>}
+                  {fetchError && <div className="settings-fetch-error">{fetchError}</div>}
                 </>
               )}
             </>

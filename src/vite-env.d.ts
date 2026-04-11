@@ -22,7 +22,9 @@ interface Window {
     getAutoStart: () => Promise<boolean>
     setAutoStart: (enabled: boolean) => Promise<{ error: string | null }>
     saveDialog: (opts: any) => Promise<{ filePath: string | null; error: string | null }>
+    openFileDialog: (opts?: any) => Promise<{ filePaths: string[]; canceled: boolean }>
     readDroppedFile: (path: string) => Promise<{ content: string | null; name?: string; error: string | null }>
+    readDocument: (filePath: string) => Promise<{ content: string | null; error: string | null }>
     minimize: () => Promise<void>
     maximize: () => Promise<void>
     close: () => Promise<void>
@@ -31,6 +33,8 @@ interface Window {
     abortStream: () => Promise<{ aborted: boolean }>
     loadMemory: () => Promise<any>
     saveMemory: (data: any) => Promise<{ error: string | null }>
+    loadAgentMemory: () => Promise<any>
+    saveAgentMemory: (data: any) => Promise<{ error: string | null }>
     providerChat: (params: any) => Promise<any>
     providerChatStream: (params: any) => Promise<any>
     listProviderModels: (params: { provider: string; apiKey: string }) => Promise<{ models?: string[]; error?: string | null }>

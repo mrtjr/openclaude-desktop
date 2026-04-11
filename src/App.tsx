@@ -1,7 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { marked } from 'marked'
-import hljs from 'highlight.js'
-import DOMPurify from 'dompurify'
 import 'highlight.js/styles/github-dark.css'
 import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, FileCode, Info, ArrowUpCircle, Zap, BotOff, Copy, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Image, Trash, Mic, MicOff, Volume2, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Scale, Camera, Database, BookMarked, Swords, FolderOpen, GitBranch, Monitor, UserCog } from 'lucide-react'
 import SettingsModal, { loadSettings, type AppSettings } from './Settings'
@@ -15,10 +12,16 @@ import VisionMode from './VisionMode'
 import RAGPanel from './RAGPanel'
 import ORION from './ORION'
 import WorkflowBuilder from './WorkflowBuilder'
+import CommandPalette from './components/CommandPalette'
+
+// ─── Extracted modules ──────────────────────────────────────────────
+import type { Message, ToolCall, ToolResult, Conversation, TaskPlan, PendingApproval, Toast } from './types'
+import { TOOLS, SAFE_TOOLS, DANGEROUS_TOOLS, AGENT_SAFETY_LIMIT, NORMAL_SAFETY_LIMIT, IDLE_STEP_THRESHOLD } from './constants/tools'
+import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIMING, LANGUAGE_REMINDER, PLACEHOLDER_HINTS, SUGGESTIONS } from './constants/prompts'
+import { formatMarkdown, generateId, isSmallModel, getRelativeTime } from './utils/formatting'
 
 // ─── Toast notification system ──────────────────────────────────
 let toastId = 0
-interface Toast { id: number; message: string }
 function useToast() {
   const [toasts, setToasts] = useState<Toast[]>([])
   const show = useCallback((message: string) => {
@@ -29,421 +32,7 @@ function useToast() {
   return { toasts, show }
 }
 
-// ─── Rotating placeholder hints ─────────────────────────────────
-const PLACEHOLDER_HINTS = [
-  'Mensagem para OpenClaude... (Enter para enviar)',
-  'Tente: "Crie um script Python..."',
-  'Tente: "Liste os arquivos em D:\\"',
-  'Tente: "Pesquise na web sobre IA"',
-  'Tente: "Explique como funciona Ollama"',
-  'Shift+Enter para nova linha',
-]
-
-const SUGGESTIONS = [
-  { text: 'Crie um script Python', icon: Code },
-  { text: 'Liste arquivos em D:\\', icon: FileCode },
-  { text: 'Explique como funciona Ollama', icon: Info },
-  { text: 'Pesquise na web sobre IA', icon: Globe }
-]
-
-const getRelativeTime = (d: Date) => {
-  const diff = Math.floor((new Date().getTime() - new Date(d).getTime()) / 60000)
-  if (diff < 1) return 'agora'
-  if (diff < 60) return `há ${diff} min`
-  if (diff < 1440) return `há ${Math.floor(diff/60)} h`
-  return 'ontem'
-}
-
-// ─── Types ───────────────────────────────────────────────────────────
-interface Message {
-  id: string
-  role: 'user' | 'assistant' | 'tool'
-  content: string
-  toolCalls?: ToolCall[]
-  toolResults?: ToolResult[]
-  timestamp: Date
-}
-
-interface ToolCall {
-  id: string
-  name: string
-  arguments: Record<string, any>
-}
-
-interface ToolResult {
-  toolCallId: string
-  name: string
-  result: string
-  error?: string
-}
-
-interface TaskPlan {
-  goal: string
-  tasks: { id: string; title: string; status: string; result?: string }[]
-}
-
-interface Conversation {
-  id: string
-  title: string
-  messages: Message[]
-  createdAt: Date
-  workingMemory?: Record<string, string>
-  taskPlan?: TaskPlan
-  contextSummary?: string
-}
-
-// ─── Tools ───────────────────────────────────────────────────────────
-const TOOLS = [
-  {
-    type: 'function',
-    function: {
-      name: 'update_working_memory',
-      description: 'Update your short-term memory to avoid losing context. Call this when you complete a step or change goals.',
-      parameters: {
-        type: 'object',
-        properties: {
-          current_goal: { type: 'string' },
-          done_steps: { type: 'string' },
-          open_tasks: { type: 'string' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'execute_command',
-      description: 'Execute a PowerShell command on the Windows system',
-      parameters: {
-        type: 'object',
-        properties: {
-          command: { type: 'string', description: 'The PowerShell command to execute' }
-        },
-        required: ['command']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'read_file',
-      description: 'Read the contents of a file',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: 'The file path to read' }
-        },
-        required: ['path']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'write_file',
-      description: 'Write content to a file',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: 'The file path to write' },
-          content: { type: 'string', description: 'The content to write' }
-        },
-        required: ['path', 'content']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'web_search',
-      description: 'Search the web using DuckDuckGo',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: 'Search query' }
-        },
-        required: ['query']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'list_directory',
-      description: 'List files and folders in a directory',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: 'Directory path' }
-        },
-        required: ['path']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'open_file_or_url',
-      description: 'Open a file or URL with the default application',
-      parameters: {
-        type: 'object',
-        properties: {
-          target: { type: 'string', description: 'File path or URL to open' }
-        },
-        required: ['target']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'plan_tasks',
-      description: 'Create a task plan to decompose a complex request into subtasks. Use this for multi-step goals.',
-      parameters: {
-        type: 'object',
-        properties: {
-          goal: { type: 'string', description: 'The overall goal' },
-          tasks: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                id: { type: 'string' },
-                title: { type: 'string' },
-                status: { type: 'string', description: 'pending | in_progress | done | failed' }
-              }
-            },
-            description: 'List of subtasks'
-          }
-        },
-        required: ['goal', 'tasks']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'update_task_status',
-      description: 'Update the status of a subtask in the current plan.',
-      parameters: {
-        type: 'object',
-        properties: {
-          task_id: { type: 'string' },
-          status: { type: 'string', description: 'pending | in_progress | done | failed' },
-          result: { type: 'string', description: 'Optional result or note' }
-        },
-        required: ['task_id', 'status']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_navigate',
-      description: 'Open a browser and navigate to a URL. Returns page title and text content.',
-      parameters: {
-        type: 'object',
-        properties: {
-          url: { type: 'string', description: 'URL to navigate to' }
-        },
-        required: ['url']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_get_text',
-      description: 'Get the text content of the current browser page.',
-      parameters: { type: 'object', properties: {} }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_click',
-      description: 'Click an element on the page by CSS selector.',
-      parameters: {
-        type: 'object',
-        properties: {
-          selector: { type: 'string', description: 'CSS selector of the element to click' }
-        },
-        required: ['selector']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_type',
-      description: 'Type text into an input field by CSS selector.',
-      parameters: {
-        type: 'object',
-        properties: {
-          selector: { type: 'string', description: 'CSS selector of the input' },
-          text: { type: 'string', description: 'Text to type' }
-        },
-        required: ['selector', 'text']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'git_command',
-      description: 'Run a git command in a specified directory. Supports: status, diff, log, add, commit, branch, checkout, stash. Use for version control awareness.',
-      parameters: {
-        type: 'object',
-        properties: {
-          command: { type: 'string', description: 'The git subcommand and args (e.g. "status", "diff --stat", "log --oneline -10", "add .", "commit -m msg")' },
-          cwd: { type: 'string', description: 'Working directory (the repo path)' }
-        },
-        required: ['command', 'cwd']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'undo_last_write',
-      description: 'Undo the last file write operation, restoring the file to its previous state. Use when a write produced errors or bad results.',
-      parameters: { type: 'object', properties: {} }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'delegate_subtasks',
-      description: 'Run multiple subtasks in parallel using collaborative agents. Each subtask gets its own AI instance.',
-      parameters: {
-        type: 'object',
-        properties: {
-          subtasks: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                id: { type: 'string' },
-                prompt: { type: 'string', description: 'The instruction for this agent' }
-              }
-            },
-            description: 'List of subtasks to execute in parallel'
-          }
-        },
-        required: ['subtasks']
-      }
-    }
-  }
-]
-
-// No visible step limit — loop ends naturally when the model stops calling tools.
-const AGENT_SAFETY_LIMIT = 200
-const NORMAL_SAFETY_LIMIT = 50
-const IDLE_STEP_THRESHOLD = 5
-
-// ─── Tool Permission System ────────────────────────────────────────
-const SAFE_TOOLS = new Set([
-  'read_file', 'list_directory', 'web_search', 'browser_get_text',
-  'update_working_memory', 'plan_tasks', 'update_task_status', 'undo_last_write'
-])
-const DANGEROUS_TOOLS = new Set([
-  'execute_command', 'write_file', 'open_file_or_url', 'git_command',
-  'browser_navigate', 'browser_click', 'browser_type', 'delegate_subtasks'
-])
-
-interface PendingApproval {
-  toolName: string
-  args: Record<string, any>
-  resolve: (approved: boolean) => void
-}
-const AGENT_SYSTEM_PROMPT: Record<string, string> = {
-  pt: `VOCÊ ESTÁ NO MODO AGENTE AUTÔNOMO COM FERRAMENTAS ILIMITADAS.
-Sua missão é resolver COMPLETAMENTE o pedido do usuário. Não há limite de passos — continue trabalhando até terminar tudo.
-
-REGRAS ABSOLUTAS:
-1. PLANEJE primeiro usando plan_tasks para decompor o objetivo em subtarefas.
-2. EXECUTE as ferramentas uma a uma, marcando cada subtarefa como concluída.
-3. NUNCA pare no meio — se uma etapa falhar, tente uma abordagem diferente.
-4. NUNCA responda apenas com texto se ainda houver ações técnicas pendentes.
-5. Se o usuário pedir para criar algo, crie TODOS os arquivos, pastas, e teste antes de finalizar.
-6. Use update_working_memory a cada 3-5 passos para não perder contexto.
-7. Só dê a resposta final em texto quando TODAS as tarefas estiverem concluídas.
-
-VOCÊ TEM TEMPO ILIMITADO. Use quantos passos forem necessários. A qualidade da entrega é mais importante que velocidade.`,
-  en: `YOU ARE IN AUTONOMOUS AGENT MODE WITH UNLIMITED TOOLS.
-Your mission is to FULLY solve the user's request. There is no step limit — keep working until everything is done.
-
-ABSOLUTE RULES:
-1. PLAN first using plan_tasks to decompose the goal into subtasks.
-2. EXECUTE tools one by one, marking each subtask as completed.
-3. NEVER stop midway — if a step fails, try a different approach.
-4. NEVER respond with just text if there are still technical actions pending.
-5. If the user asks to create something, create ALL files, folders, and test before finishing.
-6. Use update_working_memory every 3-5 steps to preserve context.
-7. Only give the final text response when ALL tasks are completed.
-
-YOU HAVE UNLIMITED TIME. Use as many steps as needed. Delivery quality matters more than speed.`
-}
-
-const PLANNING_MODE_PROMPT: Record<string, string> = {
-  pt: `[MODO PLANEJAMENTO ATIVO]\nVocê DEVE criar ou atualizar o plano de tarefas usando 'plan_tasks' antes de realizar qualquer ação técnica significativa. Explique seu raciocínio de planejamento para o usuário.`,
-  en: `[PLANNING MODE ACTIVE]\nYou MUST create or update the task plan using 'plan_tasks' before performing any significant technical action. Explain your planning reasoning to the user.`
-}
-
-const LANGUAGE_RULE: Record<string, string> = {
-  pt: '\n\nREGRA CRÍTICA DE IDIOMA: Você DEVE responder TODAS as mensagens em português brasileiro. Não importa em que idioma o usuário escreva, sua resposta DEVE ser em português. Isso inclui explicações, comentários em código, nomes de variáveis em exemplos, e qualquer texto. NUNCA responda em inglês ou outro idioma.',
-  en: '\n\nCRITICAL LANGUAGE RULE: You MUST respond to ALL messages in English. No matter what language the user writes in, your response MUST be in English. This includes explanations, code comments, variable names in examples, and any text. NEVER respond in Portuguese or any other language.'
-}
-
-// Priming: first assistant message sets the tone in the correct language
-const LANGUAGE_PRIMING: Record<string, { user: string; assistant: string }> = {
-  pt: {
-    user: 'Em que idioma você deve responder?',
-    assistant: 'Eu devo responder sempre em português brasileiro, sem exceções.'
-  },
-  en: {
-    user: 'What language must you respond in?',
-    assistant: 'I must always respond in English, without exceptions.'
-  }
-}
-
-// Reminder injected right before generation (closest to output = strongest influence)
-const LANGUAGE_REMINDER: Record<string, string> = {
-  pt: '[LEMBRETE DO SISTEMA: Responda SOMENTE em português brasileiro. Toda sua resposta deve estar em português.]',
-  en: '[SYSTEM REMINDER: Respond ONLY in English. Your entire response must be in English.]'
-}
-
-// ─── Markdown ────────────────────────────────────────────────────────
-marked.setOptions({ breaks: true, gfm: true })
-const renderer = new marked.Renderer()
-renderer.code = ({ text, lang }: any) => {
-  const language = lang && hljs.getLanguage(lang) ? lang : 'plaintext'
-  const highlighted = hljs.highlight(text, { language }).value
-  return `<div class="code-block"><div class="code-header"><span class="code-lang">${language}</span><button class="copy-btn" data-copy>Copiar</button></div><pre><code class="hljs language-${language}">${highlighted}</code></pre></div>`
-}
-marked.use({ renderer })
-
-function formatMarkdown(text: string): string {
-  const html = marked.parse(text) as string
-  return DOMPurify.sanitize(html)
-}
-
-function generateId(): string {
-  return Math.random().toString(36).substring(2, 9)
-}
-
-function isSmallModel(modelName: string): boolean {
-  if (!modelName) return false
-  const lower = modelName.toLowerCase()
-  // Match models with parameter counts <=14B
-  const smallSizes = /\b(7b|8b|9b|14b|3b|1b|0\.5b)\b/i
-  if (smallSizes.test(lower)) return true
-  // Known small model families (without size suffix)
-  if (lower.includes('phi') || lower.includes('mistral') && !lower.includes('large')) return true
-  // Default to small if no size indicator found (conservative: enables guardrails)
-  if (!/\d+b\b/i.test(lower)) return true
-  return false
-}
+// Types, tools, prompts, and utils imported from extracted modules above
 
 // ─── App ─────────────────────────────────────────────────────────────
 export default function App() {
@@ -487,6 +76,8 @@ export default function App() {
   const [ragEnabled, setRagEnabled] = useState(false)
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
   const [showPermissionMenu, setShowPermissionMenu] = useState(false)
+  const [showFeatureMenu, setShowFeatureMenu] = useState(false)
+  const [showCommandPalette, setShowCommandPalette] = useState(false)
   const [isListening, setIsListening] = useState(false)
   const [ttsEnabled, setTtsEnabled] = useState(false)
   const recognitionRef = useRef<any>(null)
@@ -646,10 +237,10 @@ export default function App() {
         e.preventDefault()
         newConversation()
       }
-      // Ctrl+K: focus search
+      // Ctrl+K: open command palette
       if (e.ctrlKey && e.key === 'k') {
         e.preventDefault()
-        searchInputRef.current?.focus()
+        setShowCommandPalette(v => !v)
       }
       // Ctrl+,: open settings
       if (e.ctrlKey && e.key === ',') {
@@ -1674,6 +1265,36 @@ export default function App() {
         onSave={(s) => { setSettings(s); showToast('Configuracoes salvas!') }}
       />
 
+      {/* Command Palette (Ctrl+K) */}
+      <CommandPalette
+        isOpen={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+        settings={settings}
+        language={settings.language}
+        onOpenVault={() => setShowVault(true)}
+        onOpenPersona={() => setShowPersona(true)}
+        onOpenArena={() => setShowArena(true)}
+        onOpenCodeWorkspace={() => setShowCodeWorkspace(true)}
+        onOpenVision={() => setShowVision(true)}
+        onOpenRAG={() => setShowRAG(true)}
+        onOpenWorkflow={() => setShowWorkflow(true)}
+        onOpenParliament={() => setShowParliament(true)}
+        onOpenOrion={() => setShowOrion(true)}
+        onOpenAnalytics={() => setShowAnalytics(true)}
+        onOpenImageUpload={() => document.getElementById('image-upload')?.click()}
+        isAgentMode={isAgentMode}
+        onToggleAgent={() => setIsAgentMode(v => !v)}
+        activePersona={activePersona}
+        ragEnabled={ragEnabled}
+        theme={theme}
+        onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+        isListening={isListening}
+        onToggleListening={toggleListening}
+        ttsEnabled={ttsEnabled}
+        onToggleTTS={() => { setTtsEnabled(p => !p); if (ttsEnabled) speechSynthesis.cancel() }}
+        onSetPermission={(level) => setSettings({ ...settings, permissionLevel: level })}
+      />
+
       {/* Analytics Dashboard (MAGI) */}
       <AnalyticsDashboard
         isOpen={showAnalytics}
@@ -2118,222 +1739,101 @@ export default function App() {
             </div>
           )}
 
-          {/* Input area */}
-          <div className="input-area">
-            <div className="input-container">
+          {/* ── Input area v2.1: Clean pill design (Claude.ai + ChatGPT-inspired) ── */}
+          <div className="input-area" onClick={() => showFeatureMenu && setShowFeatureMenu(false)}>
+            <div className="input-wrapper">
+
+              {/* Hidden image input */}
               <input type="file" id="image-upload" accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
                 const file = e.target.files?.[0]
                 if (!file) return
                 const reader = new FileReader()
                 reader.onload = () => {
-                  const base64 = reader.result as string
-                  setInput(prev => prev + `\n[Imagem anexada: ${file.name}]\n`)
+                  setInput(prev => prev + `\n[Imagem: ${file.name}]\n`)
                   showToast(`Imagem ${file.name} anexada`)
                 }
                 reader.readAsDataURL(file)
                 e.target.value = ''
               }} />
-              <button className="attach-btn" onClick={() => document.getElementById('image-upload')?.click()} title="Anexar imagem">
-                <Image size={16} />
-              </button>
-              <button className={`attach-btn ${isListening ? 'active-voice' : ''}`} onClick={toggleListening} title={isListening ? 'Parar gravação' : 'Falar'}>
-                {isListening ? <MicOff size={16} /> : <Mic size={16} />}
-              </button>
-              <button className={`attach-btn ${ttsEnabled ? 'active-voice' : ''}`} onClick={() => { setTtsEnabled(p => !p); if (ttsEnabled) speechSynthesis.cancel() }} title={ttsEnabled ? 'Desativar voz' : 'Ativar leitura em voz'}>
-                <Volume2 size={16} />
-              </button>
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={PLACEHOLDER_HINTS[placeholderIdx]}
-                className="message-input"
-                rows={1}
-                disabled={isLoading}
-              />
-              {input.length > 0 && (
-                <button className="clear-input-btn" onClick={() => { setInput(''); textareaRef.current?.focus() }} title="Limpar input">
-                  <XCircle size={16} />
-                </button>
+
+              {/* Status pills (appear only when features are active — Manus AI pattern) */}
+              {(isAgentMode || settings.permissionLevel === 'ignore' || activePersona || ragEnabled || isLoading) && (
+                <div className="input-status-bar">
+                  {isAgentMode && <span className="status-pill agent"><Zap size={9} />Agente{isLoading ? ` · Passo ${agentSteps}` : ''}</span>}
+                  {settings.permissionLevel === 'ignore' && <span className="status-pill danger"><AlertCircle size={9} />Bypass Mode</span>}
+                  {activePersona && <span className="status-pill persona"><UserCog size={9} />{activePersona.name}</span>}
+                  {ragEnabled && <span className="status-pill rag"><Database size={9} />RAG</span>}
+                  {isLoading && <button className="status-pill stop-pill" onClick={stopAgent}><Square size={9} />Parar</button>}
+                </div>
               )}
-              <button
-                className={`send-btn ${(!input.trim() || isLoading) ? 'disabled' : ''}`}
-                onClick={sendMessage}
-                disabled={!input.trim() || isLoading}
-              >
-                {isLoading ? <Loader2 size={18} className="spin" /> : <Send size={18} />}
-              </button>
-              <div className="input-actions-divider" />
-              <button 
-                className={`agent-toggle-btn ${isAgentMode ? 'active' : ''}`}
-                onClick={() => setIsAgentMode(!isAgentMode)}
-                title={isAgentMode ? "Desativar Modo Agente" : "Ativar Modo Agente"}
-              >
-                <Zap size={18} />
-                <span>Agente</span>
-              </button>
 
-              <button
-                className={`agent-toggle-btn parliament-mode-btn ${showParliament ? 'active' : ''}`}
-                onClick={() => setShowParliament(true)}
-                title="Abrir Parliament Mode — Multi-Agent Debate"
-              >
-                <Scale size={18} />
-                <span>Parlamento</span>
-              </button>
+              {/* Main pill input (Claude.ai style) */}
+              <div className="input-pill" onClick={e => e.stopPropagation()}>
 
-              <div className="input-actions-divider" />
+                {/* Left side: + button opens Command Palette */}
+                <div className="input-left-actions">
+                  <button
+                    className="input-icon-btn"
+                    onClick={() => setShowCommandPalette(true)}
+                    title="Ferramentas e recursos (Ctrl+K)"
+                  >
+                    <Plus size={18} />
+                  </button>
+                </div>
 
-              {/* v1.8.0 Feature Buttons */}
-              <button
-                className={`agent-toggle-btn feature-btn ${showVault ? 'active' : ''}`}
-                onClick={() => setShowVault(true)}
-                title="Prompt Vault — Biblioteca de prompts (Tier 1)"
-              >
-                <BookMarked size={16} />
-                <span>Vault</span>
-              </button>
+                {/* Textarea — the star of the show */}
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={PLACEHOLDER_HINTS[placeholderIdx]}
+                  className="message-input"
+                  rows={1}
+                  disabled={isLoading}
+                />
 
-              <button
-                className={`agent-toggle-btn feature-btn ${showPersona || activePersona ? 'active' : ''}`}
-                onClick={() => setShowPersona(true)}
-                title={activePersona ? `Persona: ${activePersona.name} ativo (Ctrl+P)` : "Persona Engine — Assistentes especializados (Ctrl+P)"}
-              >
-                <UserCog size={16} />
-                <span>{activePersona ? activePersona.name : 'Persona'}</span>
-              </button>
+                {/* Right side: clear + mode toggle + send */}
+                <div className="input-right-actions">
+                  {input.length > 0 && (
+                    <button className="input-icon-btn" onClick={() => { setInput(''); textareaRef.current?.focus() }} title="Limpar">
+                      <XCircle size={14} />
+                    </button>
+                  )}
 
-              <button
-                className={`agent-toggle-btn feature-btn ${showArena ? 'active' : ''}`}
-                onClick={() => setShowArena(true)}
-                title="Model Arena — Comparar modelos em paralelo (Tier 1)"
-              >
-                <Swords size={16} />
-                <span>Arena</span>
-              </button>
+                  {/* Agent toggle compact pill */}
+                  <button
+                    className={`mode-toggle ${isAgentMode ? 'agent-on' : ''}`}
+                    onClick={() => setIsAgentMode(!isAgentMode)}
+                    title={isAgentMode ? 'Chat normal' : 'Modo Agente autônomo'}
+                  >
+                    <Zap size={13} />
+                    <span>{isAgentMode ? 'Agente' : 'Chat'}</span>
+                  </button>
 
-              <button
-                className={`agent-toggle-btn feature-btn ${showCodeWorkspace ? 'active' : ''}`}
-                onClick={() => setShowCodeWorkspace(true)}
-                title="Code Workspace — Editor com diff IA (Tier 2)"
-              >
-                <FolderOpen size={16} />
-                <span>Código</span>
-              </button>
-
-              <button
-                className={`agent-toggle-btn feature-btn ${showVision ? 'active' : ''}`}
-                onClick={() => setShowVision(true)}
-                title="Vision Mode — Análise de tela com IA (Ctrl+Shift+V) (Tier 2)"
-              >
-                <Camera size={16} />
-                <span>Visão</span>
-              </button>
-
-              <button
-                className={`agent-toggle-btn feature-btn ${ragEnabled ? 'active' : ''}`}
-                onClick={() => setShowRAG(true)}
-                title={ragEnabled ? "RAG Local: Ativo — clique para configurar" : "RAG Local — Embeddings para contexto (Tier 2)"}
-              >
-                <Database size={16} />
-                <span>RAG{ragEnabled ? ' ●' : ''}</span>
-              </button>
-
-              <button
-                className={`agent-toggle-btn feature-btn ${showWorkflow ? 'active' : ''}`}
-                onClick={() => setShowWorkflow(true)}
-                title="Workflow Builder — Automação visual (Tier 3)"
-              >
-                <GitBranch size={16} />
-                <span>Fluxo</span>
-              </button>
-
-              <button
-                className={`agent-toggle-btn feature-btn orion-btn ${showOrion ? 'active' : ''}`}
-                onClick={() => setShowOrion(true)}
-                title="ORION — Agente de controle de computador (Tier 3)"
-              >
-                <Monitor size={16} />
-                <span>ORION</span>
-              </button>
-
-              <div className="input-actions-divider" />
-              
-              <div className="permission-selector">
-                <button 
-                  className={`permission-btn ${settings.permissionLevel === 'ignore' ? 'ignore' : ''}`}
-                  onClick={() => setShowPermissionMenu(!showPermissionMenu)}
-                  title="Alterar nível de permissão"
-                >
-                  {settings.permissionLevel === 'ignore' ? <AlertCircle size={16} /> :
-                   settings.permissionLevel === 'auto_edits' ? <Code size={16} /> :
-                   settings.permissionLevel === 'planning' ? <ListChecks size={16} /> :
-                   <Wrench size={16} />}
-                  <span>{
-                    settings.permissionLevel === 'ignore' ? (settings.language === 'pt' ? 'Ignorar permissões' : 'Ignore Permissions') :
-                    settings.permissionLevel === 'auto_edits' ? (settings.language === 'pt' ? 'Aceitar edições' : 'Auto-accept edits') :
-                    settings.permissionLevel === 'planning' ? (settings.language === 'pt' ? 'Modo Planejamento' : 'Planning Mode') :
-                    (settings.language === 'pt' ? 'Solicitar permissões' : 'Ask Permissions')
-                  }</span>
-                  <ChevronDown size={14} />
-                </button>
-
-                {showPermissionMenu && (
-                  <div className="permission-menu">
-                    {[
-                      { 
-                        id: 'ask', 
-                        title: settings.language === 'en' ? 'Ask Permissions' : 'Solicitar permissões', 
-                        desc: settings.language === 'en' ? 'Always ask before performing technical actions' : 'Sempre perguntar antes de fazer alterações', 
-                        icon: Wrench 
-                      },
-                      { 
-                        id: 'auto_edits', 
-                        title: settings.language === 'en' ? 'Auto-accept edits' : 'Aceitar edições automaticamente', 
-                        desc: settings.language === 'en' ? 'Automatically accept file writes and git commands' : 'Aceitar automaticamente todas as edições de arquivo', 
-                        icon: Code 
-                      },
-                      { 
-                        id: 'planning', 
-                        title: settings.language === 'en' ? 'Planning mode' : 'Modo de planejamento', 
-                        desc: settings.language === 'en' ? 'Require a task plan before performing significant actions' : 'Criar um plano antes de fazer alterações', 
-                        icon: ListChecks 
-                      },
-                      { 
-                        id: 'ignore', 
-                        title: settings.language === 'en' ? 'Ignore permissions' : 'Ignorar permissões', 
-                        desc: settings.language === 'en' ? 'Bypass all approvals (dangerous)' : 'Aceita todas as permissões', 
-                        icon: AlertCircle, 
-                        extraClass: 'ignore-opt' 
-                      }
-                    ].map(opt => (
-                      <div 
-                        key={opt.id} 
-                        className={`permission-option ${opt.id === settings.permissionLevel ? 'active' : ''} ${opt.extraClass || ''}`}
-                        onClick={() => {
-                          const newSettings = { ...settings, permissionLevel: opt.id as any }
-                          setSettings(newSettings)
-                          setShowPermissionMenu(false)
-                        }}
-                      >
-                        <div className="perm-icon-box"><opt.icon size={16} /></div>
-                        <div className="perm-info">
-                          <span className="perm-title">{opt.title}</span>
-                          <span className="perm-desc">{opt.desc}</span>
-                        </div>
-                        {opt.id === settings.permissionLevel && <CheckCircle2 size={16} className="perm-check" />}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                  {/* Send/Stop circular button (ChatGPT style) */}
+                  {isLoading ? (
+                    <button className="send-circle stop" onClick={stopAgent} title="Parar">
+                      <Square size={14} fill="currentColor" />
+                    </button>
+                  ) : (
+                    <button
+                      className={`send-circle ${!input.trim() ? 'disabled' : ''}`}
+                      onClick={sendMessage}
+                      disabled={!input.trim()}
+                      title="Enviar (Enter)"
+                    >
+                      <Send size={14} />
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-            <div className="input-footer">
-              <p className="input-hint">OpenClaude pode cometer erros. Verifique informações importantes. | Ctrl+N nova conversa | Ctrl+, config</p>
-              {input.length > 0 && (
-                <span className="token-counter">{Math.ceil(input.length / 4)} / 4096 tokens</span>
-              )}
+
+              {/* Footer */}
+              <div className="input-footer">
+                <p className="input-hint">Enter para enviar · Shift+Enter nova linha · Ctrl+N nova conversa · Ctrl+, config</p>
+                {input.length > 50 && <span className="token-counter">{Math.ceil(input.length / 4)} tokens</span>}
+              </div>
             </div>
           </div>
         </div>
