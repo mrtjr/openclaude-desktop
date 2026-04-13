@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { X, Search, BookMarked, UserCog, Swords, FolderOpen, Camera, Database, GitBranch, Scale, Monitor, Image, Zap, BarChart3, Wrench, Code, ListChecks, AlertCircle, Sun, Moon, Mic, Volume2 } from 'lucide-react'
+import { X, Search, BookMarked, UserCog, Swords, FolderOpen, Camera, Database, GitBranch, Scale, Monitor, Image, Zap, BarChart3, Wrench, Code, ListChecks, AlertCircle, Sun, Moon, Mic, Volume2, Shield } from 'lucide-react'
 import type { AppSettings } from '../Settings'
 import type { PermissionLevel } from '../Settings'
 import type { Persona } from '../PersonaEngine'
@@ -46,6 +46,10 @@ interface CommandPaletteProps {
   onToggleTTS: () => void
   // Permissions
   onSetPermission: (level: PermissionLevel) => void
+  // Feature registry
+  enabledFeatures?: Record<string, boolean>
+  // Security
+  onSecurityAudit?: () => void
 }
 
 const CATEGORY_LABELS = {
@@ -86,16 +90,33 @@ export default function CommandPalette(props: CommandPaletteProps) {
     { id: 'perm-auto', label: language === 'pt' ? 'Permissão: Auto-editar' : 'Permission: Auto-edit', description: language === 'pt' ? 'Aceitar edições' : 'Accept edits', icon: Code, category: 'system', action: () => props.onSetPermission('auto_edits'), active: settings.permissionLevel === 'auto_edits' },
     { id: 'perm-plan', label: language === 'pt' ? 'Permissão: Planejar' : 'Permission: Plan', description: language === 'pt' ? 'Exigir plano' : 'Require plan', icon: ListChecks, category: 'system', action: () => props.onSetPermission('planning'), active: settings.permissionLevel === 'planning' },
     { id: 'perm-bypass', label: language === 'pt' ? 'Permissão: Bypass ⚠' : 'Permission: Bypass ⚠', description: language === 'pt' ? 'Ignorar tudo' : 'Ignore all', icon: AlertCircle, category: 'system', action: () => props.onSetPermission('ignore'), active: settings.permissionLevel === 'ignore', special: true },
+    ...(props.onSecurityAudit ? [{ id: 'security-audit', label: language === 'pt' ? 'Verificação de Segurança' : 'Security Check', description: language === 'pt' ? 'Auditar configurações de segurança' : 'Audit security settings', icon: Shield, category: 'system' as const, action: () => props.onSecurityAudit!() }] : []),
   ]
 
-  const filtered = query.trim()
+  // Feature registry: map feature IDs to command palette IDs
+  const FEATURE_ID_MAP: Record<string, string> = {
+    persona: 'persona', arena: 'arena', parliament: 'parliament',
+    orion: 'orion', vault: 'vault', rag: 'rag',
+    workspace: 'workspace', workflow: 'workflow', vision: 'vision',
+  }
+
+  // Filter out disabled features
+  const enabledItems = props.enabledFeatures
     ? items.filter(item => {
+        const featureId = Object.entries(FEATURE_ID_MAP).find(([, cmdId]) => cmdId === item.id)?.[0]
+        if (featureId && props.enabledFeatures![featureId] === false) return false
+        return true
+      })
+    : items
+
+  const filtered = query.trim()
+    ? enabledItems.filter(item => {
         const q = query.toLowerCase()
         return item.label.toLowerCase().includes(q) ||
                item.description.toLowerCase().includes(q) ||
                item.id.includes(q)
       })
-    : items
+    : enabledItems
 
   // Group by category
   const grouped = (['ai', 'knowledge', 'automation', 'system'] as const).map(cat => ({

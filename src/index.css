@@ -102,6 +102,12 @@ body {
 .ollama-status.offline .status-dot { background: var(--red); box-shadow: 0 0 6px var(--red); }
 .status-text { color: var(--text-muted); }
 
+/* ── Provider Health ─────────────────────────────────────────── */
+.provider-health { display: flex; align-items: center; gap: 5px; font-size: 11px; -webkit-app-region: no-drag; margin-left: 8px; }
+.provider-health-healthy .status-dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.provider-health-degraded .status-dot { background: #f59e0b; box-shadow: 0 0 6px #f59e0b; }
+.provider-health-down .status-dot { background: var(--red); box-shadow: 0 0 6px var(--red); }
+
 /* ── Layout ───────────────────────────────────────────────────── */
 .main-layout { display: flex; flex: 1; overflow: hidden; }
 
@@ -586,7 +592,11 @@ body {
   display: flex; align-items: center; justify-content: space-between;
   max-width: 820px; margin: 8px auto 0;
 }
-.token-counter { font-size: 11px; color: var(--text-muted); font-family: monospace; white-space: nowrap; }
+.input-footer-right { display: flex; align-items: center; gap: 10px; }
+.token-counter { font-size: 11px; color: var(--text-muted); font-family: monospace; white-space: nowrap; transition: color 0.2s; }
+.token-counter.warning { color: #f59e0b; }
+.token-counter.critical { color: var(--red); font-weight: 600; }
+.cost-counter { font-size: 11px; color: var(--accent); font-family: monospace; white-space: nowrap; opacity: 0.8; }
 
 @media (max-width: 700px) { .sidebar { width: 0 !important; overflow: hidden; border: none; } }
 

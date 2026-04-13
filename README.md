@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v2.1.0-e07a5f?style=for-the-badge&logo=windows" alt="Download" /></a>
+  <a href="../../releases/latest"><img src="https://img.shields.io/badge/download-v2.2.0-e07a5f?style=for-the-badge&logo=windows" alt="Download" /></a>
   <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License" />
   <img src="https://img.shields.io/badge/platform-Windows-lightgrey?style=for-the-badge" alt="Platform" />
 </p>
@@ -64,6 +64,16 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 ---
 
 ## Features
+
+### v2.2.0 — Provider Health, Context Engine & Memory Dreaming
+- **Hook-Based Architecture** — App.tsx decomposed from 1843 to 686 lines via 5 custom hooks (`useProviderConfig`, `useVoice`, `useConversations`, `useToolExecution`, `useChat`)
+- **Provider Health Monitor** — real-time status tracking (healthy/degraded/down) with auto-recovery, rate limit detection, and visual indicator in titlebar
+- **Reasoning Leak Sanitizer** — automatically strips `<think>`, `<reasoning>`, `[thinking]` blocks from DeepSeek, Qwen, and similar models in both streaming and non-streaming modes
+- **Context Engine** — formal token budget system with per-model context limits, real-time token counter in UI (warning at 80%, critical at 95%)
+- **Usage & Cost Tracking** — per-provider/model token counting and cost estimation; today's spend shown in input footer; pricing table for 30+ models
+- **Memory Dreaming** — background memory consolidation inspired by sleep cycles: light dreaming (extract facts every 2h), deep dreaming (prune stale memories, deduplicate); health scores with time decay
+- **Feature Registry** — configurable feature toggles via `src/config/features.ts`; disabled features hidden from Command Palette
+- **Security Audit** — Command Palette → "Security Check" scans for permission bypass, exposed API keys, high temperature, long system prompts, and MCP server risks
 
 ### v2.1.0 — Code Architecture & Command Palette
 - **Command Palette** — press `Ctrl+K` to instantly search and access all features, tools, permissions, and settings from a single overlay; fuzzy search, keyboard navigation, grouped by category (AI, Knowledge, Automation, System)
