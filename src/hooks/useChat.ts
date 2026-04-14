@@ -133,6 +133,18 @@ export function useChat({
       const lang = settings.language || 'pt'
 
       let systemPrompt = settings.systemPrompt || ''
+      // Inject provider context so the model knows where it's running
+      const providerLabel = isNotOllama
+        ? `${finalProvider.charAt(0).toUpperCase() + finalProvider.slice(1)} (modelo: ${finalModel})`
+        : `Ollama localmente no computador do usuário (modelo: ${finalModel})`
+      // Handle both new default ("chamado OpenClaude.") and old default ("rodando via Ollama")
+      if (systemPrompt.includes('rodando via Ollama')) {
+        systemPrompt = systemPrompt.replace(/rodando via Ollama[^.]*\.?/, `rodando via ${providerLabel}.`)
+      } else if (systemPrompt.includes('chamado OpenClaude.')) {
+        systemPrompt = systemPrompt.replace('chamado OpenClaude.', `chamado OpenClaude, rodando via ${providerLabel}.`)
+      } else if (systemPrompt.includes('chamado OpenClaude,')) {
+        systemPrompt = systemPrompt.replace(/chamado OpenClaude,[^.]*\./, `chamado OpenClaude, rodando via ${providerLabel}.`)
+      }
       if (isAgentMode) {
         systemPrompt = AGENT_SYSTEM_PROMPT[lang] + (systemPrompt ? (lang === 'pt' ? "\n\nInstruções Adicionais:\n" : "\n\nAdditional Instructions:\n") + systemPrompt : "")
       }
