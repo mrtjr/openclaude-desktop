@@ -1,17 +1,11 @@
 /**
- * useConversationFork.ts — v1.9.0
+ * useConversationFork.ts — v2.2.1
  * Hook para bifurcar conversas a partir de qualquer mensagem.
  *
  * Uso:
- *   const { forkFrom } = useConversationFork({ conversations, setConversations, setCurrentConversationId })
+ *   const { forkFrom } = useConversationFork({ conversationsRef, setConversations, setActiveConvId })
  *   // No botão 'Fork aqui' de cada mensagem:
  *   forkFrom(conversationId, messageIndex)
- *
- * O fork:
- *  1. Clona o array de mensagens de 0 até messageIndex (inclusive)
- *  2. Cria uma nova conversa com título "Fork: <título original> (msg N)"
- *  3. Adiciona a nova conversa ao topo da lista
- *  4. Seleciona a nova conversa automaticamente
  */
 import { useCallback } from 'react'
 
@@ -25,27 +19,28 @@ interface Conversation {
   id: string
   title: string
   messages: Message[]
-  createdAt?: number
+  createdAt?: any
   updatedAt?: number
   forkedFrom?: { conversationId: string; messageIndex: number }
   [key: string]: any
 }
 
 interface UseForkParams {
-  conversations:            Conversation[]
-  setConversations:         React.Dispatch<React.SetStateAction<Conversation[]>>
-  setCurrentConversationId: React.Dispatch<React.SetStateAction<string>>
+  conversationsRef:  React.MutableRefObject<Conversation[]>
+  setConversations:  React.Dispatch<React.SetStateAction<Conversation[]>>
+  setActiveConvId:   React.Dispatch<React.SetStateAction<string | null>>
 }
 
 export function useConversationFork({
-  conversations,
+  conversationsRef,
   setConversations,
-  setCurrentConversationId,
+  setActiveConvId,
 }: UseForkParams) {
 
   const forkFrom = useCallback(
     (conversationId: string, messageIndex: number) => {
-      const source = conversations.find(c => c.id === conversationId)
+      // Use ref for latest conversations to avoid stale closures
+      const source = conversationsRef.current.find(c => c.id === conversationId)
       if (!source) return
 
       // Clone messages up to and including messageIndex
@@ -54,7 +49,7 @@ export function useConversationFork({
         .map(m => ({ ...m }))
 
       const newId = `fork_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-      const now   = Date.now()
+      const now = Date.now()
 
       const newConversation: Conversation = {
         ...source,
@@ -67,17 +62,9 @@ export function useConversationFork({
       }
 
       setConversations(prev => [newConversation, ...prev])
-      setCurrentConversationId(newId)
-
-      // Persist asynchronously
-      const el = (window as any).electron
-      if (el?.saveConversations) {
-        el.saveConversations(
-          [newConversation, ...conversations].slice(0, 200)
-        ).catch(() => {})
-      }
+      setActiveConvId(newId)
     },
-    [conversations, setConversations, setCurrentConversationId]
+    [conversationsRef, setConversations, setActiveConvId]
   )
 
   return { forkFrom }

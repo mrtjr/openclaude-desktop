@@ -68,7 +68,7 @@ export function loadSettings(): AppSettings {
     if (stored) {
       return { ...DEFAULT_SETTINGS, ...JSON.parse(stored) }
     }
-  } catch {}
+  } catch (e) { console.warn('[settings] load error:', e) }
   return { ...DEFAULT_SETTINGS }
 }
 
@@ -116,7 +116,7 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
       if (window.electron.saveMcpServers) {
         await window.electron.saveMcpServers(local.mcpServers)
       }
-    } catch {}
+    } catch (e) { console.warn('[settings] save error:', e) }
     onSave(local)
     onClose()
   }

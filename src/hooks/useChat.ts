@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import type { Message, ToolResult, Conversation, AppSettings } from '../types'
 import { TOOLS, AGENT_SAFETY_LIMIT, NORMAL_SAFETY_LIMIT, IDLE_STEP_THRESHOLD } from '../constants/tools'
 import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIMING, LANGUAGE_REMINDER } from '../constants/prompts'
@@ -35,6 +35,15 @@ export function useChat({
   onProviderError,
   onUsage,
 }: UseChatOptions) {
+  // Use refs for callback props to avoid stale closures in useCallback
+  const onProviderSuccessRef = useRef(onProviderSuccess)
+  onProviderSuccessRef.current = onProviderSuccess
+  const onProviderErrorRef = useRef(onProviderError)
+  onProviderErrorRef.current = onProviderError
+  const onUsageRef = useRef(onUsage)
+  onUsageRef.current = onUsage
+  const activeConvIdRef = useRef(activeConvId)
+  activeConvIdRef.current = activeConvId
   const [isLoading, setIsLoading] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamingText, setStreamingText] = useState('')
@@ -42,21 +51,44 @@ export function useChat({
 
   const stopRequestedRef = useRef(false)
   const streamCleanupRef = useRef<(() => void) | null>(null)
+  const sendingRef = useRef(false)
+
+  // Cleanup stream listener on unmount
+  useEffect(() => {
+    return () => {
+      streamCleanupRef.current?.()
+      streamCleanupRef.current = null
+    }
+  }, [])
 
   const stopAgent = useCallback(() => {
     stopRequestedRef.current = true
+    sendingRef.current = false
     setIsLoading(false)
     setIsStreaming(false)
+    setStreamingText('')
     if (streamCleanupRef.current) {
       streamCleanupRef.current()
       streamCleanupRef.current = null
     }
-    window.electron.abortStream().catch(() => {})
+    window.electron.abortStream().catch((e: any) => console.warn('[useChat] abort error:', e))
     showToast('Agente interrompido pelo usuário.')
   }, [showToast])
 
   const sendMessage = useCallback(async (inputText: string) => {
-    if (!inputText.trim() || isLoading || !activeConvId) return
+    // Use ref for activeConvId to always have the latest value
+    const convId = activeConvIdRef.current
+    console.log('[useChat] sendMessage called:', { inputText: inputText.substring(0, 50), isLoading, convId })
+    if (!inputText.trim() || isLoading || !convId) {
+      console.log('[useChat] EARLY RETURN:', { emptyInput: !inputText.trim(), isLoading, noActiveConv: !convId })
+      return
+    }
+    // Deduplication guard
+    if (sendingRef.current) {
+      console.log('[useChat] DEDUP: already sending')
+      return
+    }
+    sendingRef.current = true
 
     const userMsg: Message = {
       id: generateId(),
@@ -66,7 +98,7 @@ export function useChat({
     }
 
     setConversations(prev => prev.map(c => {
-      if (c.id !== activeConvId) return c
+      if (c.id !== convId) return c
       const messages = [...c.messages, userMsg]
       return {
         ...c,
@@ -97,7 +129,7 @@ export function useChat({
     }
 
     try {
-      const conv = conversationsRef.current.find(c => c.id === activeConvId)
+      const conv = conversationsRef.current.find(c => c.id === convId)
       const lang = settings.language || 'pt'
 
       let systemPrompt = settings.systemPrompt || ''
@@ -153,11 +185,11 @@ export function useChat({
               contextSummary = contextSummary.slice(-2000)
             }
             setConversations(prev => prev.map(c =>
-              c.id !== activeConvId ? c : { ...c, contextSummary }
+              c.id !== convId ? c : { ...c, contextSummary }
             ))
           }
-        } catch {
-          // Fallback: simple truncation
+        } catch (e) {
+          console.warn('[useChat] context compaction failed, using truncation:', e)
         }
       }
 
@@ -176,7 +208,7 @@ export function useChat({
           if (parts.length > 0) {
             memoryContext.push(`[PERSISTENT MEMORY]\n${parts.join('\n')}`)
           }
-        } catch {}
+        } catch (e) { console.warn('[useChat] memory load error:', e) }
       }
 
       // Language priming
@@ -199,6 +231,8 @@ export function useChat({
       const recentToolCalls: string[] = []
       let activeMemory = conv?.workingMemory || null
       const safetyLimit = isAgentMode ? AGENT_SAFETY_LIMIT : NORMAL_SAFETY_LIMIT
+
+      console.log('[useChat] Starting chat loop:', { provider: finalProvider, model: finalModel, useStreaming, messageCount: allMessages.length })
 
       while (continueLoop && steps < safetyLimit) {
         if (stopRequestedRef.current) break
@@ -240,7 +274,17 @@ export function useChat({
 
           await new Promise<void>((resolve, reject) => {
             const cleanup = window.electron.onStreamChunk((chunk: any) => {
-              if (chunk.done) { cleanup(); streamCleanupRef.current = null; resolve(); return }
+              // Handle done event — check for error inside done chunk
+              if (chunk.done) {
+                cleanup()
+                streamCleanupRef.current = null
+                if (chunk.error) {
+                  reject(new Error(chunk.error))
+                } else {
+                  resolve()
+                }
+                return
+              }
               if (chunk.error) { cleanup(); streamCleanupRef.current = null; reject(new Error(chunk.error)); return }
               const delta = chunk.choices?.[0]?.delta
               if (delta) {
@@ -286,11 +330,12 @@ export function useChat({
           const remaining = sanitizer.flush()
           if (remaining) displayText += remaining
           accumulated = sanitizeReasoningLeaks(accumulated)
-          onProviderSuccess?.()
+          console.log('[useChat] Stream completed:', { accumulatedLen: accumulated.length, toolCalls: toolCallsData.length, finishReason })
+          onProviderSuccessRef.current?.()
 
           if (toolCallsData.length > 0 && toolCallsData[0]?.function?.name) {
             const { message: thinkingMsg, shouldContinue } = await processToolCalls(
-              accumulated, toolCallsData.map(tc => ({
+              convId, accumulated, toolCallsData.map(tc => ({
                 id: tc.id,
                 function: { name: tc.function.name, arguments: tc.function.arguments }
               })),
@@ -299,14 +344,14 @@ export function useChat({
             if (thinkingMsg.toolResults?.some(tr => tr.name === 'update_working_memory')) {
               const wmResult = thinkingMsg.toolResults.find(tr => tr.name === 'update_working_memory')
               if (wmResult) {
-                try { activeMemory = JSON.parse(wmResult.result.replace('[SYSTEM]: Working memory updated successfully.', '')) } catch {}
+                try { activeMemory = JSON.parse(wmResult.result.replace('[SYSTEM]: Working memory updated successfully.', '')) } catch (e) { console.warn('[useChat] working memory parse:', e) }
               }
             }
             idleSteps = shouldContinue.idleSteps
             if (!shouldContinue.continue) continueLoop = false
 
             setConversations(prev => prev.map(c =>
-              c.id !== activeConvId ? c : { ...c, messages: [...c.messages, thinkingMsg] }
+              c.id !== convId ? c : { ...c, messages: [...c.messages, thinkingMsg] }
             ))
 
             allMessages = [
@@ -321,7 +366,7 @@ export function useChat({
               id: generateId(), role: 'assistant', content: accumulated, timestamp: new Date()
             }
             setConversations(prev => prev.map(c =>
-              c.id !== activeConvId ? c : { ...c, messages: [...c.messages, finalMsg] }
+              c.id !== convId ? c : { ...c, messages: [...c.messages, finalMsg] }
             ))
             if (accumulated) speakText(accumulated)
             sessionTracker.agentCompleted = true
@@ -351,7 +396,7 @@ export function useChat({
           }
 
           if (response.error) throw new Error(response.error)
-          onProviderSuccess?.()
+          onProviderSuccessRef.current?.()
 
           const choice = response.choices?.[0]
           if (!choice) break
@@ -375,14 +420,14 @@ export function useChat({
             }))
 
             const { message: thinkingMsg, shouldContinue } = await processToolCalls(
-              assistantMsg.content || '', normalizedTCs,
+              convId, assistantMsg.content || '', normalizedTCs,
               recentToolCalls, activeMemory, idleSteps, sessionTracker
             )
             idleSteps = shouldContinue.idleSteps
             if (!shouldContinue.continue) continueLoop = false
 
             setConversations(prev => prev.map(c =>
-              c.id !== activeConvId ? c : { ...c, messages: [...c.messages, thinkingMsg] }
+              c.id !== convId ? c : { ...c, messages: [...c.messages, thinkingMsg] }
             ))
 
             allMessages = [
@@ -398,7 +443,7 @@ export function useChat({
               content: assistantMsg.content || '', timestamp: new Date()
             }
             setConversations(prev => prev.map(c =>
-              c.id !== activeConvId ? c : { ...c, messages: [...c.messages, finalMsg] }
+              c.id !== convId ? c : { ...c, messages: [...c.messages, finalMsg] }
             ))
             if (assistantMsg.content) speakText(assistantMsg.content)
             sessionTracker.agentCompleted = true
@@ -414,8 +459,9 @@ export function useChat({
         sessionTracker.responseTimes.push(Date.now() - stepStartTime)
       }
     } catch (e: any) {
+      console.error('[useChat] Error in sendMessage:', e)
       sessionTracker.errors++
-      onProviderError?.(e.message || 'Unknown error')
+      onProviderErrorRef.current?.(e.message || 'Unknown error')
       setIsStreaming(false)
       setStreamingText('')
       const errMsg: Message = {
@@ -423,9 +469,10 @@ export function useChat({
         content: `Erro: ${e.message}`, timestamp: new Date()
       }
       setConversations(prev => prev.map(c =>
-        c.id !== activeConvId ? c : { ...c, messages: [...c.messages, errMsg] }
+        c.id !== convId ? c : { ...c, messages: [...c.messages, errMsg] }
       ))
     } finally {
+      sendingRef.current = false
       setIsLoading(false)
       setIsStreaming(false)
       setStreamingText('')
@@ -447,24 +494,25 @@ export function useChat({
           provider: sessionTracker.provider,
           avgResponseTime: avgRT,
           duration: Date.now() - sessionTracker.startTime,
-        }).catch(() => {})
+        }).catch((e: any) => console.warn('[useChat] analytics save error:', e))
       }
 
       // Report usage for cost tracking (rough estimate from message lengths)
-      if (onUsage) {
-        const conv = conversationsRef.current.find(c => c.id === activeConvId)
+      const usageFn = onUsageRef.current
+      if (usageFn) {
+        const conv = conversationsRef.current.find(c => c.id === convId)
         if (conv) {
-          // Estimate: all messages sent as input, assistant responses as output
           const inputChars = conv.messages.filter(m => m.role !== 'assistant').reduce((s, m) => s + m.content.length, 0)
           const outputChars = conv.messages.filter(m => m.role === 'assistant').slice(-sessionTracker.agentSteps || -1).reduce((s, m) => s + m.content.length, 0)
-          onUsage(Math.ceil(inputChars / 4), Math.ceil(outputChars / 4))
+          usageFn(Math.ceil(inputChars / 4), Math.ceil(outputChars / 4))
         }
       }
     }
-  }, [isLoading, activeConvId, providerConfig, settings, isAgentMode, conversationsRef, setConversations, executeTool, speakText, showToast])
+  }, [isLoading, providerConfig, settings, isAgentMode, conversationsRef, setConversations, executeTool, speakText, showToast])
 
   // Helper: process tool calls (shared between streaming and non-streaming)
   async function processToolCalls(
+    convId: string,
     content: string,
     toolCallsRaw: { id: string; function: { name: string; arguments: string } }[],
     recentToolCalls: string[],
@@ -500,7 +548,7 @@ export function useChat({
         tracker.errors++
       } else if (tc.function.name === 'update_working_memory') {
         activeMemory = args as any
-        setConversations(prev => prev.map(c => c.id !== activeConvId ? c : { ...c, workingMemory: args }))
+        setConversations(prev => prev.map(c => c.id !== convId ? c : { ...c, workingMemory: args }))
         result = `[SYSTEM]: Working memory updated successfully.`
       } else if (recentToolCalls.filter(c => c === callSignature).length >= 2) {
         result = `[SYSTEM INTERCEPT]: Circuit Breaker Triggered. You already called "${tc.function.name}" with these exact arguments ${recentToolCalls.filter(c => c === callSignature).length} times. This approach is not working. You MUST try a completely different strategy, use a different tool, or give a final text response. Do NOT repeat this call.`

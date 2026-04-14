@@ -102,6 +102,7 @@ export default function App() {
     settings,
     activeConvId: convManager.activeConvId,
     setConversations: convManager.setConversations,
+    selectedModel,
   })
 
   const chat = useChat({
@@ -266,7 +267,10 @@ export default function App() {
     }))
   }
 
-  const regenerateResponse = () => {
+  const sendMessageRef = useRef(chat.sendMessage)
+  sendMessageRef.current = chat.sendMessage
+
+  const regenerateResponse = useCallback(() => {
     if (!activeConv || chat.isLoading) return
     const msgs = activeConv.messages
     let lastUserIdx = -1
@@ -279,15 +283,15 @@ export default function App() {
       if (c.id !== convManager.activeConvId) return c
       return { ...c, messages: msgs.slice(0, lastUserIdx) }
     }))
-    setInput(lastUserContent)
-    setTimeout(() => { const btn = document.querySelector('.send-btn') as HTMLButtonElement; btn?.click() }, 100)
-  }
+    // Directly call sendMessage instead of fragile DOM querySelector
+    setTimeout(() => sendMessageRef.current(lastUserContent), 50)
+  }, [activeConv, chat.isLoading, convManager])
 
   const handleSend = useCallback(() => {
     if (!input.trim()) return
-    chat.sendMessage(input.trim())
+    sendMessageRef.current(input.trim())
     setInput('')
-  }, [input, chat])
+  }, [input])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }

@@ -63,7 +63,7 @@ export function useAgentMemory() {
       const wm = [...prev.workingMemory]
       if (idx >= 0) wm[idx] = entry; else wm.push(entry)
       const updated = { ...prev, workingMemory: wm }
-      if (el?.saveAgentMemory) el.saveAgentMemory(updated).catch(() => {})
+      if (el?.saveAgentMemory) el.saveAgentMemory(updated).catch((e: any) => console.warn('[agentMemory] save error:', e))
       return updated
     })
   }, [])
@@ -73,7 +73,7 @@ export function useAgentMemory() {
     setAgentMemory(prev => {
       const episodes = [...prev.episodic, { summary, conversationId, timestamp: Date.now() }].slice(-200)
       const updated = { ...prev, episodic: episodes }
-      if (el?.saveAgentMemory) el.saveAgentMemory(updated).catch(() => {})
+      if (el?.saveAgentMemory) el.saveAgentMemory(updated).catch((e: any) => console.warn('[agentMemory] save error:', e))
       return updated
     })
   }, [])

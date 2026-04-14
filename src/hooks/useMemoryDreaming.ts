@@ -44,8 +44,8 @@ export function useMemoryDreaming({ enabled, onToast }: UseMemoryDreamingOptions
           onToast(`Memory consolidation: ${pruned} stale memories removed`)
         }
       }
-    } catch {
-      // Silent — never interrupt user
+    } catch (e) {
+      console.warn('[memoryDreaming] dream error:', e)
     } finally {
       dreamingRef.current = false
     }

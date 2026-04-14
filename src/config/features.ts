@@ -105,7 +105,7 @@ export function loadEnabledFeatures(): Record<string, boolean> {
   try {
     const raw = localStorage.getItem('openclaude-enabled-features')
     if (raw) return { ...getDefaultEnabledFeatures(), ...JSON.parse(raw) }
-  } catch {}
+  } catch (e) { console.warn('[features] load error:', e) }
   return getDefaultEnabledFeatures()
 }
 

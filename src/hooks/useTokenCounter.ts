@@ -39,7 +39,7 @@ export function useTokenCounter(
       warning: percentage > 80,
       critical: percentage > 95,
     }
-  }, [activeConv?.messages?.length, model, inputText])
+  }, [activeConv?.messages, model, inputText])
 }
 
 /** Format token count for display: "1.2k" / "128k" */

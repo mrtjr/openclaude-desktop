@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import type { AppSettings, PendingApproval, TaskPlan, Conversation } from '../types'
 import { SAFE_TOOLS, DANGEROUS_TOOLS } from '../constants/tools'
 
@@ -6,12 +6,18 @@ interface UseToolExecutionOptions {
   settings: AppSettings
   activeConvId: string | null
   setConversations: React.Dispatch<React.SetStateAction<Conversation[]>>
+  selectedModel?: string
 }
 
-export function useToolExecution({ settings, activeConvId, setConversations }: UseToolExecutionOptions) {
+export function useToolExecution({ settings, activeConvId, setConversations, selectedModel }: UseToolExecutionOptions) {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
 
+  // Use refs to avoid stale closures
+  const activeConvIdRef = useRef(activeConvId)
+  activeConvIdRef.current = activeConvId
+
   const executeToolRaw = useCallback(async (name: string, args: Record<string, any>): Promise<string> => {
+    const convId = activeConvIdRef.current
     try {
       if (name === 'execute_command') {
         const result = await window.electron.execCommand(args.command)
@@ -53,15 +59,15 @@ export function useToolExecution({ settings, activeConvId, setConversations }: U
       }
       if (name === 'plan_tasks') {
         const plan: TaskPlan = { goal: args.goal, tasks: args.tasks || [] }
-        if (activeConvId) {
-          setConversations(prev => prev.map(c => c.id !== activeConvId ? c : { ...c, taskPlan: plan }))
+        if (convId) {
+          setConversations(prev => prev.map(c => c.id !== convId ? c : { ...c, taskPlan: plan }))
         }
         return `Task plan created: "${args.goal}" with ${plan.tasks.length} subtasks.`
       }
       if (name === 'update_task_status') {
-        if (activeConvId) {
+        if (convId) {
           setConversations(prev => prev.map(c => {
-            if (c.id !== activeConvId || !c.taskPlan) return c
+            if (c.id !== convId || !c.taskPlan) return c
             const tasks = c.taskPlan.tasks.map(t =>
               t.id === args.task_id ? { ...t, status: args.status, result: args.result || t.result } : t
             )
@@ -71,12 +77,20 @@ export function useToolExecution({ settings, activeConvId, setConversations }: U
         return `Task "${args.task_id}" updated to ${args.status}${args.result ? ': ' + args.result : ''}`
       }
       if (name === 'browser_navigate') {
-        const launch = await window.electron.browserLaunch()
-        if (launch.error) return `Browser launch error: ${launch.error}`
-        const nav = await window.electron.browserNavigate(args.url)
-        if (nav.error) return `Navigation error: ${nav.error}`
-        const text = await window.electron.browserGetText()
-        return `Navigated to: ${nav.title} (${nav.url})\n\nPage content:\n${text.text || '(empty)'}`
+        // Try navigating first; if it fails, launch browser then retry
+        try {
+          const nav = await window.electron.browserNavigate(args.url)
+          if (nav.error) throw new Error(nav.error)
+          const text = await window.electron.browserGetText()
+          return `Navigated to: ${nav.title} (${nav.url})\n\nPage content:\n${text.text || '(empty)'}`
+        } catch {
+          const launch = await window.electron.browserLaunch()
+          if (launch.error) return `Browser launch error: ${launch.error}`
+          const nav = await window.electron.browserNavigate(args.url)
+          if (nav.error) return `Navigation error: ${nav.error}`
+          const text = await window.electron.browserGetText()
+          return `Navigated to: ${nav.title} (${nav.url})\n\nPage content:\n${text.text || '(empty)'}`
+        }
       }
       if (name === 'browser_get_text') {
         const result = await window.electron.browserGetText()
@@ -106,7 +120,7 @@ export function useToolExecution({ settings, activeConvId, setConversations }: U
         }))
         const results = await window.electron.parallelChat({
           tasks,
-          model: '', // will use selectedModel from caller context
+          model: selectedModel || 'llama3',
           temperature: settings.temperature,
           max_tokens: settings.maxTokens
         })
@@ -119,7 +133,7 @@ export function useToolExecution({ settings, activeConvId, setConversations }: U
     } catch (e: any) {
       return `Erro: ${e.message}`
     }
-  }, [activeConvId, setConversations, settings])
+  }, [setConversations, settings, selectedModel])
 
   const requestApproval = useCallback((toolName: string, args: Record<string, any>): Promise<boolean> => {
     return new Promise((resolve) => {
@@ -128,6 +142,7 @@ export function useToolExecution({ settings, activeConvId, setConversations }: U
   }, [])
 
   const executeTool = useCallback(async (name: string, args: Record<string, any>): Promise<string> => {
+    const convId = activeConvIdRef.current
     const level = settings.permissionLevel || 'ask'
     let needsApproval = false
 
@@ -145,7 +160,7 @@ export function useToolExecution({ settings, activeConvId, setConversations }: U
     if (needsApproval) {
       const approved = await requestApproval(name, args)
       if (!approved) {
-        window.electron.auditLogAppend({ tool: name, args, status: 'denied', output: '' }).catch(() => {})
+        window.electron.auditLogAppend({ tool: name, args, status: 'denied', output: '' }).catch(e => console.warn('[toolExec] audit error:', e))
         return `[USER DENIED]: The user rejected execution of "${name}". Try a different approach or ask the user what they prefer.`
       }
     }
@@ -160,8 +175,8 @@ export function useToolExecution({ settings, activeConvId, setConversations }: U
       status: out.startsWith('Erro:') || out.startsWith('[SYSTEM INTERCEPT]') ? 'error' : 'success',
       output: out.substring(0, 500),
       duration,
-      conversationId: activeConvId,
-    }).catch(() => {})
+      conversationId: convId,
+    }).catch(e => console.warn('[toolExec] audit error:', e))
 
     if (out && out.length > 4000) {
       return out.substring(0, 2000) +
@@ -170,7 +185,7 @@ export function useToolExecution({ settings, activeConvId, setConversations }: U
     }
 
     return out
-  }, [settings, activeConvId, executeToolRaw, requestApproval])
+  }, [settings, executeToolRaw, requestApproval])
 
   return { pendingApproval, setPendingApproval, executeTool, executeToolRaw }
 }

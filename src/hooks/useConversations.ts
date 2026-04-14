@@ -56,10 +56,18 @@ export function useConversations() {
     if (conversations.length > 0) {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
       saveTimerRef.current = setTimeout(() => {
-        window.electron.saveConversations(conversations).catch(() => {})
+        window.electron.saveConversations(conversations).catch(e => console.warn('[conversations] save error:', e))
       }, 1000)
     }
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
+  }, [conversations])
+
+  // ─── Immediate save (bypass debounce for critical updates) ─────
+  const saveNow = useCallback(() => {
+    if (conversations.length > 0) {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      window.electron.saveConversations(conversations).catch(e => console.warn('[conversations] saveNow error:', e))
+    }
   }, [conversations])
 
   // ─── Debounced search ──────────────────────────────────────────
@@ -143,6 +151,21 @@ export function useConversations() {
       }
     }
 
+    // Include working memory if present
+    if (activeConv.workingMemory && Object.keys(activeConv.workingMemory).length > 0) {
+      md += `\n---\n\n## Working Memory\n\n\`\`\`json\n${JSON.stringify(activeConv.workingMemory, null, 2)}\n\`\`\`\n\n`
+    }
+
+    // Include task plan if present
+    if (activeConv.taskPlan) {
+      md += `## Plano de Tarefas\n\n**Objetivo:** ${activeConv.taskPlan.goal}\n\n`
+      for (const task of activeConv.taskPlan.tasks) {
+        const icon = task.status === 'done' ? '[x]' : task.status === 'running' ? '[~]' : '[ ]'
+        md += `- ${icon} ${task.title}${task.result ? ` - ${task.result}` : ''}\n`
+      }
+      md += '\n'
+    }
+
     await window.electron.writeFile({ filePath: result.filePath, content: md })
     showToast('Conversa exportada com sucesso!')
   }, [activeConv])
@@ -159,6 +182,7 @@ export function useConversations() {
     searchQuery,
     setSearchQuery,
     filteredConversations,
+    saveNow,
     newConversation,
     deleteConversation,
     togglePin,

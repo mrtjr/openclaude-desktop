@@ -5,11 +5,36 @@ const fs = require('fs')
 const http = require('http')
 const https = require('https')
 
+const os = require('os')
+
 const isDev = process.env.NODE_ENV === 'development'
 
 let win = null
 let tray = null
-let activeStreamRequest = null
+let activeOllamaStream = null
+let activeProviderStream = null
+
+// ─── Path safety check ─────────────────────────────────────────────
+function isPathSafe(filePath) {
+  const resolved = path.resolve(filePath)
+  const home = os.homedir()
+  const blocked = [
+    path.join(home, '.ssh'),
+    path.join(home, '.gnupg'),
+    path.join(home, '.aws'),
+    path.join(home, '.config', 'gcloud'),
+    path.join(home, '.env'),
+  ]
+  if (process.platform === 'win32') {
+    blocked.push('C:\\Windows\\System32', 'C:\\Windows\\SysWOW64')
+  } else {
+    blocked.push('/etc/shadow', '/etc/passwd')
+  }
+  for (const b of blocked) {
+    if (resolved.toLowerCase().startsWith(b.toLowerCase())) return false
+  }
+  return true
+}
 
 const CONVERSATIONS_PATH = path.join(app.getPath('userData'), 'conversations.json')
 const ANALYTICS_PATH = path.join(app.getPath('userData'), 'analytics.json')
@@ -206,8 +231,15 @@ ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperatur
       let data = ''
       res.on('data', chunk => data += chunk)
       res.on('end', () => {
-        try { resolve(JSON.parse(data)) }
-        catch (e) { reject(e) }
+        try {
+          const parsed = JSON.parse(data)
+          if (res.statusCode && res.statusCode >= 400) {
+            resolve({ error: parsed.error || `Ollama HTTP ${res.statusCode}` })
+          } else {
+            resolve(parsed)
+          }
+        }
+        catch (e) { resolve({ error: `Ollama response parse error: ${e.message}` }) }
       })
     })
     req.on('error', reject)
@@ -243,13 +275,26 @@ ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, tem
     const sendDone = (error) => {
       if (doneSent) return
       doneSent = true
-      activeStreamRequest = null
+      activeOllamaStream = null
       try {
         event.sender.send('ollama-stream-chunk', { done: true, ...(error ? { error } : {}) })
-      } catch {}
+      } catch (e) { console.error('[ollama-stream] sendDone error:', e) }
     }
 
     const req = http.request(options, (res) => {
+      // Check HTTP status for Ollama errors
+      if (res.statusCode && res.statusCode >= 400) {
+        let errorBody = ''
+        res.on('data', (chunk) => { errorBody += chunk.toString() })
+        res.on('end', () => {
+          let errMsg = `Ollama HTTP ${res.statusCode}`
+          try { const parsed = JSON.parse(errorBody); errMsg = parsed.error || errMsg } catch {}
+          sendDone(errMsg)
+          resolve({ ok: false, error: errMsg })
+        })
+        return
+      }
+
       let buffer = ''
 
       res.on('data', (chunk) => {
@@ -268,7 +313,7 @@ ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, tem
           try {
             const parsed = JSON.parse(jsonStr)
             event.sender.send('ollama-stream-chunk', parsed)
-          } catch {}
+          } catch (e) { console.error('[ollama-stream] SSE parse error:', e.message) }
         }
       })
 
@@ -279,7 +324,7 @@ ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, tem
             try {
               const parsed = JSON.parse(trimmed.slice(6))
               event.sender.send('ollama-stream-chunk', parsed)
-            } catch {}
+            } catch (e) { console.error('[ollama-stream] residual parse error:', e.message) }
           }
         }
         sendDone()
@@ -292,7 +337,8 @@ ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, tem
       resolve({ ok: false, error: err.message })
     })
 
-    activeStreamRequest = req
+    req.setTimeout(120000, () => { req.destroy(); sendDone('Ollama request timeout after 120s') })
+    activeOllamaStream = req
     req.write(body)
     req.end()
   })
@@ -300,12 +346,18 @@ ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, tem
 
 // ─── IPC: Abort stream (kills HTTP request, frees GPU) ──────────────
 ipcMain.handle('abort-stream', async () => {
-  if (activeStreamRequest) {
-    activeStreamRequest.destroy()
-    activeStreamRequest = null
-    return { aborted: true }
+  let aborted = false
+  if (activeOllamaStream) {
+    activeOllamaStream.destroy()
+    activeOllamaStream = null
+    aborted = true
   }
-  return { aborted: false }
+  if (activeProviderStream) {
+    activeProviderStream.destroy()
+    activeProviderStream = null
+    aborted = true
+  }
+  return { aborted }
 })
 
 // ─── IPC: Execute command ────────────────────────────────────────────
@@ -353,6 +405,9 @@ ipcMain.handle('git-command', async (event, { command, cwd }) => {
 // ─── IPC: Read file ──────────────────────────────────────────────────
 ipcMain.handle('read-file', async (event, filePath) => {
   try {
+    if (!isPathSafe(filePath)) {
+      return { content: null, error: 'Access denied: path is in a protected directory' }
+    }
     return { content: fs.readFileSync(filePath, 'utf-8'), error: null }
   } catch (e) {
     return { content: null, error: e.message }
@@ -365,6 +420,9 @@ const fileSnapshots = [] // Stack: [{filePath, backupPath, timestamp}]
 
 ipcMain.handle('write-file', async (event, { filePath, content }) => {
   try {
+    if (!isPathSafe(filePath)) {
+      return { error: 'Access denied: path is in a protected directory' }
+    }
     // Auto-snapshot: save backup before overwriting
     if (fs.existsSync(filePath)) {
       fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true })
@@ -823,6 +881,7 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
       })
     })
     req.on('error', (e) => resolve({ error: e.message }))
+    req.setTimeout(60000, () => { req.destroy(); resolve({ error: 'Provider request timeout after 60s' }) })
     req.write(body)
     req.end()
   })
@@ -881,11 +940,24 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
     const sendDone = (error) => {
       if (doneSent) return
       doneSent = true
-      activeStreamRequest = null
-      try { event.sender.send('ollama-stream-chunk', { done: true, ...(error ? { error } : {}) }) } catch {}
+      activeProviderStream = null
+      try { event.sender.send('ollama-stream-chunk', { done: true, ...(error ? { error } : {}) }) } catch (e) { console.error('[provider-stream] sendDone error:', e) }
     }
 
     const req = https.request(reqOptions, (res) => {
+      // Check HTTP status
+      if (res.statusCode && res.statusCode >= 400) {
+        let errorBody = ''
+        res.on('data', (chunk) => { errorBody += chunk.toString() })
+        res.on('end', () => {
+          let errMsg = `HTTP ${res.statusCode}`
+          try { const parsed = JSON.parse(errorBody); errMsg = parsed.error?.message || parsed.error || errMsg } catch {}
+          sendDone(errMsg)
+          resolve({ ok: false, error: errMsg })
+        })
+        return
+      }
+
       let buffer = ''
       // Anthropic streaming state
       let anthropicToolAccum = {} // { [index]: { id, name, argsStr } }
@@ -918,7 +990,6 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
                 const idx = parsed.index
                 anthropicToolAccum[idx] = { id: parsed.content_block.id, name: parsed.content_block.name, argsStr: '' }
               } else if (evType === 'message_delta' && parsed.delta?.stop_reason) {
-                // If we have accumulated tool calls, emit them
                 const toolEntries = Object.values(anthropicToolAccum)
                 if (toolEntries.length > 0) {
                   const tool_calls = toolEntries.map(t => ({ id: t.id, type: 'function', function: { name: t.name, arguments: t.argsStr } }))
@@ -927,13 +998,15 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
                 sendDone()
               } else if (evType === 'message_stop') {
                 sendDone()
+              } else if (evType === 'error') {
+                sendDone(parsed.error?.message || 'Anthropic stream error')
               }
             } else {
               // OpenAI-compatible SSE — pass through directly
               event.sender.send('ollama-stream-chunk', parsed)
               if (parsed.choices?.[0]?.finish_reason) sendDone()
             }
-          } catch {}
+          } catch (e) { console.error('[provider-stream] SSE parse error:', e.message) }
         }
       })
 
@@ -941,7 +1014,8 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
     })
 
     req.on('error', (err) => { sendDone(err.message); resolve({ ok: false, error: err.message }) })
-    activeStreamRequest = req
+    req.setTimeout(60000, () => { req.destroy(); sendDone('Provider request timeout after 60s') })
+    activeProviderStream = req
     req.write(body)
     req.end()
   })
@@ -1582,8 +1656,6 @@ ipcMain.handle('parliament-debate', async (event, { problem, roles, coordinator 
 // v1.8.0 — Tier 1+2+3 Feature Backends
 // ═══════════════════════════════════════════════════════════════════════════
 
-const os = require('os')
-
 // ─── Data paths ──────────────────────────────────────────────────────────────
 const VAULT_PATH      = path.join(app.getPath('userData'), 'prompt-vault.json')
 const RAG_INDEX_PATH  = path.join(app.getPath('userData'), 'rag-index.json')
@@ -1925,6 +1997,10 @@ ipcMain.handle('orion-run-action', async (event, { type, params }) => {
   })
 })
 
+
+// ─── Load external IPC modules ──────────────────────────────────────
+require('./ipc-agent-memory')(ipcMain, app)
+require('./ipc-document')(ipcMain, app, dialog)
 
 // ─── App lifecycle ───────────────────────────────────────────────────
 app.whenReady().then(() => {
