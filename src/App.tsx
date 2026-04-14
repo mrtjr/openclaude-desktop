@@ -121,6 +121,8 @@ export default function App() {
   })
 
   const activeConv = convManager.activeConv
+  // True only when the currently visible conversation is the one loading
+  const isActiveConvLoading = chat.isLoading && chat.streamingConvId === convManager.activeConvId
   const tokenInfo = useTokenCounter(activeConv, providerConfig.model, input)
 
   useMemoryDreaming({
@@ -271,7 +273,7 @@ export default function App() {
   sendMessageRef.current = chat.sendMessage
 
   const regenerateResponse = useCallback(() => {
-    if (!activeConv || chat.isLoading) return
+    if (!activeConv || isActiveConvLoading) return
     const msgs = activeConv.messages
     let lastUserIdx = -1
     for (let i = msgs.length - 1; i >= 0; i--) {
@@ -285,7 +287,7 @@ export default function App() {
     }))
     // Directly call sendMessage instead of fragile DOM querySelector
     setTimeout(() => sendMessageRef.current(lastUserContent), 50)
-  }, [activeConv, chat.isLoading, convManager])
+  }, [activeConv, isActiveConvLoading, convManager])
 
   const handleSend = useCallback(() => {
     if (!input.trim()) return
@@ -426,7 +428,7 @@ export default function App() {
           </button>
           {activeConv && activeConv.messages.length > 0 && (
             <>
-              <button className="titlebar-action-btn" onClick={regenerateResponse} title="Regenerar última resposta" disabled={chat.isLoading}>
+              <button className="titlebar-action-btn" onClick={regenerateResponse} title="Regenerar última resposta" disabled={isActiveConvLoading}>
                 <RefreshCw size={14} />
               </button>
               <button className="titlebar-action-btn export-btn" onClick={() => convManager.exportConversation(showToast)} title="Exportar conversa">
@@ -595,8 +597,8 @@ export default function App() {
                 </div>
               ))
             )}
-            {/* Streaming text */}
-            {chat.isStreaming && chat.streamingText && (
+            {/* Streaming text — only show in the conversation that is actively streaming */}
+            {chat.isStreaming && chat.streamingText && chat.streamingConvId === convManager.activeConvId && (
               <div className="message message-assistant">
                 <div className="message-avatar"><div className="oc-logo">OC</div></div>
                 <div className="message-content">
@@ -605,7 +607,7 @@ export default function App() {
                 </div>
               </div>
             )}
-            {chat.isLoading && (
+            {chat.isLoading && chat.streamingConvId === convManager.activeConvId && (
               <div className="message message-assistant">
                 <div className="message-avatar"><div className={`oc-logo ${isAgentMode ? 'agent-active' : ''}`}>OC</div></div>
                 <div className="message-content">
@@ -614,11 +616,9 @@ export default function App() {
                     {isAgentMode && (
                       <div className="agent-badge"><Zap size={10} className="pulse" /><span>Agente: Passo {chat.agentSteps}</span></div>
                     )}
-                    {chat.isLoading && (
-                      <button className="stop-agent-btn" onClick={chat.stopAgent} title="Interromper Agente">
-                        <BotOff size={14} /> Parar
-                      </button>
-                    )}
+                    <button className="stop-agent-btn" onClick={chat.stopAgent} title="Interromper Agente">
+                      <BotOff size={14} /> Parar
+                    </button>
                   </div>
                 </div>
               </div>
@@ -679,13 +679,13 @@ export default function App() {
               }} />
 
               {/* Status pills */}
-              {(isAgentMode || settings.permissionLevel === 'ignore' || activePersona || ragEnabled || chat.isLoading) && (
+              {(isAgentMode || settings.permissionLevel === 'ignore' || activePersona || ragEnabled || isActiveConvLoading) && (
                 <div className="input-status-bar">
-                  {isAgentMode && <span className="status-pill agent"><Zap size={9} />Agente{chat.isLoading ? ` · Passo ${chat.agentSteps}` : ''}</span>}
+                  {isAgentMode && <span className="status-pill agent"><Zap size={9} />Agente{isActiveConvLoading ? ` · Passo ${chat.agentSteps}` : ''}</span>}
                   {settings.permissionLevel === 'ignore' && <span className="status-pill danger"><AlertCircle size={9} />Bypass Mode</span>}
                   {activePersona && <span className="status-pill persona"><UserCog size={9} />{activePersona.name}</span>}
                   {ragEnabled && <span className="status-pill rag"><Database size={9} />RAG</span>}
-                  {chat.isLoading && <button className="status-pill stop-pill" onClick={chat.stopAgent}><Square size={9} />Parar</button>}
+                  {isActiveConvLoading && <button className="status-pill stop-pill" onClick={chat.stopAgent}><Square size={9} />Parar</button>}
                 </div>
               )}
 
@@ -694,14 +694,14 @@ export default function App() {
                   <button className="input-icon-btn" onClick={() => setShowCommandPalette(true)} title="Ferramentas e recursos (Ctrl+K)"><Plus size={18} /></button>
                 </div>
                 <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown}
-                  placeholder={PLACEHOLDER_HINTS[placeholderIdx]} className="message-input" rows={1} disabled={chat.isLoading} />
+                  placeholder={PLACEHOLDER_HINTS[placeholderIdx]} className="message-input" rows={1} disabled={isActiveConvLoading} />
                 <div className="input-right-actions">
                   {input.length > 0 && <button className="input-icon-btn" onClick={() => { setInput(''); textareaRef.current?.focus() }} title="Limpar"><XCircle size={14} /></button>}
                   <button className={`mode-toggle ${isAgentMode ? 'agent-on' : ''}`} onClick={() => setIsAgentMode(!isAgentMode)}
                     title={isAgentMode ? 'Chat normal' : 'Modo Agente autônomo'}>
                     <Zap size={13} /><span>{isAgentMode ? 'Agente' : 'Chat'}</span>
                   </button>
-                  {chat.isLoading ? (
+                  {isActiveConvLoading ? (
                     <button className="send-circle stop" onClick={chat.stopAgent} title="Parar"><Square size={14} fill="currentColor" /></button>
                   ) : (
                     <button className={`send-circle ${!input.trim() ? 'disabled' : ''}`} onClick={handleSend} disabled={!input.trim()} title="Enviar (Enter)">

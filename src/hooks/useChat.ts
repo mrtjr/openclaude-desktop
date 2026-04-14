@@ -48,6 +48,7 @@ export function useChat({
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamingText, setStreamingText] = useState('')
   const [agentSteps, setAgentSteps] = useState(0)
+  const [streamingConvId, setStreamingConvId] = useState<string | null>(null)
 
   const stopRequestedRef = useRef(false)
   const streamCleanupRef = useRef<(() => void) | null>(null)
@@ -67,6 +68,7 @@ export function useChat({
     setIsLoading(false)
     setIsStreaming(false)
     setStreamingText('')
+    setStreamingConvId(null)
     if (streamCleanupRef.current) {
       streamCleanupRef.current()
       streamCleanupRef.current = null
@@ -108,6 +110,7 @@ export function useChat({
     }))
 
     setIsLoading(true)
+    setStreamingConvId(convId)
     setAgentSteps(0)
     stopRequestedRef.current = false
 
@@ -488,6 +491,7 @@ export function useChat({
       setIsLoading(false)
       setIsStreaming(false)
       setStreamingText('')
+      setStreamingConvId(null)
 
       // Save session analytics
       if (settings.analyticsEnabled !== false) {
@@ -592,6 +596,7 @@ export function useChat({
     isLoading,
     isStreaming,
     streamingText,
+    streamingConvId,
     agentSteps,
     stopAgent,
     sendMessage,
