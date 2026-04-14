@@ -288,7 +288,7 @@ ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, tem
         res.on('data', (chunk) => { errorBody += chunk.toString() })
         res.on('end', () => {
           let errMsg = `Ollama HTTP ${res.statusCode}`
-          try { const parsed = JSON.parse(errorBody); errMsg = parsed.error || errMsg } catch {}
+          try { const parsed = JSON.parse(errorBody); errMsg = parsed.error || errMsg } catch (e) { /* non-JSON error body */ }
           sendDone(errMsg)
           resolve({ ok: false, error: errMsg })
         })
@@ -433,7 +433,7 @@ ipcMain.handle('write-file', async (event, { filePath, content }) => {
       // Keep max 50 snapshots
       while (fileSnapshots.length > 50) {
         const old = fileSnapshots.shift()
-        try { fs.unlinkSync(old.backupPath) } catch {}
+        try { fs.unlinkSync(old.backupPath) } catch (e) { /* best-effort cleanup */ }
       }
     }
     fs.mkdirSync(path.dirname(filePath), { recursive: true })
@@ -582,7 +582,7 @@ ipcMain.handle('list-directory', async (event, dirPath) => {
         const stats = fs.statSync(path.join(dirPath, entry.name))
         size = stats.size
         modified = stats.mtime.toISOString()
-      } catch {}
+      } catch (e) { /* stat failed, use defaults */ }
       return {
         name: entry.name,
         type: entry.isDirectory() ? 'directory' : 'file',
@@ -730,7 +730,7 @@ function loadMemory() {
     if (fs.existsSync(MEMORY_PATH)) {
       return JSON.parse(fs.readFileSync(MEMORY_PATH, 'utf-8'))
     }
-  } catch {}
+  } catch (e) { console.error('[memory] load error:', e) }
   return { facts: [], preferences: [], projects: [] }
 }
 
@@ -951,7 +951,7 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
         res.on('data', (chunk) => { errorBody += chunk.toString() })
         res.on('end', () => {
           let errMsg = `HTTP ${res.statusCode}`
-          try { const parsed = JSON.parse(errorBody); errMsg = parsed.error?.message || parsed.error || errMsg } catch {}
+          try { const parsed = JSON.parse(errorBody); errMsg = parsed.error?.message || parsed.error || errMsg } catch (e) { /* non-JSON error body */ }
           sendDone(errMsg)
           resolve({ ok: false, error: errMsg })
         })
@@ -1203,7 +1203,7 @@ ipcMain.handle('mcp-connect', async (event, { id, command, args, env }) => {
             pendingRequests.delete(msg.id)
             resolve(msg.result || msg.error || msg)
           }
-        } catch {}
+        } catch (e) { /* incomplete JSON chunk, ignore */ }
       }
     })
 
@@ -1307,7 +1307,7 @@ function loadAuditLog() {
     if (fs.existsSync(AUDIT_LOG_PATH)) {
       return JSON.parse(fs.readFileSync(AUDIT_LOG_PATH, 'utf-8'))
     }
-  } catch {}
+  } catch (e) { console.error('[audit-log] load error:', e) }
   return []
 }
 
@@ -1316,7 +1316,7 @@ function saveAuditLog(entries) {
     // Keep max 1000 entries, auto-purge old
     const trimmed = entries.slice(-1000)
     fs.writeFileSync(AUDIT_LOG_PATH, JSON.stringify(trimmed, null, 2), 'utf-8')
-  } catch {}
+  } catch (e) { console.error('[audit-log] save error:', e) }
 }
 
 ipcMain.handle('audit-log-append', async (event, entry) => {
@@ -1989,7 +1989,7 @@ ipcMain.handle('orion-run-action', async (event, { type, params }) => {
     try {
       fs.writeFileSync(scriptPath, script, 'utf-8')
       execChild(`powershell.exe -ExecutionPolicy Bypass -NonInteractive -File "${scriptPath}"`, { timeout: 15000 }, (err, stdout, stderr) => {
-        try { fs.unlinkSync(scriptPath) } catch {}
+        try { fs.unlinkSync(scriptPath) } catch (e) { /* temp script cleanup, best-effort */ }
         if (err && !stdout && !stderr) return resolve({ output: '', error: err.message })
         resolve({ output: (stdout || stderr || 'OK').trim(), error: null })
       })

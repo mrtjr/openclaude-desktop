@@ -147,6 +147,9 @@ export function useChat({
         systemPrompt = systemPrompt.replace('chamado OpenClaude.', `chamado OpenClaude, rodando via ${providerLabel}.`)
       } else if (systemPrompt.includes('chamado OpenClaude,')) {
         systemPrompt = systemPrompt.replace(/chamado OpenClaude,[^.]*\./, `chamado OpenClaude, rodando via ${providerLabel}.`)
+      } else {
+        // Fallback: prepend provider context if custom prompt doesn't match known patterns
+        systemPrompt = `[Provider: ${providerLabel}]\n${systemPrompt}`
       }
       if (isAgentMode) {
         systemPrompt = AGENT_SYSTEM_PROMPT[lang] + (systemPrompt ? (lang === 'pt' ? "\n\nInstruções Adicionais:\n" : "\n\nAdditional Instructions:\n") + systemPrompt : "")

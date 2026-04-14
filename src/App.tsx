@@ -57,6 +57,7 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings>(loadSettings)
   const [placeholderIdx, setPlaceholderIdx] = useState(0)
   const [collapsedTools, setCollapsedTools] = useState<Set<string>>(new Set())
+  const [taskPlanCollapsed, setTaskPlanCollapsed] = useState(false)
   const [updateAvailable, setUpdateAvailable] = useState<{available: boolean, releaseUrl: string, latestVersion: string} | null>(null)
   const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('openclaude-theme') as 'dark' | 'light') || 'dark')
   const [isAgentMode, setIsAgentMode] = useState(false)
@@ -598,7 +599,7 @@ export default function App() {
               ))
             )}
             {/* Streaming text — only show in the conversation that is actively streaming */}
-            {chat.isStreaming && chat.streamingText && chat.streamingConvId === convManager.activeConvId && (
+            {chat.isStreaming && chat.streamingText && isActiveConvLoading && (
               <div className="message message-assistant">
                 <div className="message-avatar"><div className="oc-logo">OC</div></div>
                 <div className="message-content">
@@ -607,7 +608,7 @@ export default function App() {
                 </div>
               </div>
             )}
-            {chat.isLoading && chat.streamingConvId === convManager.activeConvId && (
+            {isActiveConvLoading && (
               <div className="message message-assistant">
                 <div className="message-avatar"><div className={`oc-logo ${isAgentMode ? 'agent-active' : ''}`}>OC</div></div>
                 <div className="message-content">
@@ -628,22 +629,37 @@ export default function App() {
 
           {/* Task Plan Panel */}
           {activeConv?.taskPlan && (
-            <div className="task-plan-panel">
-              <div className="task-plan-header">
+            <div className={`task-plan-panel ${taskPlanCollapsed ? 'collapsed' : ''}`}>
+              <div
+                className="task-plan-header"
+                onClick={() => setTaskPlanCollapsed(c => !c)}
+                style={{ cursor: 'pointer', userSelect: 'none' }}
+                title={taskPlanCollapsed ? 'Expandir' : 'Minimizar'}
+              >
+                <ChevronDown
+                  size={14}
+                  style={{
+                    transform: taskPlanCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.15s ease',
+                    flexShrink: 0
+                  }}
+                />
                 <ListChecks size={14} /><span>{activeConv.taskPlan.goal}</span>
                 <span className="task-plan-progress">{activeConv.taskPlan.tasks.filter(t => t.status === 'done').length}/{activeConv.taskPlan.tasks.length}</span>
               </div>
-              <div className="task-plan-list">
-                {activeConv.taskPlan.tasks.map(task => (
-                  <div key={task.id} className={`task-plan-item task-${task.status}`}>
-                    {task.status === 'done' ? <CheckCircle2 size={12} /> :
-                     task.status === 'in_progress' ? <Loader2 size={12} className="spin" /> :
-                     task.status === 'failed' ? <AlertCircle size={12} /> : <Circle size={12} />}
-                    <span>{task.title}</span>
-                    {task.result && <span className="task-result">{task.result}</span>}
-                  </div>
-                ))}
-              </div>
+              {!taskPlanCollapsed && (
+                <div className="task-plan-list">
+                  {activeConv.taskPlan.tasks.map(task => (
+                    <div key={task.id} className={`task-plan-item task-${task.status}`}>
+                      {task.status === 'done' ? <CheckCircle2 size={12} /> :
+                       task.status === 'in_progress' ? <Loader2 size={12} className="spin" /> :
+                       task.status === 'failed' ? <AlertCircle size={12} /> : <Circle size={12} />}
+                      <span>{task.title}</span>
+                      {task.result && <span className="task-result">{task.result}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
