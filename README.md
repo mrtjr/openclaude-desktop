@@ -65,6 +65,18 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 
 ## Features
 
+### v2.2.1 — Modal API Key Pool & Stability Patch
+- **Modal API Key Pool** — manage up to 10 Modal API keys in Settings; `delegate_subtasks` distributes subtasks across keys in parallel, bypassing the GLM-5.1 single-concurrent-request limit
+- **Worker-pool dispatcher** — N parallel workers (N = active keys) pull from a shared queue; extras wait for first free key (no deadlock when tasks > keys)
+- **Automatic 429 cooldown** — keys hit by rate-limit pause 30s automatically; round-robin with skip-if-busy
+- **HTTPS keep-alive agent** — reuses TLS connections across subtasks (~200ms saved per request)
+- **Optional Ollama fallback** — if pool exhausted, fall back per-task to local Ollama (configurable)
+- **Streaming isolation** — per-conversation `streamingConvId` prevents stream bleeding between conversations; new chats no longer blocked during active streams
+- **Task Plan minimizer** — chevron in header collapses/expands the task list with smooth transition
+- **Dynamic provider label** — system prompt reflects the selected provider (no longer hardcoded to "Ollama")
+- **Typed IPC** — shared `ParallelChatResult` / `ParallelChatTask` types eliminate `any` in critical paths
+- **Centralized pool constants** — `src/constants/pool.ts` exposes all timeouts/cooldowns for easy tuning
+
 ### v2.2.0 — Provider Health, Context Engine & Memory Dreaming
 - **Hook-Based Architecture** — App.tsx decomposed from 1843 to 686 lines via 5 custom hooks (`useProviderConfig`, `useVoice`, `useConversations`, `useToolExecution`, `useChat`)
 - **Provider Health Monitor** — real-time status tracking (healthy/degraded/down) with auto-recovery, rate limit detection, and visual indicator in titlebar
