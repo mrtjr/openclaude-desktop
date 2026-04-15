@@ -10,6 +10,13 @@ export interface McpServer {
   command: string
 }
 
+export interface ModalKey {
+  id: string
+  key: string
+  label?: string
+  enabled: boolean
+}
+
 export interface AppSettings {
   autoStart: boolean
   temperature: number
@@ -27,6 +34,8 @@ export interface AppSettings {
   openrouterApiKey: string
   openrouterModel: string
   modalApiKey: string
+  modalApiKeys: ModalKey[]
+  modalPoolFallbackOllama: boolean
   modalModel: string
   modalHostname: string
   contextLimit: number
@@ -53,6 +62,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   openrouterApiKey: '',
   openrouterModel: 'google/gemini-2.5-pro',
   modalApiKey: '',
+  modalApiKeys: [],
+  modalPoolFallbackOllama: false,
   modalModel: 'zai-org/GLM-5.1-FP8',
   modalHostname: 'api.us-west-2.modal.direct',
   contextLimit: 50,
@@ -66,7 +77,17 @@ export function loadSettings(): AppSettings {
   try {
     const stored = localStorage.getItem('openclaude-settings')
     if (stored) {
-      return { ...DEFAULT_SETTINGS, ...JSON.parse(stored) }
+      const merged: AppSettings = { ...DEFAULT_SETTINGS, ...JSON.parse(stored) }
+      // Migration: populate modalApiKeys array from legacy single modalApiKey
+      if (merged.modalApiKey && (!merged.modalApiKeys || merged.modalApiKeys.length === 0)) {
+        merged.modalApiKeys = [{
+          id: 'migrated-' + Date.now(),
+          key: merged.modalApiKey,
+          label: 'Principal',
+          enabled: true,
+        }]
+      }
+      return merged
     }
   } catch (e) { console.warn('[settings] load error:', e) }
   return { ...DEFAULT_SETTINGS }
@@ -477,14 +498,126 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
               {local.provider === 'modal' && (
                 <>
                   <div className="settings-group">
-                    <label className="settings-label"><span>API Key Modal</span></label>
+                    <label className="settings-label"><span>API Key Modal (principal)</span></label>
                     <input type="password" className="settings-input" value={local.modalApiKey || ''}
-                      onChange={(e) => setLocal(s => ({ ...s, modalApiKey: e.target.value }))} placeholder="modalresearch_..." />
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setLocal(s => {
+                          // Sync first key in pool with principal key
+                          const keys = [...(s.modalApiKeys || [])]
+                          if (keys.length === 0) {
+                            keys.push({ id: 'primary-' + Date.now(), key: v, label: 'Principal', enabled: true })
+                          } else {
+                            keys[0] = { ...keys[0], key: v }
+                          }
+                          return { ...s, modalApiKey: v, modalApiKeys: keys }
+                        })
+                      }}
+                      placeholder="modalresearch_..." />
                     <button className="settings-fetch-btn" onClick={fetchModels} disabled={isFetching || !local.modalApiKey}>
                       {isFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
                       <span>{local.language === 'pt' ? 'Detectar Modelos' : 'Detect Models'}</span>
                     </button>
                   </div>
+
+                  {/* Pool of additional keys for delegate_subtasks */}
+                  <div className="settings-group">
+                    <label className="settings-label">
+                      <span>{local.language === 'pt' ? 'Pool de API Keys (subagentes paralelos)' : 'API Key Pool (parallel subagents)'}</span>
+                    </label>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted, #888)', marginBottom: '8px' }}>
+                      {local.language === 'pt'
+                        ? 'Cada key permite 1 subagente em paralelo. A key principal acima é automaticamente a primeira do pool.'
+                        : 'Each key enables 1 parallel subagent. The principal key above is automatically the first in the pool.'}
+                    </p>
+                    {(local.modalApiKeys || []).map((mk, idx) => (
+                      <div key={mk.id} style={{ display: 'flex', gap: '6px', marginBottom: '6px', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          className="settings-input"
+                          value={mk.label || ''}
+                          placeholder={idx === 0 ? 'Principal' : `Key ${idx + 1}`}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            setLocal(s => ({ ...s, modalApiKeys: s.modalApiKeys.map(k => k.id === mk.id ? { ...k, label: v } : k) }))
+                          }}
+                          style={{ flex: '0 0 120px' }}
+                          disabled={idx === 0}
+                        />
+                        <input
+                          type="password"
+                          className="settings-input"
+                          value={mk.key}
+                          placeholder="modalresearch_..."
+                          onChange={(e) => {
+                            const v = e.target.value
+                            setLocal(s => {
+                              const keys = s.modalApiKeys.map(k => k.id === mk.id ? { ...k, key: v } : k)
+                              // If editing first key, also sync principal
+                              return idx === 0
+                                ? { ...s, modalApiKey: v, modalApiKeys: keys }
+                                : { ...s, modalApiKeys: keys }
+                            })
+                          }}
+                          style={{ flex: 1, minWidth: 0 }}
+                          disabled={idx === 0}
+                        />
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem', flexShrink: 0 }}>
+                          <input
+                            type="checkbox"
+                            checked={mk.enabled}
+                            onChange={(e) => {
+                              const v = e.target.checked
+                              setLocal(s => ({ ...s, modalApiKeys: s.modalApiKeys.map(k => k.id === mk.id ? { ...k, enabled: v } : k) }))
+                            }}
+                          />
+                          {local.language === 'pt' ? 'Ativa' : 'On'}
+                        </label>
+                        {idx > 0 && (
+                          <button
+                            className="mcp-server-remove"
+                            onClick={() => setLocal(s => ({ ...s, modalApiKeys: s.modalApiKeys.filter(k => k.id !== mk.id) }))}
+                            title={local.language === 'pt' ? 'Remover' : 'Remove'}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      className="settings-fetch-btn"
+                      onClick={() => setLocal(s => ({
+                        ...s,
+                        modalApiKeys: [...(s.modalApiKeys || []), { id: 'key-' + Date.now(), key: '', label: '', enabled: true }]
+                      }))}
+                      disabled={(local.modalApiKeys || []).length >= 10}
+                      style={{ marginTop: '4px' }}
+                    >
+                      <Plus size={14} />
+                      <span>{local.language === 'pt' ? 'Adicionar Key' : 'Add Key'}</span>
+                    </button>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--color-text-muted, #888)', marginTop: '6px' }}>
+                      {local.language === 'pt'
+                        ? `Pool atual: ${(local.modalApiKeys || []).filter(k => k.enabled && k.key).length} key(s) ativa(s) · max 10`
+                        : `Current pool: ${(local.modalApiKeys || []).filter(k => k.enabled && k.key).length} active key(s) · max 10`}
+                    </p>
+                  </div>
+
+                  <div className="settings-group">
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={local.modalPoolFallbackOllama || false}
+                        onChange={(e) => setLocal(s => ({ ...s, modalPoolFallbackOllama: e.target.checked }))}
+                      />
+                      <span>
+                        {local.language === 'pt'
+                          ? 'Fallback para Ollama se pool esgotar'
+                          : 'Fallback to Ollama when pool is exhausted'}
+                      </span>
+                    </label>
+                  </div>
+
                   <div className="settings-group">
                     <label className="settings-label"><span>Modelo Modal</span></label>
                     <input type="text" className="settings-input" list="modal-models" value={local.modalModel || ''}

@@ -1,15 +1,18 @@
 import { useState, useCallback, useRef } from 'react'
 import type { AppSettings, PendingApproval, TaskPlan, Conversation } from '../types'
 import { SAFE_TOOLS, DANGEROUS_TOOLS } from '../constants/tools'
+import type { ModalKeyPool } from './useModalKeyPool'
+import type { ParallelChatResult, ParallelChatTask } from '../types/ipc'
 
 interface UseToolExecutionOptions {
   settings: AppSettings
   activeConvId: string | null
   setConversations: React.Dispatch<React.SetStateAction<Conversation[]>>
   selectedModel?: string
+  modalKeyPool?: ModalKeyPool
 }
 
-export function useToolExecution({ settings, activeConvId, setConversations, selectedModel }: UseToolExecutionOptions) {
+export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool }: UseToolExecutionOptions) {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
 
   // Use refs to avoid stale closures
@@ -111,20 +114,81 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
           pt: '\n\nIMPORTANTE: Responda SEMPRE em português do Brasil.',
           en: '\n\nIMPORTANT: Always respond in English.'
         }
-        const tasks = (args.subtasks || []).map((st: any) => ({
+        const buildTask = (st: any): ParallelChatTask => ({
           id: st.id,
           messages: [
             ...(systemMsg ? [{ role: 'system', content: systemMsg + LANGUAGE_RULE[lang] }] : []),
             { role: 'user', content: st.prompt }
           ]
-        }))
+        })
+        const subtasks: ParallelChatTask[] = (args.subtasks || []).map(buildTask)
+
+        // Modal pool path: worker-pool dispatcher
+        // N workers (N = active keys) pulling from a shared queue.
+        // If there are more tasks than keys, the extras queue up and are picked
+        // by whichever worker finishes first — no deadlock, no "pool exhausted".
+        if (settings.provider === 'modal' && modalKeyPool && modalKeyPool.totalCount > 0) {
+          const queue: ParallelChatTask[] = [...subtasks]
+          const resultsMap = new Map<string, ParallelChatResult>()
+          const workerCount = Math.min(modalKeyPool.totalCount, subtasks.length)
+
+          const runWorker = async () => {
+            while (queue.length > 0) {
+              const task = queue.shift()
+              if (!task) break
+              const slot = await modalKeyPool.acquireOrWait()
+              if (!slot) {
+                // Fallback per-task: Ollama if enabled, else error
+                if (settings.modalPoolFallbackOllama) {
+                  const [res] = await window.electron.parallelChat({
+                    tasks: [task],
+                    model: 'llama3',
+                    temperature: settings.temperature,
+                    max_tokens: settings.maxTokens,
+                  })
+                  resultsMap.set(task.id, res)
+                } else {
+                  resultsMap.set(task.id, { id: task.id, result: null, error: 'Pool exhausted (acquire timeout)' })
+                }
+                continue
+              }
+              try {
+                const [res] = await window.electron.providerParallelChat({
+                  tasks: [{ ...task, apiKey: slot.key }],
+                  provider: 'modal',
+                  model: settings.modalModel || selectedModel || 'zai-org/GLM-5.1-FP8',
+                  hostname: settings.modalHostname,
+                  temperature: settings.temperature,
+                  max_tokens: settings.maxTokens,
+                })
+                if (res?.error) modalKeyPool.markError(slot.key, res.error)
+                else modalKeyPool.release(slot.key)
+                resultsMap.set(task.id, res)
+              } catch (e: any) {
+                modalKeyPool.markError(slot.key, e?.message || 'dispatch error')
+                resultsMap.set(task.id, { id: task.id, result: null, error: e?.message || 'dispatch error' })
+              }
+            }
+          }
+
+          await Promise.all(Array.from({ length: workerCount }, () => runWorker()))
+
+          // Preserve original subtask ordering in the output
+          return subtasks.map((st) => {
+            const r = resultsMap.get(st.id)
+            const content = r?.result?.choices?.[0]?.message?.content || r?.error || 'No response'
+            return `[Agent ${st.id}]: ${content}`
+          }).join('\n\n---\n\n')
+        }
+
+        // Default path: Ollama local
         const results = await window.electron.parallelChat({
-          tasks,
+          tasks: subtasks,
           model: selectedModel || 'llama3',
           temperature: settings.temperature,
           max_tokens: settings.maxTokens
         })
-        return results.map((r: any) => {
+        return results.map((r) => {
           const content = r.result?.choices?.[0]?.message?.content || r.error || 'No response'
           return `[Agent ${r.id}]: ${content}`
         }).join('\n\n---\n\n')
@@ -133,7 +197,7 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
     } catch (e: any) {
       return `Erro: ${e.message}`
     }
-  }, [setConversations, settings, selectedModel])
+  }, [setConversations, settings, selectedModel, modalKeyPool])
 
   const requestApproval = useCallback((toolName: string, args: Record<string, any>): Promise<boolean> => {
     return new Promise((resolve) => {

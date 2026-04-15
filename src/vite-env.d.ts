@@ -56,7 +56,8 @@ interface Window {
     mcpDisconnect: (id: string) => Promise<any>
     mcpListConnections: () => Promise<string[]>
     // Collaborative agents
-    parallelChat: (params: any) => Promise<any>
+    parallelChat: (params: import('./types/ipc').ParallelChatParams) => Promise<import('./types/ipc').ParallelChatResult[]>
+    providerParallelChat: (params: import('./types/ipc').ProviderParallelChatParams) => Promise<import('./types/ipc').ParallelChatResult[]>
     // Parliament Mode — Multi-Agent Debate
     parliamentDebate: (params: any) => Promise<{ roles: any[]; coordinator: string; sessionId: string }>
     onParliamentRoleDone: (callback: (result: any) => void) => () => void

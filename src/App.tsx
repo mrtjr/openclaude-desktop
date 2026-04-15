@@ -24,6 +24,7 @@ import { useProviderConfig, getDisplayModel } from './hooks/useProviderConfig'
 import { useVoice } from './hooks/useVoice'
 import { useConversations } from './hooks/useConversations'
 import { useToolExecution } from './hooks/useToolExecution'
+import { useModalKeyPool } from './hooks/useModalKeyPool'
 import { useChat } from './hooks/useChat'
 import { useProviderHealth } from './hooks/useProviderHealth'
 import { useTokenCounter, formatTokenCount } from './hooks/useTokenCounter'
@@ -99,11 +100,14 @@ export default function App() {
 
   const convManager = useConversations()
 
+  const modalKeyPool = useModalKeyPool(settings)
+
   const toolExec = useToolExecution({
     settings,
     activeConvId: convManager.activeConvId,
     setConversations: convManager.setConversations,
     selectedModel,
+    modalKeyPool,
   })
 
   const chat = useChat({
@@ -647,19 +651,17 @@ export default function App() {
                 <ListChecks size={14} /><span>{activeConv.taskPlan.goal}</span>
                 <span className="task-plan-progress">{activeConv.taskPlan.tasks.filter(t => t.status === 'done').length}/{activeConv.taskPlan.tasks.length}</span>
               </div>
-              {!taskPlanCollapsed && (
-                <div className="task-plan-list">
-                  {activeConv.taskPlan.tasks.map(task => (
-                    <div key={task.id} className={`task-plan-item task-${task.status}`}>
-                      {task.status === 'done' ? <CheckCircle2 size={12} /> :
-                       task.status === 'in_progress' ? <Loader2 size={12} className="spin" /> :
-                       task.status === 'failed' ? <AlertCircle size={12} /> : <Circle size={12} />}
-                      <span>{task.title}</span>
-                      {task.result && <span className="task-result">{task.result}</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
+              <div className="task-plan-list" aria-hidden={taskPlanCollapsed}>
+                {activeConv.taskPlan.tasks.map(task => (
+                  <div key={task.id} className={`task-plan-item task-${task.status}`}>
+                    {task.status === 'done' ? <CheckCircle2 size={12} /> :
+                     task.status === 'in_progress' ? <Loader2 size={12} className="spin" /> :
+                     task.status === 'failed' ? <AlertCircle size={12} /> : <Circle size={12} />}
+                    <span>{task.title}</span>
+                    {task.result && <span className="task-result">{task.result}</span>}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

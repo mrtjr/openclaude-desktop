@@ -89,6 +89,7 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Collaborative agents
   parallelChat: (params) => ipcRenderer.invoke('parallel-chat', params),
+  providerParallelChat: (params) => ipcRenderer.invoke('provider-parallel-chat', params),
 
   // Parliament Mode — Multi-Agent Debate
   parliamentDebate: (params) => ipcRenderer.invoke('parliament-debate', params),

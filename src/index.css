@@ -725,6 +725,13 @@ body {
   border-radius: 12px; overflow: hidden;
   box-shadow: var(--shadow-sm);
 }
+.task-plan-list {
+  overflow: hidden;
+  transition: max-height 0.22s ease, opacity 0.18s ease, padding 0.18s ease;
+  max-height: 600px; opacity: 1;
+}
+.task-plan-panel.collapsed .task-plan-list { max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0; }
+.task-plan-panel.collapsed .task-plan-header { border-bottom-color: transparent; }
 .task-plan-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 16px; background: rgba(255,255,255,0.025);

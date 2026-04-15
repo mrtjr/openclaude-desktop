@@ -1301,6 +1301,82 @@ ipcMain.handle('parallel-chat', async (event, { tasks, model, temperature, max_t
   return results
 })
 
+// ─── IPC: Provider-agnostic parallel-chat (Modal pool, OpenAI, etc.) ───
+// Each task may carry its own `apiKey` (used for per-key pool dispatch on Modal).
+// Keep-alive agent reuses TLS connections across subtasks (~200ms faster each).
+// Tuning constants mirror src/constants/pool.ts (POOL_CONFIG).
+const MODAL_POOL_CONFIG = { MAX_SOCKETS: 20, KEEP_ALIVE_MSECS: 30_000, REQUEST_TIMEOUT_MS: 120_000 }
+const modalKeepAliveAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: MODAL_POOL_CONFIG.MAX_SOCKETS,
+  keepAliveMsecs: MODAL_POOL_CONFIG.KEEP_ALIVE_MSECS,
+})
+ipcMain.handle('provider-parallel-chat', async (event, { tasks, provider, model, temperature, max_tokens, hostname }) => {
+  const executeTask = (task) => {
+    return new Promise((resolve) => {
+      const body = JSON.stringify({
+        model,
+        messages: task.messages,
+        tools: task.tools || [],
+        stream: false,
+        temperature: temperature ?? 0.7,
+        ...(max_tokens ? { max_tokens } : {})
+      })
+
+      let options
+      if (provider === 'modal') {
+        options = {
+          hostname: hostname || 'api.us-west-2.modal.direct',
+          port: 443,
+          path: '/v1/chat/completions',
+          method: 'POST',
+          agent: modalKeepAliveAgent,
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(body),
+            'Authorization': `Bearer ${task.apiKey || ''}`,
+            'Connection': 'keep-alive'
+          }
+        }
+      } else {
+        // Default: Ollama local
+        options = {
+          hostname: 'localhost',
+          port: 11434,
+          path: '/v1/chat/completions',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+        }
+      }
+
+      const client = (provider === 'modal') ? https : http
+      const req = client.request(options, (res) => {
+        let data = ''
+        res.on('data', chunk => data += chunk)
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 400) {
+            resolve({ id: task.id, result: null, error: `HTTP ${res.statusCode}: ${data.slice(0, 200)}`, apiKey: task.apiKey })
+            return
+          }
+          try {
+            const parsed = JSON.parse(data)
+            resolve({ id: task.id, result: parsed, error: null, apiKey: task.apiKey })
+          } catch (e) {
+            resolve({ id: task.id, result: null, error: e.message, apiKey: task.apiKey })
+          }
+        })
+      })
+      req.on('error', (e) => resolve({ id: task.id, result: null, error: e.message, apiKey: task.apiKey }))
+      req.setTimeout(MODAL_POOL_CONFIG.REQUEST_TIMEOUT_MS, () => { req.destroy(); resolve({ id: task.id, result: null, error: 'Timeout', apiKey: task.apiKey }) })
+      req.write(body)
+      req.end()
+    })
+  }
+
+  const results = await Promise.all(tasks.map(executeTask))
+  return results
+})
+
 // ─── IPC: Audit Log ────────────────────────────────────────────────────
 function loadAuditLog() {
   try {
