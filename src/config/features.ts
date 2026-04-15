@@ -2,7 +2,7 @@
 // Central registry of all toggleable features. Controls visibility
 // in the Command Palette and Settings.
 
-import { BookMarked, UserCog, Swords, FolderOpen, Camera, Database, GitBranch, Scale, Monitor } from 'lucide-react'
+import { BookMarked, UserCog, Swords, FolderOpen, Camera, Database, GitBranch, Scale, Monitor, Brain, Clock } from 'lucide-react'
 
 export interface FeatureConfig {
   id: string
@@ -87,6 +87,22 @@ export const FEATURES: FeatureConfig[] = [
     icon: Camera,
     category: 'automation',
     shortcut: 'Ctrl+Shift+V',
+    defaultEnabled: true,
+  },
+  {
+    id: 'profiles',
+    name: { pt: 'Perfis de Agente', en: 'Agent Profiles' },
+    description: { pt: 'Overrides de config por conversa', en: 'Per-conversation config overrides' },
+    icon: Brain,
+    category: 'ai',
+    defaultEnabled: true,
+  },
+  {
+    id: 'scheduler',
+    name: { pt: 'Tarefas Agendadas', en: 'Scheduled Tasks' },
+    description: { pt: 'Prompts automáticos recorrentes', en: 'Recurring automatic prompts' },
+    icon: Clock,
+    category: 'automation',
     defaultEnabled: true,
   },
 ]

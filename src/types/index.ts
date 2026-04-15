@@ -38,6 +38,8 @@ export interface Conversation {
   workingMemory?: Record<string, string>
   taskPlan?: TaskPlan
   contextSummary?: string
+  /** Active agent profile for this conversation */
+  profileId?: string
 }
 
 export interface PendingApproval {

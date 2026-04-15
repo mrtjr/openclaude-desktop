@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import 'highlight.js/styles/github-dark.css'
 import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, FileCode, Info, ArrowUpCircle, Zap, BotOff, Copy, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Image, Trash, Mic, MicOff, Volume2, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Scale, Camera, Database, BookMarked, Swords, FolderOpen, GitBranch, Monitor, UserCog } from 'lucide-react'
 import SettingsModal, { loadSettings, type AppSettings } from './Settings'
@@ -13,6 +13,8 @@ import RAGPanel from './RAGPanel'
 import ORION from './ORION'
 import WorkflowBuilder from './WorkflowBuilder'
 import CommandPalette from './components/CommandPalette'
+import ProfilesPanel from './ProfilesPanel'
+import ScheduledTasksPanel from './ScheduledTasksPanel'
 
 // ─── Extracted modules ──────────────────────────────────────────────
 import type { Message } from './types'
@@ -31,6 +33,8 @@ import { useTokenCounter, formatTokenCount } from './hooks/useTokenCounter'
 import { useUsageTracking } from './hooks/useUsageTracking'
 import { loadEnabledFeatures, saveEnabledFeatures, isFeatureEnabled } from './config/features'
 import { useMemoryDreaming } from './hooks/useMemoryDreaming'
+import { useProfiles } from './hooks/useProfiles'
+import { useScheduledTasks } from './hooks/useScheduledTasks'
 import { runSecurityAudit } from './utils/securityAudit'
 
 // ─── Toast notification system ──────────────────────────────────
@@ -78,6 +82,8 @@ export default function App() {
   const [ragEnabled, setRagEnabled] = useState(false)
   const [showFeatureMenu, setShowFeatureMenu] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
+  const [showProfiles, setShowProfiles] = useState(false)
+  const [showScheduler, setShowScheduler] = useState(false)
   const [enabledFeatures, setEnabledFeatures] = useState<Record<string, boolean>>(loadEnabledFeatures)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -88,8 +94,35 @@ export default function App() {
 
   const { toasts, show: showToast } = useToast()
 
+  // ─── Agent Profiles ────────────────────────────────────────────
+  const profiles = useProfiles()
+
+  // Merge active profile overrides into effective settings
+  const effectiveSettings = useMemo(() => {
+    const p = profiles.activeProfile
+    if (!p) return settings
+    const eff = {
+      ...settings,
+      ...(p.systemPrompt ? { systemPrompt: p.systemPrompt } : {}),
+      ...(p.provider ? { provider: p.provider } : {}),
+      ...(p.temperature !== undefined ? { temperature: p.temperature } : {}),
+      ...(p.maxTokens ? { maxTokens: p.maxTokens } : {}),
+      ...(p.permissionLevel ? { permissionLevel: p.permissionLevel } : {}),
+    }
+    // Override the provider-specific model field when profile specifies a model
+    if (p.model) {
+      const prov = eff.provider
+      if (prov === 'openai') eff.openaiModel = p.model
+      else if (prov === 'anthropic') eff.anthropicModel = p.model
+      else if (prov === 'gemini') eff.geminiModel = p.model
+      else if (prov === 'openrouter') eff.openrouterModel = p.model
+      else if (prov === 'modal') eff.modalModel = p.model
+    }
+    return eff
+  }, [settings, profiles.activeProfile])
+
   // ─── Custom hooks ──────────────────────────────────────────────
-  const providerConfig = useProviderConfig(settings, selectedModel)
+  const providerConfig = useProviderConfig(effectiveSettings, selectedModel)
   const providerHealth = useProviderHealth(settings)
   const usageTracking = useUsageTracking()
 
@@ -103,7 +136,7 @@ export default function App() {
   const modalKeyPool = useModalKeyPool(settings)
 
   const toolExec = useToolExecution({
-    settings,
+    settings: effectiveSettings,
     activeConvId: convManager.activeConvId,
     setConversations: convManager.setConversations,
     selectedModel,
@@ -111,7 +144,7 @@ export default function App() {
   })
 
   const chat = useChat({
-    settings,
+    settings: effectiveSettings,
     providerConfig,
     activeConvId: convManager.activeConvId,
     conversationsRef: convManager.conversationsRef,
@@ -122,7 +155,7 @@ export default function App() {
     showToast,
     onProviderSuccess: providerHealth.reportSuccess,
     onProviderError: (err) => providerHealth.reportError(err),
-    onUsage: (inputTokens, outputTokens) => usageTracking.recordUsage(settings.provider, providerConfig.model, inputTokens, outputTokens),
+    onUsage: (inputTokens, outputTokens) => usageTracking.recordUsage(effectiveSettings.provider, providerConfig.model, inputTokens, outputTokens),
   })
 
   const activeConv = convManager.activeConv
@@ -133,6 +166,21 @@ export default function App() {
   useMemoryDreaming({
     enabled: settings.memoryEnabled,
     onToast: showToast,
+  })
+
+  // Forward ref for sendMessage — declared early so scheduledTasks can use it
+  const sendMessageRef = useRef<(text: string) => void>(() => {})
+
+  const scheduledTasks = useScheduledTasks({
+    enabled: true,
+    onTaskFire: (task) => {
+      convManager.newConversation()
+      // Send the scheduled prompt after a tick so the new conversation is active
+      setTimeout(() => {
+        sendMessageRef.current(task.prompt)
+        showToast(`⏰ ${task.name}`)
+      }, 100)
+    },
   })
 
   // ─── Check for updates ─────────────────────────────────────────
@@ -274,7 +322,7 @@ export default function App() {
     }))
   }
 
-  const sendMessageRef = useRef(chat.sendMessage)
+  // Keep sendMessageRef up to date with the latest chat.sendMessage
   sendMessageRef.current = chat.sendMessage
 
   const regenerateResponse = useCallback(() => {
@@ -367,6 +415,10 @@ export default function App() {
         onToggleTTS={voice.toggleTTS}
         onSetPermission={(level) => setSettings({ ...settings, permissionLevel: level })}
         enabledFeatures={enabledFeatures}
+        onOpenProfiles={() => setShowProfiles(true)}
+        onOpenScheduler={() => setShowScheduler(true)}
+        activeProfileName={profiles.activeProfile?.name}
+        scheduledTaskCount={scheduledTasks.enabledCount}
         onSecurityAudit={handleSecurityAudit}
       />
 
@@ -404,6 +456,34 @@ export default function App() {
           onInsertToChat={(text) => { setInput(prev => (prev ? prev + '\n\n' : '') + text); setShowWorkflow(false) }} />
       )}
       {showOrion && <ORION settings={settings} onClose={() => setShowOrion(false)} />}
+
+      {/* Agent Profiles */}
+      <ProfilesPanel
+        isOpen={showProfiles}
+        onClose={() => setShowProfiles(false)}
+        allProfiles={profiles.allProfiles}
+        activeProfileId={profiles.activeProfileId}
+        onActivate={profiles.activate}
+        onCreate={profiles.create}
+        onUpdate={profiles.update}
+        onRemove={profiles.remove}
+        onDuplicate={profiles.duplicate}
+        language={settings.language}
+      />
+
+      {/* Scheduled Tasks */}
+      <ScheduledTasksPanel
+        isOpen={showScheduler}
+        onClose={() => setShowScheduler(false)}
+        tasks={scheduledTasks.tasks}
+        onCreate={scheduledTasks.create}
+        onUpdate={scheduledTasks.update}
+        onRemove={scheduledTasks.remove}
+        onToggle={scheduledTasks.toggle}
+        onRunNow={scheduledTasks.runNow}
+        profiles={profiles.allProfiles}
+        language={settings.language}
+      />
 
       {/* Titlebar */}
       <div className="titlebar">
@@ -697,12 +777,13 @@ export default function App() {
               }} />
 
               {/* Status pills */}
-              {(isAgentMode || settings.permissionLevel === 'ignore' || activePersona || ragEnabled || isActiveConvLoading) && (
+              {(isAgentMode || settings.permissionLevel === 'ignore' || activePersona || ragEnabled || isActiveConvLoading || profiles.activeProfile) && (
                 <div className="input-status-bar">
                   {isAgentMode && <span className="status-pill agent"><Zap size={9} />Agente{isActiveConvLoading ? ` · Passo ${chat.agentSteps}` : ''}</span>}
                   {settings.permissionLevel === 'ignore' && <span className="status-pill danger"><AlertCircle size={9} />Bypass Mode</span>}
                   {activePersona && <span className="status-pill persona"><UserCog size={9} />{activePersona.name}</span>}
                   {ragEnabled && <span className="status-pill rag"><Database size={9} />RAG</span>}
+                  {profiles.activeProfile && <span className="status-pill profile">{profiles.activeProfile.icon} {profiles.activeProfile.name}</span>}
                   {isActiveConvLoading && <button className="status-pill stop-pill" onClick={chat.stopAgent}><Square size={9} />Parar</button>}
                 </div>
               )}

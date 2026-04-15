@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { X, Search, BookMarked, UserCog, Swords, FolderOpen, Camera, Database, GitBranch, Scale, Monitor, Image, Zap, BarChart3, Wrench, Code, ListChecks, AlertCircle, Sun, Moon, Mic, Volume2, Shield } from 'lucide-react'
+import { X, Search, BookMarked, UserCog, Swords, FolderOpen, Camera, Database, GitBranch, Scale, Monitor, Image, Zap, BarChart3, Wrench, Code, ListChecks, AlertCircle, Sun, Moon, Mic, Volume2, Shield, Brain, Clock } from 'lucide-react'
 import type { AppSettings } from '../Settings'
 import type { PermissionLevel } from '../Settings'
 import type { Persona } from '../PersonaEngine'
@@ -48,6 +48,11 @@ interface CommandPaletteProps {
   onSetPermission: (level: PermissionLevel) => void
   // Feature registry
   enabledFeatures?: Record<string, boolean>
+  // New features
+  onOpenProfiles?: () => void
+  onOpenScheduler?: () => void
+  activeProfileName?: string
+  scheduledTaskCount?: number
   // Security
   onSecurityAudit?: () => void
 }
@@ -79,6 +84,9 @@ export default function CommandPalette(props: CommandPaletteProps) {
     // Automation
     { id: 'workflow', label: language === 'pt' ? 'Workflow Builder' : 'Workflow Builder', description: language === 'pt' ? 'Automação visual de tarefas' : 'Visual task automation', icon: GitBranch, category: 'automation', action: props.onOpenWorkflow },
     { id: 'vision', label: language === 'pt' ? 'Visão' : 'Vision', description: language === 'pt' ? 'Captura e análise de tela' : 'Screen capture & analysis', icon: Camera, category: 'automation', action: props.onOpenVision },
+    ...(props.onOpenScheduler ? [{ id: 'scheduler', label: language === 'pt' ? 'Tarefas Agendadas' : 'Scheduled Tasks', description: language === 'pt' ? `Prompts automáticos${props.scheduledTaskCount ? ` (${props.scheduledTaskCount} ativas)` : ''}` : `Recurring prompts${props.scheduledTaskCount ? ` (${props.scheduledTaskCount} active)` : ''}`, icon: Clock, category: 'automation' as const, action: props.onOpenScheduler }] : []),
+    // AI - Agent Profiles
+    ...(props.onOpenProfiles ? [{ id: 'profiles', label: props.activeProfileName ? `${language === 'pt' ? 'Perfil:' : 'Profile:'} ${props.activeProfileName}` : (language === 'pt' ? 'Perfis de Agente' : 'Agent Profiles'), description: language === 'pt' ? 'Overrides de config por conversa' : 'Per-conversation config overrides', icon: Brain, category: 'ai' as const, action: props.onOpenProfiles, active: !!props.activeProfileName }] : []),
     // System
     { id: 'agent', label: props.isAgentMode ? (language === 'pt' ? 'Desativar Agente' : 'Disable Agent') : (language === 'pt' ? 'Ativar Agente' : 'Enable Agent'), description: language === 'pt' ? 'Modo autônomo ilimitado' : 'Unlimited autonomous mode', icon: Zap, category: 'system', action: props.onToggleAgent, active: props.isAgentMode },
     { id: 'analytics', label: 'Analytics', description: language === 'pt' ? 'Dashboard de métricas' : 'Metrics dashboard', icon: BarChart3, category: 'system', action: props.onOpenAnalytics },
@@ -98,6 +106,7 @@ export default function CommandPalette(props: CommandPaletteProps) {
     persona: 'persona', arena: 'arena', parliament: 'parliament',
     orion: 'orion', vault: 'vault', rag: 'rag',
     workspace: 'workspace', workflow: 'workflow', vision: 'vision',
+    profiles: 'profiles', scheduler: 'scheduler',
   }
 
   // Filter out disabled features
