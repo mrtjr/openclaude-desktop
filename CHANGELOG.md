@@ -8,6 +8,10 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Added
+- **Agent Profiles** — perfis por conversa com overrides de provider, modelo, temperatura, system prompt e permissões. 4 built-in (Coder, Writer, Analyst, Safe Mode) + criação de custom profiles. `effectiveSettings` mergeia overrides antes de `useChat`/`useProviderConfig`.
+- **Scheduled Tasks** — agendamento de prompts automáticos com 3 modos (intervalo, diário, semanal). Scheduler polling 30s, startup delay 2s, floor de 1min no intervalo. Integração com Agent Profiles para perfil por tarefa.
+- Ambas features acessíveis via Command Palette (`Ctrl+K`) e registradas no Feature Registry.
+- Status pill na input bar mostra perfil ativo.
 - `CONTRIBUTING.md`, `SECURITY.md` — documentação de contribuição e política de segurança.
 - `.pre-commit-config.yaml` + baseline `detect-secrets` — previne commit acidental de API keys.
 - Setup Vitest com testes unitários para `useModalKeyPool`, sanitizers e cooldown do pool.

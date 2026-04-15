@@ -53,6 +53,8 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 | No code review flow | Code Workspace: AI-assisted diff editor with accept/reject |
 | No automation | Workflow Builder: drag-and-drop visual AI pipeline editor |
 | Manual repetitive tasks | ORION: autonomous computer-control agent (PowerShell actions) |
+| Same config for all chats | Agent Profiles: per-conversation provider/model/temperature overrides |
+| No recurring tasks | Scheduled Tasks: automatic prompts on interval, daily, or weekly |
 | Math formulas unreadable | LaTeX rendering with KaTeX (`$...$` and `$$...$$`) |
 | No idea how many tokens | Accurate per-model token count shown in chat footer |
 | MCP config is manual | MCP settings UI: add/remove servers directly in Settings |
@@ -65,17 +67,21 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 
 ## Features
 
-### v2.2.1 — Modal API Key Pool & Stability Patch
+### v2.2.1 — Modal API Key Pool, Agent Profiles & Scheduled Tasks
 - **Modal API Key Pool** — manage up to 10 Modal API keys in Settings; `delegate_subtasks` distributes subtasks across keys in parallel, bypassing the GLM-5.1 single-concurrent-request limit
 - **Worker-pool dispatcher** — N parallel workers (N = active keys) pull from a shared queue; extras wait for first free key (no deadlock when tasks > keys)
 - **Automatic 429 cooldown** — keys hit by rate-limit pause 30s automatically; round-robin with skip-if-busy
 - **HTTPS keep-alive agent** — reuses TLS connections across subtasks (~200ms saved per request)
 - **Optional Ollama fallback** — if pool exhausted, fall back per-task to local Ollama (configurable)
+- **Agent Profiles** — per-conversation config overrides for provider, model, temperature, system prompt, and permission level. 4 built-in profiles (Coder, Writer, Analyst, Safe Mode) + create your own. Active profile shown as status pill in input bar. Accessible via Command Palette (`Ctrl+K`)
+- **Scheduled Tasks** — schedule automatic prompts on interval (every Xmin), daily, or weekly. Each task can use a specific Agent Profile. Run on-demand or let the scheduler fire automatically. Manage via Command Palette
 - **Streaming isolation** — per-conversation `streamingConvId` prevents stream bleeding between conversations; new chats no longer blocked during active streams
 - **Task Plan minimizer** — chevron in header collapses/expands the task list with smooth transition
 - **Dynamic provider label** — system prompt reflects the selected provider (no longer hardcoded to "Ollama")
 - **Typed IPC** — shared `ParallelChatResult` / `ParallelChatTask` types eliminate `any` in critical paths
 - **Centralized pool constants** — `src/constants/pool.ts` exposes all timeouts/cooldowns for easy tuning
+- **Professional docs** — `CONTRIBUTING.md`, `SECURITY.md`, `.pre-commit-config.yaml` + `detect-secrets` baseline
+- **Test suite** — Vitest with 34 unit tests covering sanitizers, modal key pool (deadlock regression), and formatting utils
 
 ### v2.2.0 — Provider Health, Context Engine & Memory Dreaming
 - **Hook-Based Architecture** — App.tsx decomposed from 1843 to 686 lines via 5 custom hooks (`useProviderConfig`, `useVoice`, `useConversations`, `useToolExecution`, `useChat`)
@@ -430,13 +436,28 @@ openclaude-desktop/
 │   ├── Analytics.tsx          # Analytics dashboard (MAGI insights engine)
 │   ├── Settings.tsx           # Settings: providers, language, API keys, memory, analytics, MCP tab
 │   ├── AgentMemoryPanel.tsx   # Memory tab UI: working memory list, episode history, clear button
+│   ├── ProfilesPanel.tsx      # Agent Profiles UI: list, create, edit, duplicate, activate
+│   ├── ScheduledTasksPanel.tsx # Scheduled Tasks UI: create, edit, pause, run now
 │   ├── hooks/
+│   │   ├── useProfiles.ts           # CRUD + activate/deactivate Agent Profiles (localStorage)
+│   │   ├── useScheduledTasks.ts     # CRUD + 30s polling scheduler with calcNextRun
 │   │   ├── useImageAttachment.ts    # Image upload + base64 encoding for vision providers
 │   │   ├── useConversationFork.ts   # Fork conversation at any message index
 │   │   └── useAgentMemory.ts        # Load/save/inject agent memory across sessions
+│   ├── types/
+│   │   ├── profile.ts               # AgentProfile interface + 4 built-in profiles
+│   │   └── schedule.ts              # ScheduledTask, TaskSchedule types
 │   ├── index.css              # Dark/light themes, task plan, voice, analytics, KaTeX styles
 │   └── vite-env.d.ts          # TypeScript declarations (50+ API types)
+├── test/
+│   ├── sanitizers.test.ts     # 13 tests: reasoning leak sanitizer + streaming
+│   ├── useModalKeyPool.test.ts # 11 tests: pool acquire/release/429/deadlock regression
+│   └── formatting.test.ts     # 10 tests: isSmallModel + getRelativeTime
 ├── public/                    # Static assets
+├── CONTRIBUTING.md            # Setup, scripts, conventions
+├── SECURITY.md                # Disclosure process, known trade-offs
+├── .pre-commit-config.yaml    # Hygiene + detect-secrets + typecheck hooks
+├── vitest.config.ts           # Test config (jsdom + react plugin)
 ├── ROADMAP.md                 # Full feature roadmap with tiers and backlog
 ├── Modelfile-uncensored       # Template for creating uncensored models
 └── package.json               # Dependencies & build config
@@ -479,6 +500,9 @@ openclaude-desktop/
 | PDF/DOCX parsing | Native IPC | Limited | No | Yes |
 | Conversation branching | Fork at any msg | No | No | No |
 | Agent memory persistence | Cross-session | No | No | No |
+| Agent Profiles | Per-conversation | No | No | No |
+| Scheduled Tasks | Interval/daily/weekly | No | No | No |
+| Test suite | 34 unit tests (Vitest) | N/A | N/A | N/A |
 
 ---
 
@@ -598,6 +622,8 @@ openclaude-desktop/
 - [x] PDF/DOCX document parsing
 - [x] Conversation branching (fork at any message)
 - [ ] Plugin system
+- [x] Agent Profiles (per-conversation config overrides)
+- [x] Scheduled Tasks (recurring automatic prompts)
 - [x] LaTeX math rendering
 - [ ] Linux & macOS builds
 - [x] Accurate token counting per model
