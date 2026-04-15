@@ -1,0 +1,52 @@
+# Pre-commit hooks — instala com `pre-commit install` (pip install pre-commit)
+# Docs: https://pre-commit.com
+#
+# Roda automaticamente em `git commit`. Pula com `--no-verify` (apenas em
+# emergência — veja SECURITY.md).
+
+repos:
+  # ─── Higiene básica ────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.md$'
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=1024']  # bloqueia arquivos > 1 MB
+      - id: check-json
+      - id: check-yaml
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+        exclude: '\.(bat|cmd|ps1)$'
+
+  # ─── Detecção de secrets (previne commit de API keys) ──────
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: |
+          (?x)^(
+            package-lock\.json|
+            pnpm-lock\.yaml|
+            yarn\.lock|
+            release/.*|
+            dist/.*|
+            node_modules/.*|
+            public/.*\.(ico|png|jpg|jpeg|gif|woff2?|ttf|otf|svg)|
+            assets/.*\.(ico|png|jpg|jpeg|gif|woff2?|ttf|otf|svg)|
+            .*\.tsbuildinfo|
+            \.secrets\.baseline
+          )$
+
+  # ─── TypeScript typecheck local (rápido, sem emitir) ───────
+  - repo: local
+    hooks:
+      - id: typecheck
+        name: typecheck (tsc --noEmit)
+        entry: npm run typecheck
+        language: system
+        types: [ts, tsx]
+        pass_filenames: false

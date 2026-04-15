@@ -9,6 +9,9 @@
     "dev:vite": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
     "electron": "electron .",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win"
@@ -37,17 +40,21 @@
     }
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.2",
     "@types/katex": "^0.16.7",
     "@types/node": "^20.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",
+    "@vitest/ui": "^4.1.4",
     "concurrently": "^8.2.0",
     "cross-env": "^7.0.3",
     "electron": "^33.0.0",
     "electron-builder": "^25.1.8",
+    "jsdom": "^29.0.2",
     "typescript": "^5.6.0",
     "vite": "^5.4.0",
+    "vitest": "^4.1.4",
     "wait-on": "^8.0.0"
   },
   "dependencies": {
