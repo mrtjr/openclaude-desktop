@@ -7,12 +7,15 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.3.0] — 2026-04-16
+
 ### Added
 - **Agent Profiles** — perfis por conversa com overrides de provider, modelo, temperatura, system prompt e permissões. 4 built-in (Coder, Writer, Analyst, Safe Mode) + criação de custom profiles. `effectiveSettings` mergeia overrides antes de `useChat`/`useProviderConfig`.
 - **Scheduled Tasks** — agendamento de prompts automáticos com 3 modos (intervalo, diário, semanal). Scheduler polling 30s, startup delay 2s, floor de 1min no intervalo. Integração com Agent Profiles para perfil por tarefa.
 - Ambas features acessíveis via Command Palette (`Ctrl+K`) e registradas no Feature Registry.
 - Status pill na input bar mostra perfil ativo.
 - **Browser nativo (Electron BrowserWindow)** — substitui Playwright (que não empacotava no .exe). Zero dependência externa, multi-tab (5), `browser_wait`, `browser_get_links`, `browser_get_forms`, `browser_screenshot` via `capturePage`, sandbox + contextIsolation.
+- **Computer Use (vision-based browser)** — mesma arquitetura de Claude/Manus/Perplexity: janela de browser **visível** ao lado do app, screenshot → AI de visão → ação por coordenada. Novas tools: `browser_click_at(x,y)`, `browser_type_text`, `browser_key_press`, `browser_scroll`. `webContents.sendInputEvent()` para mouse/teclado por pixel; `webContents.capturePage()` para screenshot; evento `browser-page-loaded` reativo no renderer.
 - `CONTRIBUTING.md`, `SECURITY.md` — documentação de contribuição e política de segurança.
 - `.pre-commit-config.yaml` + baseline `detect-secrets` — previne commit acidental de API keys.
 - Setup Vitest com testes unitários para `useModalKeyPool`, sanitizers e cooldown do pool.

@@ -85,6 +85,18 @@ contextBridge.exposeInMainWorld('electron', {
   browserClose: (tabId) => ipcRenderer.invoke('browser-close', tabId),
   browserTabs: () => ipcRenderer.invoke('browser-tabs'),
   browserSwitchTab: (tabId) => ipcRenderer.invoke('browser-switch-tab', tabId),
+  // Computer Use (vision-based interaction like Claude/Manus)
+  browserClickAt: (params) => ipcRenderer.invoke('browser-click-at', params),
+  browserDoubleClickAt: (params) => ipcRenderer.invoke('browser-double-click-at', params),
+  browserTypeText: (params) => ipcRenderer.invoke('browser-type-text', params),
+  browserKeyPress: (params) => ipcRenderer.invoke('browser-key-press', params),
+  browserScroll: (params) => ipcRenderer.invoke('browser-scroll', params),
+  browserScreenshotVision: () => ipcRenderer.invoke('browser-screenshot-vision'),
+  onBrowserPageLoaded: (callback) => {
+    const listener = (event, data) => callback(data)
+    ipcRenderer.on('browser-page-loaded', listener)
+    return () => ipcRenderer.removeListener('browser-page-loaded', listener)
+  },
 
   // MCP client
   mcpConnect: (params) => ipcRenderer.invoke('mcp-connect', params),

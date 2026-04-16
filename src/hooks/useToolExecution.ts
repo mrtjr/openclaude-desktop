@@ -134,6 +134,33 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         if (result.error) return `Screenshot error: ${result.error}`
         return `Screenshot captured (${Math.round((result.size || 0) / 1024)}KB PNG). Base64 available for vision analysis.`
       }
+      // ─── Computer Use (vision-based coordinate interaction) ───────────────
+      if (name === 'browser_click_at') {
+        const result = await window.electron.browserClickAt({ x: args.x, y: args.y })
+        if (result.error) return `Click error: ${result.error}`
+        return `Clicked at (${result.x}, ${result.y})`
+      }
+      if (name === 'browser_type_text') {
+        const result = await window.electron.browserTypeText({ text: args.text, pressEnter: args.pressEnter })
+        if (result.error) return `Type error: ${result.error}`
+        return `Typed "${args.text}"${args.pressEnter ? ' + Enter' : ''}`
+      }
+      if (name === 'browser_key_press') {
+        const result = await window.electron.browserKeyPress({ key: args.key, modifiers: args.modifiers })
+        if (result.error) return `Key press error: ${result.error}`
+        const mods = args.modifiers?.length ? `${args.modifiers.join('+')}+` : ''
+        return `Pressed ${mods}${args.key}`
+      }
+      if (name === 'browser_scroll') {
+        const result = await window.electron.browserScroll({
+          deltaY: args.deltaY,
+          deltaX: args.deltaX,
+          x: args.x,
+          y: args.y,
+        })
+        if (result.error) return `Scroll error: ${result.error}`
+        return `Scrolled (dx=${args.deltaX || 0}, dy=${args.deltaY || 0})`
+      }
       if (name === 'delegate_subtasks') {
         const lang = settings.language || 'pt'
         const systemMsg = settings.systemPrompt || ''

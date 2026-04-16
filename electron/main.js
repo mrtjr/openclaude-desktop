@@ -1090,14 +1090,20 @@ ipcMain.handle('list-provider-models', async (event, { provider, apiKey, modalHo
 })
 
 // ─── IPC: Browser Automation (Electron BrowserWindow nativo) ──────────
-// Usa o Chromium embutido do Electron — zero dependência externa.
-// Cada "tab" é um BrowserWindow off-screen (ou visível se o agente pedir).
+// Arquitetura inspirada em Claude Computer Use / Manus AI:
+// - Browser VISÍVEL ao lado do chat (o usuário vê o agente navegar)
+// - Screenshot → Vision AI → Ação por coordenadas (x, y)
+// - Também suporta DOM tools (get_text, get_links) para scraping rápido
+// - Zero dependência externa — usa Chromium embutido do Electron
 
 const BROWSER_CONFIG = {
   MAX_TABS: 5,
   NAV_TIMEOUT: 30_000,
   SCRIPT_TIMEOUT: 10_000,
   MAX_TEXT_LENGTH: 15_000,
+  VIEWPORT_WIDTH: 1280,
+  VIEWPORT_HEIGHT: 800,
+  SETTLE_DELAY: 800, // ms to wait after action for page to settle
   USER_AGENT: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 }
 
@@ -1105,19 +1111,37 @@ const BROWSER_CONFIG = {
 const browserTabs = new Map()
 let activeTabId = 'main'
 
-function getOrCreateTab(tabId = 'main', visible = false) {
-  if (browserTabs.has(tabId)) return browserTabs.get(tabId)
+function getOrCreateTab(tabId = 'main', visible = true) {
+  if (browserTabs.has(tabId)) {
+    const existing = browserTabs.get(tabId)
+    if (!existing.isDestroyed()) {
+      if (visible && !existing.isVisible()) existing.show()
+      return existing
+    }
+    browserTabs.delete(tabId)
+  }
   if (browserTabs.size >= BROWSER_CONFIG.MAX_TABS) {
-    // Close oldest tab to make room
     const oldest = browserTabs.keys().next().value
     const oldWin = browserTabs.get(oldest)
     if (oldWin && !oldWin.isDestroyed()) oldWin.close()
     browserTabs.delete(oldest)
   }
+
+  // Position browser window to the right of the main app window
+  let x = 100, y = 100
+  if (win && !win.isDestroyed()) {
+    const [wx, wy] = win.getPosition()
+    const [ww] = win.getSize()
+    x = wx + ww + 10 // 10px gap to the right
+    y = wy
+  }
+
   const bw = new BrowserWindow({
-    width: 1280,
-    height: 900,
+    width: BROWSER_CONFIG.VIEWPORT_WIDTH,
+    height: BROWSER_CONFIG.VIEWPORT_HEIGHT,
+    x, y,
     show: visible,
+    title: 'OpenClaude Browser',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -1126,9 +1150,20 @@ function getOrCreateTab(tabId = 'main', visible = false) {
     },
   })
   bw.webContents.setUserAgent(BROWSER_CONFIG.USER_AGENT)
-  // Block popups/new windows
   bw.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   bw.on('closed', () => browserTabs.delete(tabId))
+
+  // Notify renderer when page finishes loading
+  bw.webContents.on('did-finish-load', () => {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('browser-page-loaded', {
+        tabId,
+        url: bw.webContents.getURL(),
+        title: bw.webContents.getTitle(),
+      })
+    }
+  })
+
   browserTabs.set(tabId, bw)
   return bw
 }
@@ -1139,12 +1174,17 @@ function getActiveTab() {
   return null
 }
 
+/** Wait for the page to settle after an action */
+function settle(ms) {
+  return new Promise(r => setTimeout(r, ms || BROWSER_CONFIG.SETTLE_DELAY))
+}
+
 ipcMain.handle('browser-launch', async (event, opts) => {
-  const { visible } = opts || {}
+  const { visible = true, tabId = 'main' } = opts || {}
   try {
-    const bw = getOrCreateTab('main', visible ?? false)
-    activeTabId = 'main'
-    return { success: true, tabId: 'main' }
+    const bw = getOrCreateTab(tabId, visible)
+    activeTabId = tabId
+    return { success: true, tabId }
   } catch (e) {
     return { error: `Browser launch error: ${e.message}` }
   }
@@ -1152,7 +1192,7 @@ ipcMain.handle('browser-launch', async (event, opts) => {
 
 ipcMain.handle('browser-navigate', async (event, url) => {
   try {
-    const bw = getOrCreateTab(activeTabId, false)
+    const bw = getOrCreateTab(activeTabId || 'main', true)
     activeTabId = activeTabId || 'main'
 
     // Normalize URL
@@ -1160,14 +1200,19 @@ ipcMain.handle('browser-navigate', async (event, url) => {
       url = 'https://' + url
     }
 
+    // Show the browser window so the user sees the navigation
+    if (!bw.isVisible()) bw.show()
+
     // loadURL returns a Promise that resolves when the page finishes loading.
-    // Wrap with timeout to prevent hanging on slow pages.
     await Promise.race([
       bw.loadURL(url),
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Navigation timeout')), BROWSER_CONFIG.NAV_TIMEOUT)
       ),
     ])
+
+    // Small delay for JS-rendered content to settle
+    await settle(500)
 
     const title = bw.webContents.getTitle()
     const finalUrl = bw.webContents.getURL()
@@ -1341,6 +1386,93 @@ ipcMain.handle('browser-switch-tab', async (event, tabId) => {
     return { success: true, tabId }
   }
   return { error: `Tab not found: ${tabId}` }
+})
+
+// ─── Computer Use: Vision-based interaction (Claude/Manus style) ──────
+// O agente tira screenshot, envia para vision AI, recebe coordenadas (x,y)
+// e executa ações por pixel — o usuário vê tudo na janela do browser.
+
+ipcMain.handle('browser-click-at', async (event, { x, y }) => {
+  const bw = getActiveTab()
+  if (!bw) return { error: 'No active browser tab' }
+  try {
+    bw.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1 })
+    bw.webContents.sendInputEvent({ type: 'mouseUp', x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1 })
+    await settle()
+    return { success: true, x, y }
+  } catch (e) { return { error: e.message } }
+})
+
+ipcMain.handle('browser-double-click-at', async (event, { x, y }) => {
+  const bw = getActiveTab()
+  if (!bw) return { error: 'No active browser tab' }
+  try {
+    bw.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 2 })
+    bw.webContents.sendInputEvent({ type: 'mouseUp', x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 2 })
+    await settle()
+    return { success: true, x, y }
+  } catch (e) { return { error: e.message } }
+})
+
+ipcMain.handle('browser-type-text', async (event, { text }) => {
+  const bw = getActiveTab()
+  if (!bw) return { error: 'No active browser tab' }
+  try {
+    for (const char of text) {
+      bw.webContents.sendInputEvent({ type: 'char', keyCode: char })
+    }
+    await settle(300)
+    return { success: true, typed: text.length }
+  } catch (e) { return { error: e.message } }
+})
+
+ipcMain.handle('browser-key-press', async (event, { key }) => {
+  const bw = getActiveTab()
+  if (!bw) return { error: 'No active browser tab' }
+  try {
+    // Map common key names to Electron keyCode format
+    const keyMap = {
+      'Enter': '\r', 'Tab': '\t', 'Escape': '\u001b', 'Backspace': '\b',
+      'ArrowUp': 'Up', 'ArrowDown': 'Down', 'ArrowLeft': 'Left', 'ArrowRight': 'Right',
+      'Space': ' ',
+    }
+    const mapped = keyMap[key] || key
+    bw.webContents.sendInputEvent({ type: 'keyDown', keyCode: mapped })
+    bw.webContents.sendInputEvent({ type: 'keyUp', keyCode: mapped })
+    await settle(200)
+    return { success: true, key }
+  } catch (e) { return { error: e.message } }
+})
+
+ipcMain.handle('browser-scroll', async (event, { x, y, deltaY }) => {
+  const bw = getActiveTab()
+  if (!bw) return { error: 'No active browser tab' }
+  try {
+    const cx = Math.round(x || BROWSER_CONFIG.VIEWPORT_WIDTH / 2)
+    const cy = Math.round(y || BROWSER_CONFIG.VIEWPORT_HEIGHT / 2)
+    bw.webContents.sendInputEvent({ type: 'mouseWheel', x: cx, y: cy, deltaX: 0, deltaY: Math.round(deltaY || -300) })
+    await settle(500)
+    return { success: true }
+  } catch (e) { return { error: e.message } }
+})
+
+ipcMain.handle('browser-screenshot-vision', async () => {
+  // Optimized screenshot for vision AI — returns base64 PNG + viewport dimensions
+  const bw = getActiveTab()
+  if (!bw) return { error: 'No active browser tab' }
+  try {
+    const image = await bw.webContents.capturePage()
+    const buf = image.toPNG()
+    const size = image.getSize()
+    return {
+      success: true,
+      base64: buf.toString('base64'),
+      width: size.width,
+      height: size.height,
+      url: bw.webContents.getURL(),
+      title: bw.webContents.getTitle(),
+    }
+  } catch (e) { return { error: e.message } }
 })
 
 // ─── IPC: MCP Client ────────────────────────────────────────────────────

@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white" alt="React" />
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white" alt="Vite" />
-  <img src="https://img.shields.io/badge/Playwright-green?logo=playwright&logoColor=white" alt="Playwright" />
+  <img src="https://img.shields.io/badge/Browser-Electron%20Native-47848F?logo=googlechrome&logoColor=white" alt="Browser" />
   <img src="https://img.shields.io/badge/MCP-compatible-purple" alt="MCP" />
   <img src="https://img.shields.io/badge/KaTeX-0.16-blue?logo=latex&logoColor=white" alt="KaTeX" />
 </p>
@@ -39,7 +39,7 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 | CLI is intimidating | Beautiful desktop GUI with dark/light themes |
 | Models are censored | Works with uncensored/abliterated models |
 | No agent capabilities | Agent Mode with unlimited autonomous steps |
-| Can't browse the web | Playwright browser automation built-in |
+| Can't browse the web | **Computer Use** — visible browser panel, vision-based click (like Claude/Manus) |
 | Single-threaded AI | Collaborative parallel agents |
 | Single perspective AI | Parliament Mode: 5 specialist agents debate in parallel |
 | Text-only interaction | Voice input (STT) and voice output (TTS) |
@@ -131,7 +131,7 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 - **Workflow Builder** — SVG drag-and-drop canvas with 5 node types (trigger, prompt, tool, condition, output), bezier edges, topological execution, inspector panel, and persistent storage
 - **ORION** — autonomous computer-control agent: capture screen loop, send vision AI analysis to any provider, execute PowerShell actions (mouse, click, type, key press, scroll, open app), supervised approval mode
 - **Task Planning** — decompose complex goals into tracked subtasks with visual progress
-- **21 built-in tools** — commands, files, web search, browser (8 tools), task planning, git, undo, parallel agents
+- **25+ built-in tools** — commands, files, web search, browser (8 DOM + 4 Computer-Use), task planning, git, undo, parallel agents
 - **Mandatory language setting** — forces all responses in Portuguese or English (4-layer enforcement)
 - **Self-Evolution Analytics** — silent performance tracking with insights dashboard
 - **Context Compaction** — smart summarization of old messages (never lose context)
@@ -350,6 +350,16 @@ Unlike competitors with hidden caps, OpenClaude runs until the job is done. A bu
 | `browser_get_links` | Extract all links from page (text + href, up to 100) |
 | `browser_get_forms` | Discover all form inputs with their CSS selectors |
 | `browser_screenshot` | Capture page as PNG (base64, for vision analysis) |
+
+### Computer Use (vision-based, like Claude/Manus/Perplexity)
+The agent **sees** the page (screenshot → vision AI) and acts by **pixel coordinates** — no CSS selectors needed. The browser window is visible alongside the app, so you watch the agent work in real time.
+
+| Tool | Description |
+|------|-------------|
+| `browser_click_at` | Click at pixel `(x, y)` — `webContents.sendInputEvent()` |
+| `browser_type_text` | Type text at current cursor (char-by-char, like a human) |
+| `browser_key_press` | Press Enter / Tab / Escape / arrows / etc. |
+| `browser_scroll` | Wheel scroll by `deltaY` at optional `(x, y)` |
 
 ### Agent Tools
 | Tool | What it does |

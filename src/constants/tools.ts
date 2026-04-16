@@ -236,8 +236,67 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'browser_screenshot',
-      description: 'Capture a screenshot of the current browser page. Returns base64-encoded PNG. Useful for visual verification or sending to a vision model for analysis.',
+      description: 'Capture a screenshot of the current browser page. Returns base64-encoded PNG with viewport dimensions. Use this to see what the page looks like before deciding what to click. The screenshot shows the page exactly as the user sees it in the browser window.',
       parameters: { type: 'object', properties: {} }
+    }
+  },
+  // ─── Computer Use Tools (vision-based, like Claude/Manus) ──────
+  {
+    type: 'function',
+    function: {
+      name: 'browser_click_at',
+      description: 'Click at specific pixel coordinates (x, y) in the browser viewport. Use after taking a screenshot and identifying where to click. Coordinates are relative to the top-left of the page viewport.',
+      parameters: {
+        type: 'object',
+        properties: {
+          x: { type: 'number', description: 'X coordinate (pixels from left edge)' },
+          y: { type: 'number', description: 'Y coordinate (pixels from top edge)' }
+        },
+        required: ['x', 'y']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_type_text',
+      description: 'Type text at the current cursor position in the browser. Use after clicking on an input field with browser_click_at. Types character by character like a real user.',
+      parameters: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'Text to type' }
+        },
+        required: ['text']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_key_press',
+      description: 'Press a keyboard key in the browser. Use for Enter, Tab, Escape, Backspace, arrow keys, etc.',
+      parameters: {
+        type: 'object',
+        properties: {
+          key: { type: 'string', description: 'Key to press: Enter, Tab, Escape, Backspace, Space, ArrowUp, ArrowDown, ArrowLeft, ArrowRight' }
+        },
+        required: ['key']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_scroll',
+      description: 'Scroll the browser page. Negative deltaY scrolls down (most common), positive scrolls up.',
+      parameters: {
+        type: 'object',
+        properties: {
+          deltaY: { type: 'number', description: 'Scroll amount in pixels. -300 = scroll down one "page", 300 = scroll up. Default: -300' },
+          x: { type: 'number', description: 'Optional X position to scroll at (default: center)' },
+          y: { type: 'number', description: 'Optional Y position to scroll at (default: center)' }
+        }
+      }
     }
   },
   {
@@ -303,5 +362,7 @@ export const SAFE_TOOLS = new Set([
 
 export const DANGEROUS_TOOLS = new Set([
   'execute_command', 'write_file', 'open_file_or_url', 'git_command',
-  'browser_navigate', 'browser_click', 'browser_type', 'delegate_subtasks'
+  'browser_navigate', 'browser_click', 'browser_type', 'delegate_subtasks',
+  // Computer Use — vision-based coordinate interaction
+  'browser_click_at', 'browser_type_text', 'browser_key_press', 'browser_scroll',
 ])

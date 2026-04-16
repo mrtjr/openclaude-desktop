@@ -55,6 +55,14 @@ interface Window {
     browserClose: (tabId?: string) => Promise<{ success?: boolean; error?: string }>
     browserTabs: () => Promise<{ tabs: Array<{ id: string; active: boolean; url: string; title: string }>; activeTabId: string }>
     browserSwitchTab: (tabId: string) => Promise<{ success?: boolean; tabId?: string; error?: string }>
+    // Computer Use (vision-based coordinate interaction — like Claude/Manus)
+    browserClickAt: (params: { x: number; y: number }) => Promise<{ success?: boolean; x?: number; y?: number; error?: string }>
+    browserDoubleClickAt: (params: { x: number; y: number }) => Promise<{ success?: boolean; x?: number; y?: number; error?: string }>
+    browserTypeText: (params: { text: string; pressEnter?: boolean }) => Promise<{ success?: boolean; error?: string }>
+    browserKeyPress: (params: { key: string; modifiers?: string[] }) => Promise<{ success?: boolean; error?: string }>
+    browserScroll: (params: { deltaY?: number; deltaX?: number; x?: number; y?: number }) => Promise<{ success?: boolean; error?: string }>
+    browserScreenshotVision: () => Promise<{ success?: boolean; base64?: string; width?: number; height?: number; size?: number; error?: string }>
+    onBrowserPageLoaded: (callback: (data: { tabId: string; url: string; title: string }) => void) => () => void
     // MCP client
     mcpConnect: (params: any) => Promise<any>
     mcpCallTool: (params: any) => Promise<any>
