@@ -131,7 +131,7 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 - **Workflow Builder** — SVG drag-and-drop canvas with 5 node types (trigger, prompt, tool, condition, output), bezier edges, topological execution, inspector panel, and persistent storage
 - **ORION** — autonomous computer-control agent: capture screen loop, send vision AI analysis to any provider, execute PowerShell actions (mouse, click, type, key press, scroll, open app), supervised approval mode
 - **Task Planning** — decompose complex goals into tracked subtasks with visual progress
-- **17 built-in tools** — commands, files, web search, browser, task planning, git, undo, parallel agents
+- **21 built-in tools** — commands, files, web search, browser (8 tools), task planning, git, undo, parallel agents
 - **Mandatory language setting** — forces all responses in Portuguese or English (4-layer enforcement)
 - **Self-Evolution Analytics** — silent performance tracking with insights dashboard
 - **Context Compaction** — smart summarization of old messages (never lose context)
@@ -140,13 +140,18 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 - **Git Awareness** — native git tool (status, diff, log, commit) sandboxed for safety
 - **Audit Log** — every tool execution logged with input, output, duration, and status
 
-### Browser Automation (Playwright)
-- **Navigate** to any URL with full Chromium browser
-- **Extract text** from web pages automatically
-- **Click elements** and **fill forms** by CSS selector
-- **Screenshot** pages for visual analysis
-- **JavaScript evaluation** for advanced scraping
-- The agent can autonomously browse, scrape, and interact with websites
+### Browser Automation (Electron Native)
+- **Zero external dependencies** — uses Electron's built-in Chromium via `BrowserWindow`, no Playwright/Puppeteer needed. Works in the packaged `.exe` installer
+- **Navigate** to any URL with full Chromium rendering (SPAs, JS-rendered content)
+- **Smart text extraction** — auto-detects `<article>`, `<main>`, or falls back to `<body>`; optional CSS selector targeting
+- **Click elements** and **fill forms** by CSS selector with auto-scroll into view
+- **Wait for elements** — `browser_wait` uses `MutationObserver` for efficient DOM watching
+- **Discover forms** — `browser_get_forms` returns all inputs/selects/buttons with their CSS selectors
+- **Extract all links** — `browser_get_links` maps site structure (up to 100 links per page)
+- **Screenshot** pages via native `capturePage()` for visual analysis with vision models
+- **Multi-tab** — up to 5 concurrent browser tabs with auto-eviction of oldest
+- **Security** — sandboxed `BrowserWindow` with `contextIsolation`, `nodeIntegration: false`, popup blocking, realistic User-Agent
+- The agent can autonomously browse, scrape, fill forms, and interact with websites
 
 ### MCP Client (Model Context Protocol)
 - Connect to any **MCP-compatible server** from the Claude ecosystem
@@ -227,7 +232,6 @@ git clone https://github.com/mrtjr/openclaude-desktop
 cd openclaude-desktop
 npm install
 npm install pdf-parse mammoth          # document parsing
-npx playwright install chromium        # browser automation
 npm run dev
 ```
 
@@ -335,13 +339,17 @@ Unlike competitors with hidden caps, OpenClaude runs until the job is done. A bu
 | `web_search` | Search the web via DuckDuckGo |
 | `read_document` | Parse PDF, DOCX, DOC, TXT, MD, CSV via IPC (20 MB limit) |
 
-### Browser Tools (Playwright)
+### Browser Tools (Electron Native)
 | Tool | What it does |
 |------|-------------|
-| `browser_navigate` | Open URL in Chromium, return page content |
-| `browser_get_text` | Extract text from current page |
-| `browser_click` | Click element by CSS selector |
-| `browser_type` | Type into input field by CSS selector |
+| `browser_navigate` | Open URL in built-in Chromium, return title + text content |
+| `browser_get_text` | Extract text (smart: article/main/body, or by CSS selector) |
+| `browser_click` | Click element by CSS selector (auto-scroll into view) |
+| `browser_type` | Type into input field by selector (optional Enter key) |
+| `browser_wait` | Wait for element to appear (MutationObserver, configurable timeout) |
+| `browser_get_links` | Extract all links from page (text + href, up to 100) |
+| `browser_get_forms` | Discover all form inputs with their CSS selectors |
+| `browser_screenshot` | Capture page as PNG (base64, for vision analysis) |
 
 ### Agent Tools
 | Tool | What it does |
@@ -410,7 +418,7 @@ This is essential for local models (7B-14B) that tend to ignore system prompt in
 | UI framework | React 19 + TypeScript |
 | Bundler | Vite 8 |
 | AI backend | Ollama API (OpenAI-compatible) |
-| Browser automation | Playwright (Chromium) |
+| Browser automation | Electron BrowserWindow (native Chromium) |
 | MCP protocol | JSON-RPC 2.0 over stdio |
 | Voice | Web Speech API (STT + TTS) |
 | Markdown | marked + highlight.js |
@@ -475,7 +483,7 @@ openclaude-desktop/
 | Local models | Yes | No | No | No |
 | Cloud providers | 4 providers | OpenAI only | Anthropic only | Multiple |
 | Agent mode | Unlimited steps | Yes | Yes | Yes |
-| Browser automation | Playwright | No | No | Yes |
+| Browser automation | Electron native (no deps) | No | No | Yes |
 | Parallel agents | Yes | No | No | Yes |
 | Voice I/O | Yes | Yes | No | No |
 | MCP compatible | Yes | No | Yes | No |

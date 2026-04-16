@@ -12,6 +12,7 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - **Scheduled Tasks** — agendamento de prompts automáticos com 3 modos (intervalo, diário, semanal). Scheduler polling 30s, startup delay 2s, floor de 1min no intervalo. Integração com Agent Profiles para perfil por tarefa.
 - Ambas features acessíveis via Command Palette (`Ctrl+K`) e registradas no Feature Registry.
 - Status pill na input bar mostra perfil ativo.
+- **Browser nativo (Electron BrowserWindow)** — substitui Playwright (que não empacotava no .exe). Zero dependência externa, multi-tab (5), `browser_wait`, `browser_get_links`, `browser_get_forms`, `browser_screenshot` via `capturePage`, sandbox + contextIsolation.
 - `CONTRIBUTING.md`, `SECURITY.md` — documentação de contribuição e política de segurança.
 - `.pre-commit-config.yaml` + baseline `detect-secrets` — previne commit acidental de API keys.
 - Setup Vitest com testes unitários para `useModalKeyPool`, sanitizers e cooldown do pool.
