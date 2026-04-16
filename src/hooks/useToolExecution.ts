@@ -80,32 +80,59 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         return `Task "${args.task_id}" updated to ${args.status}${args.result ? ': ' + args.result : ''}`
       }
       if (name === 'browser_navigate') {
-        // Try navigating first; if it fails, launch browser then retry
+        // Auto-launch browser if not yet started, then navigate
         try {
           const nav = await window.electron.browserNavigate(args.url)
-          if (nav.error) throw new Error(nav.error)
-          const text = await window.electron.browserGetText()
-          return `Navigated to: ${nav.title} (${nav.url})\n\nPage content:\n${text.text || '(empty)'}`
-        } catch {
-          const launch = await window.electron.browserLaunch()
-          if (launch.error) return `Browser launch error: ${launch.error}`
-          const nav = await window.electron.browserNavigate(args.url)
-          if (nav.error) return `Navigation error: ${nav.error}`
-          const text = await window.electron.browserGetText()
-          return `Navigated to: ${nav.title} (${nav.url})\n\nPage content:\n${text.text || '(empty)'}`
+          if (nav.error) {
+            // Browser not launched yet — launch and retry
+            const launch = await window.electron.browserLaunch()
+            if (launch.error) return `Browser launch error: ${launch.error}`
+            const retry = await window.electron.browserNavigate(args.url)
+            if (retry.error) return `Navigation error: ${retry.error}`
+            return `Navigated to: ${retry.title}\nURL: ${retry.url}\n\nPage content:\n${retry.text || '(empty)'}`
+          }
+          return `Navigated to: ${nav.title}\nURL: ${nav.url}\n\nPage content:\n${nav.text || '(empty)'}`
+        } catch (e: any) {
+          return `Browser error: ${e.message}`
         }
       }
       if (name === 'browser_get_text') {
-        const result = await window.electron.browserGetText()
+        const result = await window.electron.browserGetText(args.selector ? { selector: args.selector } : {})
         return result.text || result.error || '(empty page)'
       }
       if (name === 'browser_click') {
         const result = await window.electron.browserClick(args.selector)
-        return result.success ? `Clicked: ${args.selector}` : `Click error: ${result.error}`
+        if (result.error) return `Click error: ${result.error}`
+        return `Clicked: ${args.selector}${result.text ? ` (${result.text})` : ''}`
       }
       if (name === 'browser_type') {
-        const result = await window.electron.browserType({ selector: args.selector, text: args.text })
-        return result.success ? `Typed in: ${args.selector}` : `Type error: ${result.error}`
+        const result = await window.electron.browserType({
+          selector: args.selector,
+          text: args.text,
+          pressEnter: args.pressEnter,
+        })
+        return result.success ? `Typed "${args.text}" in: ${args.selector}${args.pressEnter ? ' + Enter' : ''}` : `Type error: ${result.error}`
+      }
+      if (name === 'browser_wait') {
+        const result = await window.electron.browserWait({ selector: args.selector, timeout: args.timeout })
+        return result.found ? `Element found: ${args.selector}` : `Element not found within timeout: ${args.selector}`
+      }
+      if (name === 'browser_get_links') {
+        const result = await window.electron.browserGetLinks()
+        if (result.error) return `Error: ${result.error}`
+        if (!result.links?.length) return 'No links found on page.'
+        return `Found ${result.links.length} links:\n${result.links.map((l: any) => `- [${l.text || '(no text)'}](${l.href})`).join('\n')}`
+      }
+      if (name === 'browser_get_forms') {
+        const result = await window.electron.browserGetForms()
+        if (result.error) return `Error: ${result.error}`
+        if (!result.forms?.length) return 'No form elements found on page.'
+        return `Found ${result.forms.length} form elements:\n${result.forms.map((f: any) => `- <${f.tag}> type="${f.type}" name="${f.name}" placeholder="${f.placeholder}" → selector: "${f.selector}"`).join('\n')}`
+      }
+      if (name === 'browser_screenshot') {
+        const result = await window.electron.browserScreenshot()
+        if (result.error) return `Screenshot error: ${result.error}`
+        return `Screenshot captured (${Math.round((result.size || 0) / 1024)}KB PNG). Base64 available for vision analysis.`
       }
       if (name === 'delegate_subtasks') {
         const lang = settings.language || 'pt'

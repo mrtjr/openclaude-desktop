@@ -41,15 +41,20 @@ interface Window {
     // MCP Settings
     saveMcpServers: (servers: { name: string; command: string }[]) => Promise<{ error: string | null }>
     loadMcpServers: () => Promise<{ servers: { name: string; command: string }[] }>
-    // Browser automation
-    browserLaunch: () => Promise<any>
-    browserNavigate: (url: string) => Promise<any>
-    browserScreenshot: () => Promise<any>
-    browserGetText: () => Promise<any>
-    browserClick: (selector: string) => Promise<any>
-    browserType: (params: { selector: string; text: string }) => Promise<any>
-    browserEvaluate: (code: string) => Promise<any>
-    browserClose: () => Promise<any>
+    // Browser automation (Electron BrowserWindow nativo)
+    browserLaunch: (opts?: { visible?: boolean }) => Promise<{ success?: boolean; tabId?: string; error?: string }>
+    browserNavigate: (url: string) => Promise<{ success?: boolean; url?: string; title?: string; text?: string; error?: string }>
+    browserScreenshot: () => Promise<{ success?: boolean; base64?: string; size?: number; error?: string }>
+    browserGetText: (opts?: { selector?: string; maxLength?: number }) => Promise<{ success?: boolean; text?: string; error?: string }>
+    browserClick: (selector: string) => Promise<{ success?: boolean; tag?: string; text?: string; error?: string }>
+    browserType: (params: { selector: string; text: string; pressEnter?: boolean }) => Promise<{ success?: boolean; error?: string }>
+    browserEvaluate: (code: string) => Promise<{ success?: boolean; result?: string; error?: string }>
+    browserWait: (params: { selector: string; timeout?: number }) => Promise<{ success?: boolean; found?: boolean; error?: string }>
+    browserGetLinks: () => Promise<{ success?: boolean; links?: Array<{ text: string; href: string }>; error?: string }>
+    browserGetForms: () => Promise<{ success?: boolean; forms?: Array<{ tag: string; type: string; name: string; placeholder: string; selector: string; value: string }>; error?: string }>
+    browserClose: (tabId?: string) => Promise<{ success?: boolean; error?: string }>
+    browserTabs: () => Promise<{ tabs: Array<{ id: string; active: boolean; url: string; title: string }>; activeTabId: string }>
+    browserSwitchTab: (tabId: string) => Promise<{ success?: boolean; tabId?: string; error?: string }>
     // MCP client
     mcpConnect: (params: any) => Promise<any>
     mcpCallTool: (params: any) => Promise<any>

@@ -71,15 +71,20 @@ contextBridge.exposeInMainWorld('electron', {
   providerChatStream: (params) => ipcRenderer.invoke('provider-chat-stream', params),
   listProviderModels: (params) => ipcRenderer.invoke('list-provider-models', params),
 
-  // Browser automation
-  browserLaunch: () => ipcRenderer.invoke('browser-launch'),
+  // Browser automation (Electron BrowserWindow nativo)
+  browserLaunch: (opts) => ipcRenderer.invoke('browser-launch', opts || {}),
   browserNavigate: (url) => ipcRenderer.invoke('browser-navigate', url),
   browserScreenshot: () => ipcRenderer.invoke('browser-screenshot'),
-  browserGetText: () => ipcRenderer.invoke('browser-get-text'),
+  browserGetText: (opts) => ipcRenderer.invoke('browser-get-text', opts || {}),
   browserClick: (selector) => ipcRenderer.invoke('browser-click', selector),
   browserType: (params) => ipcRenderer.invoke('browser-type', params),
   browserEvaluate: (code) => ipcRenderer.invoke('browser-evaluate', code),
-  browserClose: () => ipcRenderer.invoke('browser-close'),
+  browserWait: (params) => ipcRenderer.invoke('browser-wait', params),
+  browserGetLinks: () => ipcRenderer.invoke('browser-get-links'),
+  browserGetForms: () => ipcRenderer.invoke('browser-get-forms'),
+  browserClose: (tabId) => ipcRenderer.invoke('browser-close', tabId),
+  browserTabs: () => ipcRenderer.invoke('browser-tabs'),
+  browserSwitchTab: (tabId) => ipcRenderer.invoke('browser-switch-tab', tabId),
 
   // MCP client
   mcpConnect: (params) => ipcRenderer.invoke('mcp-connect', params),

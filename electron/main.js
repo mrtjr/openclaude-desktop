@@ -1089,75 +1089,258 @@ ipcMain.handle('list-provider-models', async (event, { provider, apiKey, modalHo
   })
 })
 
-// ─── IPC: Browser Automation (Playwright) ───────────────────────────────
-let browser = null
-let browserPage = null
+// ─── IPC: Browser Automation (Electron BrowserWindow nativo) ──────────
+// Usa o Chromium embutido do Electron — zero dependência externa.
+// Cada "tab" é um BrowserWindow off-screen (ou visível se o agente pedir).
 
-ipcMain.handle('browser-launch', async () => {
+const BROWSER_CONFIG = {
+  MAX_TABS: 5,
+  NAV_TIMEOUT: 30_000,
+  SCRIPT_TIMEOUT: 10_000,
+  MAX_TEXT_LENGTH: 15_000,
+  USER_AGENT: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+}
+
+/** @type {Map<string, Electron.BrowserWindow>} */
+const browserTabs = new Map()
+let activeTabId = 'main'
+
+function getOrCreateTab(tabId = 'main', visible = false) {
+  if (browserTabs.has(tabId)) return browserTabs.get(tabId)
+  if (browserTabs.size >= BROWSER_CONFIG.MAX_TABS) {
+    // Close oldest tab to make room
+    const oldest = browserTabs.keys().next().value
+    const oldWin = browserTabs.get(oldest)
+    if (oldWin && !oldWin.isDestroyed()) oldWin.close()
+    browserTabs.delete(oldest)
+  }
+  const bw = new BrowserWindow({
+    width: 1280,
+    height: 900,
+    show: visible,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: true,
+    },
+  })
+  bw.webContents.setUserAgent(BROWSER_CONFIG.USER_AGENT)
+  // Block popups/new windows
+  bw.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  bw.on('closed', () => browserTabs.delete(tabId))
+  browserTabs.set(tabId, bw)
+  return bw
+}
+
+function getActiveTab() {
+  const bw = browserTabs.get(activeTabId)
+  if (bw && !bw.isDestroyed()) return bw
+  return null
+}
+
+ipcMain.handle('browser-launch', async (event, opts) => {
+  const { visible } = opts || {}
   try {
-    const { chromium } = require('playwright')
-    browser = await chromium.launch({ headless: false })
-    const context = await browser.newContext()
-    browserPage = await context.newPage()
-    return { success: true }
+    const bw = getOrCreateTab('main', visible ?? false)
+    activeTabId = 'main'
+    return { success: true, tabId: 'main' }
+  } catch (e) {
+    return { error: `Browser launch error: ${e.message}` }
+  }
+})
+
+ipcMain.handle('browser-navigate', async (event, url) => {
+  try {
+    const bw = getOrCreateTab(activeTabId, false)
+    activeTabId = activeTabId || 'main'
+
+    // Normalize URL
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'https://' + url
+    }
+
+    // loadURL returns a Promise that resolves when the page finishes loading.
+    // Wrap with timeout to prevent hanging on slow pages.
+    await Promise.race([
+      bw.loadURL(url),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Navigation timeout')), BROWSER_CONFIG.NAV_TIMEOUT)
+      ),
+    ])
+
+    const title = bw.webContents.getTitle()
+    const finalUrl = bw.webContents.getURL()
+
+    // Auto-extract text (truncated)
+    const text = await bw.webContents.executeJavaScript(`
+      (() => {
+        const sel = document.querySelector('article') || document.querySelector('main') || document.body;
+        return sel ? sel.innerText.substring(0, ${BROWSER_CONFIG.MAX_TEXT_LENGTH}) : '';
+      })()
+    `)
+
+    return { success: true, url: finalUrl, title, text }
   } catch (e) {
     return { error: e.message }
   }
 })
 
-ipcMain.handle('browser-navigate', async (event, url) => {
-  if (!browserPage) return { error: 'Browser not launched' }
-  try {
-    await browserPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
-    return { success: true, url: browserPage.url(), title: await browserPage.title() }
-  } catch (e) { return { error: e.message } }
-})
-
 ipcMain.handle('browser-screenshot', async () => {
-  if (!browserPage) return { error: 'Browser not launched' }
+  const bw = getActiveTab()
+  if (!bw) return { error: 'No active browser tab' }
   try {
-    const buf = await browserPage.screenshot({ type: 'png' })
-    return { success: true, base64: buf.toString('base64') }
+    const image = await bw.webContents.capturePage()
+    const buf = image.toPNG()
+    return { success: true, base64: buf.toString('base64'), size: buf.length }
   } catch (e) { return { error: e.message } }
 })
 
-ipcMain.handle('browser-get-text', async () => {
-  if (!browserPage) return { error: 'Browser not launched' }
+ipcMain.handle('browser-get-text', async (event, { selector, maxLength } = {}) => {
+  const bw = getActiveTab()
+  if (!bw) return { error: 'No active browser tab' }
   try {
-    const text = await browserPage.evaluate(() => document.body.innerText)
-    return { success: true, text: text.substring(0, 8000) }
+    const max = maxLength || BROWSER_CONFIG.MAX_TEXT_LENGTH
+    const code = selector
+      ? `(() => { const el = document.querySelector(${JSON.stringify(selector)}); return el ? el.innerText.substring(0, ${max}) : '(element not found: ${selector})'; })()`
+      : `(() => { const sel = document.querySelector('article') || document.querySelector('main') || document.body; return sel ? sel.innerText.substring(0, ${max}) : ''; })()`
+    const text = await bw.webContents.executeJavaScript(code)
+    return { success: true, text }
   } catch (e) { return { error: e.message } }
 })
 
 ipcMain.handle('browser-click', async (event, selector) => {
-  if (!browserPage) return { error: 'Browser not launched' }
+  const bw = getActiveTab()
+  if (!bw) return { error: 'No active browser tab' }
   try {
-    await browserPage.click(selector, { timeout: 5000 })
-    return { success: true }
+    const result = await bw.webContents.executeJavaScript(`
+      (() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return { error: 'Element not found: ${selector.replace(/'/g, "\\'")}' };
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.click();
+        return { success: true, tag: el.tagName, text: el.innerText?.substring(0, 100) };
+      })()
+    `)
+    return result
   } catch (e) { return { error: e.message } }
 })
 
-ipcMain.handle('browser-type', async (event, { selector, text }) => {
-  if (!browserPage) return { error: 'Browser not launched' }
+ipcMain.handle('browser-type', async (event, { selector, text, pressEnter }) => {
+  const bw = getActiveTab()
+  if (!bw) return { error: 'No active browser tab' }
   try {
-    await browserPage.fill(selector, text, { timeout: 5000 })
-    return { success: true }
+    const result = await bw.webContents.executeJavaScript(`
+      (() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return { error: 'Element not found: ${selector.replace(/'/g, "\\'")}' };
+        el.focus();
+        el.value = ${JSON.stringify(text)};
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        ${pressEnter ? `el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));` : ''}
+        return { success: true };
+      })()
+    `)
+    return result
   } catch (e) { return { error: e.message } }
 })
 
 ipcMain.handle('browser-evaluate', async (event, code) => {
-  if (!browserPage) return { error: 'Browser not launched' }
+  const bw = getActiveTab()
+  if (!bw) return { error: 'No active browser tab' }
   try {
-    const result = await browserPage.evaluate(code)
-    return { success: true, result: JSON.stringify(result).substring(0, 5000) }
+    const result = await bw.webContents.executeJavaScript(code)
+    return { success: true, result: JSON.stringify(result).substring(0, 8000) }
   } catch (e) { return { error: e.message } }
 })
 
-ipcMain.handle('browser-close', async () => {
+ipcMain.handle('browser-wait', async (event, { selector, timeout }) => {
+  const bw = getActiveTab()
+  if (!bw) return { error: 'No active browser tab' }
+  const ms = Math.min(timeout || 5000, BROWSER_CONFIG.SCRIPT_TIMEOUT)
   try {
-    if (browser) { await browser.close(); browser = null; browserPage = null }
+    const result = await bw.webContents.executeJavaScript(`
+      new Promise((resolve) => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (el) return resolve({ success: true, found: true });
+        const observer = new MutationObserver(() => {
+          const el = document.querySelector(${JSON.stringify(selector)});
+          if (el) { observer.disconnect(); resolve({ success: true, found: true }); }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        setTimeout(() => { observer.disconnect(); resolve({ success: false, found: false }); }, ${ms});
+      })
+    `)
+    return result
+  } catch (e) { return { error: e.message } }
+})
+
+ipcMain.handle('browser-get-links', async () => {
+  const bw = getActiveTab()
+  if (!bw) return { error: 'No active browser tab' }
+  try {
+    const links = await bw.webContents.executeJavaScript(`
+      Array.from(document.querySelectorAll('a[href]')).slice(0, 100).map(a => ({
+        text: (a.innerText || a.title || '').trim().substring(0, 80),
+        href: a.href,
+      })).filter(l => l.href.startsWith('http'))
+    `)
+    return { success: true, links }
+  } catch (e) { return { error: e.message } }
+})
+
+ipcMain.handle('browser-get-forms', async () => {
+  const bw = getActiveTab()
+  if (!bw) return { error: 'No active browser tab' }
+  try {
+    const forms = await bw.webContents.executeJavaScript(`
+      Array.from(document.querySelectorAll('input, textarea, select, button[type="submit"]')).slice(0, 50).map(el => ({
+        tag: el.tagName.toLowerCase(),
+        type: el.type || '',
+        name: el.name || el.id || '',
+        placeholder: el.placeholder || '',
+        selector: el.id ? '#' + el.id : el.name ? '[name="' + el.name + '"]' : '',
+        value: el.value?.substring(0, 50) || '',
+      })).filter(f => f.selector)
+    `)
+    return { success: true, forms }
+  } catch (e) { return { error: e.message } }
+})
+
+ipcMain.handle('browser-close', async (event, tabId) => {
+  try {
+    const id = tabId || activeTabId
+    const bw = browserTabs.get(id)
+    if (bw && !bw.isDestroyed()) bw.close()
+    browserTabs.delete(id)
+    if (activeTabId === id) {
+      activeTabId = browserTabs.keys().next().value || 'main'
+    }
     return { success: true }
   } catch (e) { return { error: e.message } }
+})
+
+ipcMain.handle('browser-tabs', async () => {
+  const tabs = []
+  for (const [id, bw] of browserTabs) {
+    if (bw.isDestroyed()) continue
+    tabs.push({
+      id,
+      active: id === activeTabId,
+      url: bw.webContents.getURL(),
+      title: bw.webContents.getTitle(),
+    })
+  }
+  return { tabs, activeTabId }
+})
+
+ipcMain.handle('browser-switch-tab', async (event, tabId) => {
+  if (browserTabs.has(tabId)) {
+    activeTabId = tabId
+    return { success: true, tabId }
+  }
+  return { error: `Tab not found: ${tabId}` }
 })
 
 // ─── IPC: MCP Client ────────────────────────────────────────────────────
@@ -2103,4 +2286,9 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   app.isQuitting = true
+  // Close all browser automation tabs
+  for (const [id, bw] of browserTabs) {
+    if (!bw.isDestroyed()) bw.close()
+  }
+  browserTabs.clear()
 })

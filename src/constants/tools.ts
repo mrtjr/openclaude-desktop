@@ -148,11 +148,11 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'browser_navigate',
-      description: 'Open a browser and navigate to a URL. Returns page title and text content.',
+      description: 'Navigate to a URL in the built-in browser. Returns page title, final URL, and extracted text content. The browser uses Electron\'s native Chromium — no external dependencies needed. Handles SPAs and JavaScript-rendered pages.',
       parameters: {
         type: 'object',
         properties: {
-          url: { type: 'string', description: 'URL to navigate to' }
+          url: { type: 'string', description: 'URL to navigate to (https:// prefix added if missing)' }
         },
         required: ['url']
       }
@@ -162,19 +162,24 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'browser_get_text',
-      description: 'Get the text content of the current browser page.',
-      parameters: { type: 'object', properties: {} }
+      description: 'Get the text content of the current browser page. Optionally extract from a specific CSS selector. Smart extraction: tries <article> or <main> first, falls back to <body>.',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'Optional CSS selector to extract text from (e.g. "article", ".content", "#main")' }
+        }
+      }
     }
   },
   {
     type: 'function',
     function: {
       name: 'browser_click',
-      description: 'Click an element on the page by CSS selector.',
+      description: 'Click an element on the page by CSS selector. Auto-scrolls the element into view before clicking.',
       parameters: {
         type: 'object',
         properties: {
-          selector: { type: 'string', description: 'CSS selector of the element to click' }
+          selector: { type: 'string', description: 'CSS selector of the element to click (e.g. "button.submit", "#login-btn", "a[href=\'/about\']")' }
         },
         required: ['selector']
       }
@@ -184,15 +189,55 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'browser_type',
-      description: 'Type text into an input field by CSS selector.',
+      description: 'Type text into an input field by CSS selector. Triggers input and change events. Optionally press Enter after typing.',
       parameters: {
         type: 'object',
         properties: {
-          selector: { type: 'string', description: 'CSS selector of the input' },
-          text: { type: 'string', description: 'Text to type' }
+          selector: { type: 'string', description: 'CSS selector of the input (e.g. "#search", "input[name=q]")' },
+          text: { type: 'string', description: 'Text to type' },
+          pressEnter: { type: 'boolean', description: 'If true, press Enter after typing (useful for search forms)' }
         },
         required: ['selector', 'text']
       }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_wait',
+      description: 'Wait for a CSS selector to appear on the page. Uses MutationObserver for efficient DOM watching. Returns when element is found or timeout expires.',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector to wait for' },
+          timeout: { type: 'number', description: 'Max wait time in ms (default 5000, max 10000)' }
+        },
+        required: ['selector']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_get_links',
+      description: 'Extract all links (href + text) from the current page. Returns up to 100 links. Useful for mapping a site structure or finding specific pages.',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_get_forms',
+      description: 'Discover all form inputs, textareas, selects, and submit buttons on the page. Returns tag, type, name, placeholder, and CSS selector for each. Use this before browser_type to find the correct selectors.',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_screenshot',
+      description: 'Capture a screenshot of the current browser page. Returns base64-encoded PNG. Useful for visual verification or sending to a vision model for analysis.',
+      parameters: { type: 'object', properties: {} }
     }
   },
   {
@@ -252,6 +297,7 @@ export const IDLE_STEP_THRESHOLD = 5
 // Permission sets
 export const SAFE_TOOLS = new Set([
   'read_file', 'list_directory', 'web_search', 'browser_get_text',
+  'browser_get_links', 'browser_get_forms', 'browser_screenshot', 'browser_wait',
   'update_working_memory', 'plan_tasks', 'update_task_status', 'undo_last_write'
 ])
 
