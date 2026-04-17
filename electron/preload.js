@@ -172,4 +172,7 @@ contextBridge.exposeInMainWorld('electron', {
   // ORION: Computer Control
   orionCapture: () => ipcRenderer.invoke('orion-capture'),
   orionRunAction: (params) => ipcRenderer.invoke('orion-run-action', params),
+
+  // OAuth (Supabase Google PKCE loopback)
+  oauthGoogleStart: (params) => ipcRenderer.invoke('oauth-google-start', params),
 })

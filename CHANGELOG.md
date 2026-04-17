@@ -7,6 +7,70 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.7.0] — 2026-04-17
+
+### Added — Sprint 4: Accounts & Cloud Sync (zero-knowledge E2EE)
+
+Primeira versão do sistema de contas + sincronização na nuvem, **opcional** e
+**end-to-end-encrypted**. Sem conta, OpenClaude continua funcionando 100%
+offline como sempre.
+
+- **Supabase Auth** (email + password e Google OAuth via loopback PKCE).
+  - `src/services/supabase.ts` — client factory com graceful degradation. Se
+    `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` não forem setados no build,
+    toda a feature desaparece da UI.
+  - `src/services/auth.ts` — wrapper fino sobre `@supabase/supabase-js`
+    (signUp, signIn, signOut, password reset, onAuthStateChange).
+  - `electron/oauth-loopback.js` — servidor HTTP efêmero em
+    `127.0.0.1:<porta>` implementando **RFC 8252** (OAuth 2.0 for Native
+    Apps). Sem custom scheme, sem webview embarcado. Fluxo PKCE completo
+    (S256 challenge) com validação de `state` contra CSRF.
+- **E2EE de chaves de API** — obrigatória para sincronizar `apiKeys`.
+  - `src/services/crypto.ts` — WebCrypto API puro (zero native deps).
+    PBKDF2-SHA256 **600 000 iterações** (OWASP 2023) → AES-256-GCM com IV de
+    12 bytes gerado por blob. Salt de 16 bytes por blob permite rotação de
+    passphrase.
+  - Canary blob: conteúdo conhecido encriptado com a mesma passphrase para
+    validar o desbloqueio antes de tentar decriptar dados reais.
+  - Passphrase vive **só em memória** — nunca no disco. Perdeu? Não há
+    recuperação (essa é a garantia zero-knowledge).
+- **`useAuth` / `useSync`** — hooks que isolam ciclo de vida da sessão,
+  debounce de push automático, pull automático no sign-in, e estado
+  `idle | syncing | error | offline | conflict`.
+- **`sync_items` table + RLS** — schema genérico `(user_id, kind, payload)`
+  com `kind in ('settings','profiles','personas','scheduledTasks','apiKeys','canary')`.
+  Row-Level Security garante que cada usuário só lê/escreve suas próprias
+  rows. Veja `supabase/migrations/001_initial.sql`.
+- **AccountPanel** (`src/AccountPanel.tsx`) — botão de avatar na titlebar
+  abre modal com 3 views:
+  - **Auth** — tabs Entrar / Criar conta + "Continuar com Google".
+  - **Passphrase** — tabs "Desbloquear existente" / "Criar nova" com
+    indicador de força (weak/medium/strong) e confirmação.
+  - **Dashboard** — email, meta de provedor, toggles por categoria
+    (Settings, Keys E2EE, Profiles, Scheduled, Personas), botões Push/Pull
+    manuais, status de sincronização, botão "Bloquear (esquecer
+    passphrase)".
+- **Preferências por categoria** persistidas em `localStorage`
+  (`openclaude-sync-prefs`). `conversations` e `agentMemory` ficam **off by
+  default** (volume + privacidade).
+- **`docs/ACCOUNTS.md`** — guia completo para quem quer rodar o próprio
+  backend: criar projeto Supabase, rodar a migration, configurar Google
+  OAuth, buildar com credenciais. Inclui threat model explícito (o que
+  protege, o que não protege).
+
+### Tests
+
+- `test/crypto.test.ts` — 6 testes cobrindo round-trip, passphrase errada
+  (GCM auth failure), IV/salt únicos por encrypt, canary verify, rejeição
+  de versão desconhecida, e `passphraseStrength`.
+
+### Security notes
+
+- `service_role` key **nunca** vai pro client. RLS só vale para `anon` —
+  `service_role` bypassa tudo. Este é um aviso em `docs/ACCOUNTS.md`.
+- localStorage do renderer é isolado graças a `contextIsolation` já
+  habilitado desde v1.x — terceiros não acessam a session.
+
 ## [2.6.0] — 2026-04-17
 
 ### Added — Sprint 3: Providers Polish + Health UX

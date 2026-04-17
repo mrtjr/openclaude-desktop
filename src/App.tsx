@@ -23,6 +23,7 @@ const ORION = lazy(() => import('./ORION'))
 const WorkflowBuilder = lazy(() => import('./WorkflowBuilder'))
 const ProfilesPanel = lazy(() => import('./ProfilesPanel'))
 const ScheduledTasksPanel = lazy(() => import('./ScheduledTasksPanel'))
+const AccountPanel = lazy(() => import('./AccountPanel'))
 
 // ─── Extracted modules ──────────────────────────────────────────────
 import type { Message } from './types'
@@ -45,6 +46,8 @@ import { useProfiles } from './hooks/useProfiles'
 import { useScheduledTasks } from './hooks/useScheduledTasks'
 import { runSecurityAudit } from './utils/securityAudit'
 import { useToast } from './hooks/useToast'
+import { useAuth } from './hooks/useAuth'
+import { useSync } from './hooks/useSync'
 
 // ─── App ─────────────────────────────────────────────────────────────
 export default function App() {
@@ -53,6 +56,7 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('openclaude-model') || 'qwen35-uncensored')
   const [showModelDropdown, setShowModelDropdown] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showAccount, setShowAccount] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [ollamaOnline, setOllamaOnline] = useState(false)
   const [dragOver, setDragOver] = useState(false)
@@ -100,6 +104,51 @@ export default function App() {
   const { toasts, show: showToast, dismiss: dismissToast, success: toastSuccess, error: toastError } = useToast()
   // Suppress unused warnings — helpers available for future callers
   void toastSuccess; void toastError
+
+  // ─── Accounts & Cloud Sync (v2.7.0) ───────────────────────────
+  const auth = useAuth()
+  const sync = useSync({
+    session: auth.session,
+    passphrase: auth.passphrase,
+    // Snapshot: what to push. Keep minimal & safe for v0.
+    snapshotProvider: () => ({
+      settings: {
+        theme, language: settings.language, provider: settings.provider,
+        // other non-secret preferences can grow over time
+      },
+      apiKeys: {
+        openai: settings.openaiApiKey || '',
+        anthropic: settings.anthropicApiKey || '',
+        gemini: settings.geminiApiKey || '',
+        openrouter: settings.openrouterApiKey || '',
+        modal: settings.modalApiKey || '',
+        customApiKey: (settings as any).customApiKey || '',
+      },
+    }),
+    applySnapshot: (snap) => {
+      if (snap.settings) {
+        const remote = snap.settings.data || {}
+        if (remote.theme && (remote.theme === 'dark' || remote.theme === 'light')) setTheme(remote.theme)
+        const next: AppSettings = { ...settings }
+        if (remote.language) (next as any).language = remote.language
+        if (remote.provider) (next as any).provider = remote.provider
+        setSettings(next); localStorage.setItem('openclaude-settings', JSON.stringify(next))
+      }
+      if (snap.apiKeys) {
+        const keys = snap.apiKeys.data || {}
+        const next: AppSettings = {
+          ...settings,
+          openaiApiKey: keys.openai ?? settings.openaiApiKey,
+          anthropicApiKey: keys.anthropic ?? settings.anthropicApiKey,
+          geminiApiKey: keys.gemini ?? settings.geminiApiKey,
+          openrouterApiKey: keys.openrouter ?? settings.openrouterApiKey,
+          modalApiKey: keys.modal ?? settings.modalApiKey,
+          ...(keys.customApiKey ? { customApiKey: keys.customApiKey } : {}),
+        } as any
+        setSettings(next); localStorage.setItem('openclaude-settings', JSON.stringify(next))
+      }
+    },
+  })
 
   // ─── First-run onboarding ─────────────────────────────────────
   const [showOnboarding, setShowOnboarding] = useState(() => {
@@ -410,6 +459,31 @@ export default function App() {
         onSave={(s) => { setSettings(s); showToast('Configuracoes salvas!') }}
       />
 
+      {/* Account & Sync */}
+      {showAccount && (
+        <Suspense fallback={null}>
+          <AccountPanel
+            isOpen={showAccount}
+            onClose={() => setShowAccount(false)}
+            language={settings.language}
+            configured={auth.configured}
+            session={auth.session}
+            loading={auth.loading}
+            passphrase={auth.passphrase}
+            onSetPassphrase={auth.setPassphrase}
+            onSignInEmail={auth.signInEmail}
+            onSignUpEmail={auth.signUpEmail}
+            onSignInGoogle={auth.signInGoogle}
+            onSignOut={auth.signOut}
+            prefs={sync.prefs}
+            onPrefsChange={sync.setPrefs}
+            syncState={sync.state}
+            onPushNow={sync.pushNow}
+            onPullNow={sync.pullNow}
+          />
+        </Suspense>
+      )}
+
       {/* Command Palette (Ctrl+K) */}
       <CommandPalette
         isOpen={showCommandPalette}
@@ -546,6 +620,14 @@ export default function App() {
             </>
           )}
           <button className="titlebar-action-btn" onClick={() => setShowAnalytics(true)} title="Analytics & Insights"><BarChart3 size={14} /></button>
+          <button
+            className="titlebar-action-btn"
+            onClick={() => setShowAccount(true)}
+            title={auth.session ? `${auth.session.user.email} — Conta & Sincronização` : 'Conta & Sincronização'}
+          >
+            <User size={14} />
+            {auth.session && <span className="account-dot" aria-hidden="true" />}
+          </button>
           <button className="titlebar-action-btn" onClick={() => setShowSettings(true)} title="Configurações (Ctrl+,)"><SettingsIcon size={14} /></button>
         </div>
         <div className="titlebar-controls">

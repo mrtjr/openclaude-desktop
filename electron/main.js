@@ -2326,6 +2326,16 @@ ipcMain.handle('vision-chat', async (event, { provider, apiKey, model, prompt, i
   })
 })
 
+// ─── OAuth (Supabase Google PKCE loopback) ────────────────────────────────────
+const { startGoogleOAuth } = require('./oauth-loopback')
+ipcMain.handle('oauth-google-start', async (_e, params) => {
+  try {
+    return await startGoogleOAuth(params || {})
+  } catch (e) {
+    return { error: e.message || String(e) }
+  }
+})
+
 // ─── ORION: Computer Control Agent ────────────────────────────────────────────
 ipcMain.handle('orion-capture', async () => {
   try {

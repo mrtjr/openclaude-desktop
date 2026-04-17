@@ -3222,3 +3222,79 @@ button:focus-visible,
 [data-theme="light"] .provider-list-item:hover { background: rgba(99,102,241,0.05); }
 [data-theme="light"] .provider-list-item.selected { background: rgba(99,102,241,0.08); }
 [data-theme="light"] .provider-dot { box-shadow: 0 0 0 2px #fff; }
+
+/* ─── Account & Sync panel (v2.7.0) ─────────────────────────────── */
+.account-panel { max-width: 560px; width: 100%; }
+.account-body { padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 14px; }
+.account-loading { padding: 40px; text-align: center; opacity: 0.6; }
+.account-notice { display: flex; gap: 12px; padding: 14px; border-radius: 10px; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); align-items: flex-start; }
+.account-notice.info { background: rgba(99,102,241,0.08); border-color: rgba(99,102,241,0.3); }
+.account-notice p { margin: 4px 0 0; font-size: 13px; opacity: 0.8; }
+.account-notice strong { font-size: 14px; }
+
+.account-tabs { display: flex; gap: 4px; background: rgba(255,255,255,0.04); padding: 4px; border-radius: 8px; }
+.account-tabs button { flex: 1; padding: 7px 12px; background: transparent; border: none; color: inherit; border-radius: 6px; cursor: pointer; font-size: 13px; opacity: 0.7; }
+.account-tabs button.active { background: rgba(99,102,241,0.2); opacity: 1; }
+
+.account-form { display: flex; flex-direction: column; gap: 12px; }
+.account-form label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; }
+.account-form label > span { display: flex; align-items: center; gap: 6px; opacity: 0.8; }
+.account-form input { padding: 9px 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: inherit; font-size: 14px; }
+.account-form input:focus { outline: 2px solid rgba(99,102,241,0.6); outline-offset: 1px; }
+.input-with-action { display: flex; align-items: center; gap: 4px; position: relative; }
+.input-with-action input { flex: 1; }
+.input-with-action .icon-btn { padding: 6px; }
+
+.account-error { display: flex; gap: 6px; align-items: center; color: #ff7b8a; font-size: 12px; padding: 6px 10px; background: rgba(255,107,138,0.08); border-radius: 6px; }
+
+.account-divider { display: flex; align-items: center; gap: 10px; opacity: 0.5; font-size: 12px; }
+.account-divider::before, .account-divider::after { content: ''; flex: 1; height: 1px; background: currentColor; opacity: 0.2; }
+
+.btn-primary { padding: 10px 16px; background: #6366f1; color: #fff; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; font-weight: 500; }
+.btn-primary:hover:not(:disabled) { background: #7c7ff2; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-subtle { padding: 8px 12px; background: rgba(255,255,255,0.06); color: inherit; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.btn-subtle:hover:not(:disabled) { background: rgba(255,255,255,0.1); }
+.btn-subtle:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-google { padding: 10px 14px; background: #fff; color: #1f2937; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; justify-content: center; font-weight: 500; }
+.btn-google:hover:not(:disabled) { background: #f9fafb; }
+
+.account-hint { font-size: 12px; opacity: 0.65; display: flex; align-items: center; gap: 6px; margin: 4px 0 0; }
+
+.strength { font-size: 11px; margin-top: 2px; }
+.strength-weak { color: #ff7b8a; }
+.strength-medium { color: #f59e0b; }
+.strength-strong { color: #10b981; }
+
+.account-user { display: flex; align-items: center; gap: 12px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 10px; }
+.account-avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #a855f7); display: flex; align-items: center; justify-content: center; font-weight: 600; color: #fff; }
+.account-email { font-weight: 500; font-size: 14px; }
+.account-meta { font-size: 12px; opacity: 0.65; }
+.account-user > div:nth-child(2) { flex: 1; }
+
+.account-section { border-top: 1px solid rgba(255,255,255,0.06); padding-top: 14px; }
+.account-section h3 { margin: 0 0 10px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; opacity: 0.9; }
+
+.toggle-row { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; padding: 6px 0; }
+.sync-prefs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
+.pref-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; background: rgba(255,255,255,0.03); border-radius: 6px; cursor: pointer; font-size: 13px; }
+.pref-row.disabled { opacity: 0.5; cursor: not-allowed; }
+.pref-label { font-weight: 500; }
+.pref-sub { font-size: 11px; opacity: 0.65; margin-top: 2px; }
+
+.sync-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.sync-status { font-size: 12px; opacity: 0.75; display: inline-flex; align-items: center; gap: 4px; }
+.sync-status .text-danger { color: #ff7b8a; }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.account-dot { position: absolute; top: 6px; right: 6px; width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 0 2px var(--titlebar-bg, #0b1020); }
+.titlebar-action-btn { position: relative; }
+
+[data-theme="light"] .account-form input { background: #f7fafc; border-color: #e2e8f0; }
+[data-theme="light"] .account-notice { background: rgba(245,158,11,0.1); }
+[data-theme="light"] .account-user { background: #f7fafc; }
+[data-theme="light"] .pref-row { background: #f7fafc; }
+[data-theme="light"] .account-tabs { background: #f1f5f9; }
+[data-theme="light"] .btn-subtle { background: #f1f5f9; border-color: #e2e8f0; }
+[data-theme="light"] .btn-google { border-color: #cbd5e1; }
