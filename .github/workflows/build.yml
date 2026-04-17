@@ -1,6 +1,10 @@
-name: Build Windows Installer
+name: CI + Windows Installer
 
 on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
   release:
     types: [published]
   workflow_dispatch:
@@ -9,7 +13,39 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # ── Quality gate: runs on every push/PR (fast, Linux) ────────────
+  quality:
+    name: Typecheck & Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test -- --run
+
+      - name: Build (verify Vite bundle)
+        run: npm run build
+
+  # ── Windows installer: release + manual only (slow) ──────────────
   build-windows:
+    name: Windows Installer
+    needs: quality
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     timeout-minutes: 45
 
@@ -21,6 +57,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm install --legacy-peer-deps

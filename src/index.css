@@ -2938,6 +2938,16 @@ button:focus-visible,
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* Suspense fallback for lazy-loaded panels */
+.lazy-panel-fallback {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.5);
+  backdrop-filter: blur(4px);
+  z-index: 9999;
+  color: var(--accent);
+}
+
 /* Light theme overrides */
 [data-theme="light"] .onboarding-modal { background: #fff; border-color: #e2e8f0; }
 [data-theme="light"] .onboarding-provider-card { background: #f7fafc; border-color: #e2e8f0; }

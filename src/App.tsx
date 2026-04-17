@@ -1,23 +1,28 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react'
 import 'highlight.js/styles/github-dark.css'
 import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, FileCode, Info, ArrowUpCircle, Zap, BotOff, Copy, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Image, Trash, Mic, MicOff, Volume2, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Scale, Camera, Database, BookMarked, Swords, FolderOpen, GitBranch, Monitor, UserCog } from 'lucide-react'
 import SettingsModal, { loadSettings, type AppSettings } from './Settings'
-import AnalyticsDashboard from './Analytics'
-import ParliamentMode from './Parliament'
-import PromptVault from './PromptVault'
-import PersonaEngine, { type Persona } from './PersonaEngine'
-import ModelArena from './ModelArena'
-import CodeWorkspace from './CodeWorkspace'
-import VisionMode from './VisionMode'
-import RAGPanel from './RAGPanel'
-import ORION from './ORION'
-import WorkflowBuilder from './WorkflowBuilder'
+import type { Persona } from './PersonaEngine'
+// Small / hot-path components — eager
 import CommandPalette from './components/CommandPalette'
-import ProfilesPanel from './ProfilesPanel'
-import ScheduledTasksPanel from './ScheduledTasksPanel'
 import Toasts from './components/Toasts'
 import OnboardingModal from './components/OnboardingModal'
 import CopyButton from './components/CopyButton'
+
+// Heavy feature panels — lazy-loaded on first use.
+// Saves ~1MB from initial bundle; each chunk loads async when user opens the modal.
+const AnalyticsDashboard = lazy(() => import('./Analytics'))
+const ParliamentMode = lazy(() => import('./Parliament'))
+const PromptVault = lazy(() => import('./PromptVault'))
+const PersonaEngine = lazy(() => import('./PersonaEngine'))
+const ModelArena = lazy(() => import('./ModelArena'))
+const CodeWorkspace = lazy(() => import('./CodeWorkspace'))
+const VisionMode = lazy(() => import('./VisionMode'))
+const RAGPanel = lazy(() => import('./RAGPanel'))
+const ORION = lazy(() => import('./ORION'))
+const WorkflowBuilder = lazy(() => import('./WorkflowBuilder'))
+const ProfilesPanel = lazy(() => import('./ProfilesPanel'))
+const ScheduledTasksPanel = lazy(() => import('./ScheduledTasksPanel'))
 
 // ─── Extracted modules ──────────────────────────────────────────────
 import type { Message } from './types'
@@ -56,7 +61,15 @@ export default function App() {
   const [collapsedTools, setCollapsedTools] = useState<Set<string>>(new Set())
   const [taskPlanCollapsed, setTaskPlanCollapsed] = useState(false)
   const [updateAvailable, setUpdateAvailable] = useState<{available: boolean, releaseUrl: string, latestVersion: string} | null>(null)
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('openclaude-theme') as 'dark' | 'light') || 'dark')
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    // Priority: explicit user choice > OS preference > dark default
+    const saved = localStorage.getItem('openclaude-theme')
+    if (saved === 'dark' || saved === 'light') return saved
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: light)').matches) {
+      return 'light'
+    }
+    return 'dark'
+  })
   const [isAgentMode, setIsAgentMode] = useState(false)
   const [showAnalytics, setShowAnalytics] = useState(false)
   const [showParliament, setShowParliament] = useState(false)
@@ -433,68 +446,68 @@ export default function App() {
         onSecurityAudit={handleSecurityAudit}
       />
 
-      {/* Analytics Dashboard */}
-      <AnalyticsDashboard isOpen={showAnalytics} onClose={() => setShowAnalytics(false)} language={settings.language} />
-
-      {/* Parliament Mode */}
-      {showParliament && (
-        <ParliamentMode settings={settings} ollamaModels={models} onClose={() => setShowParliament(false)}
-          onInsertToChat={(text) => { setInput(prev => (prev ? prev + '\n\n' : '') + text); setShowParliament(false) }} />
-      )}
-
-      {/* Feature Modals */}
-      {showVault && (
-        <PromptVault onClose={() => setShowVault(false)}
-          onInsert={(text) => { setInput(prev => (prev ? prev + '\n\n' : '') + text); setShowVault(false) }} />
-      )}
-      {showPersona && (
-        <PersonaEngine settings={settings} ollamaModels={models} activePersonaId={activePersonaId}
-          onClose={() => setShowPersona(false)}
-          onActivatePersona={(persona) => { setActivePersona(persona); setActivePersonaId(persona?.id ?? null) }} />
-      )}
-      {showArena && <ModelArena settings={settings} ollamaModels={models} onClose={() => setShowArena(false)} />}
-      {showCodeWorkspace && (
-        <CodeWorkspace settings={settings} ollamaModels={models} onClose={() => setShowCodeWorkspace(false)}
-          onInsertToChat={(text) => { setInput(prev => (prev ? prev + '\n\n' : '') + text); setShowCodeWorkspace(false) }} />
-      )}
-      {showVision && (
-        <VisionMode settings={settings} ollamaModels={models} onClose={() => setShowVision(false)}
-          onInsertToChat={(text) => { setInput(prev => (prev ? prev + '\n\n' : '') + text); setShowVision(false) }} />
-      )}
-      {showRAG && <RAGPanel settings={settings} ollamaModels={models} onClose={() => setShowRAG(false)} ragEnabled={ragEnabled} onToggleRAG={setRagEnabled} />}
-      {showWorkflow && (
-        <WorkflowBuilder settings={settings} onClose={() => setShowWorkflow(false)}
-          onInsertToChat={(text) => { setInput(prev => (prev ? prev + '\n\n' : '') + text); setShowWorkflow(false) }} />
-      )}
-      {showOrion && <ORION settings={settings} onClose={() => setShowOrion(false)} />}
-
-      {/* Agent Profiles */}
-      <ProfilesPanel
-        isOpen={showProfiles}
-        onClose={() => setShowProfiles(false)}
-        allProfiles={profiles.allProfiles}
-        activeProfileId={profiles.activeProfileId}
-        onActivate={profiles.activate}
-        onCreate={profiles.create}
-        onUpdate={profiles.update}
-        onRemove={profiles.remove}
-        onDuplicate={profiles.duplicate}
-        language={settings.language}
-      />
-
-      {/* Scheduled Tasks */}
-      <ScheduledTasksPanel
-        isOpen={showScheduler}
-        onClose={() => setShowScheduler(false)}
-        tasks={scheduledTasks.tasks}
-        onCreate={scheduledTasks.create}
-        onUpdate={scheduledTasks.update}
-        onRemove={scheduledTasks.remove}
-        onToggle={scheduledTasks.toggle}
-        onRunNow={scheduledTasks.runNow}
-        profiles={profiles.allProfiles}
-        language={settings.language}
-      />
+      {/* ═══ Lazy-loaded feature panels — single Suspense boundary ═══
+         Each panel is a separate JS chunk, loaded only when user opens it.
+         Saves ~1MB from initial bundle. Fallback is minimal (modals load fast). */}
+      <Suspense fallback={<div className="lazy-panel-fallback" role="status" aria-label="Carregando painel"><Loader2 size={20} className="spin" /></div>}>
+        {showAnalytics && <AnalyticsDashboard isOpen={showAnalytics} onClose={() => setShowAnalytics(false)} language={settings.language} />}
+        {showParliament && (
+          <ParliamentMode settings={settings} ollamaModels={models} onClose={() => setShowParliament(false)}
+            onInsertToChat={(text) => { setInput(prev => (prev ? prev + '\n\n' : '') + text); setShowParliament(false) }} />
+        )}
+        {showVault && (
+          <PromptVault onClose={() => setShowVault(false)}
+            onInsert={(text) => { setInput(prev => (prev ? prev + '\n\n' : '') + text); setShowVault(false) }} />
+        )}
+        {showPersona && (
+          <PersonaEngine settings={settings} ollamaModels={models} activePersonaId={activePersonaId}
+            onClose={() => setShowPersona(false)}
+            onActivatePersona={(persona) => { setActivePersona(persona); setActivePersonaId(persona?.id ?? null) }} />
+        )}
+        {showArena && <ModelArena settings={settings} ollamaModels={models} onClose={() => setShowArena(false)} />}
+        {showCodeWorkspace && (
+          <CodeWorkspace settings={settings} ollamaModels={models} onClose={() => setShowCodeWorkspace(false)}
+            onInsertToChat={(text) => { setInput(prev => (prev ? prev + '\n\n' : '') + text); setShowCodeWorkspace(false) }} />
+        )}
+        {showVision && (
+          <VisionMode settings={settings} ollamaModels={models} onClose={() => setShowVision(false)}
+            onInsertToChat={(text) => { setInput(prev => (prev ? prev + '\n\n' : '') + text); setShowVision(false) }} />
+        )}
+        {showRAG && <RAGPanel settings={settings} ollamaModels={models} onClose={() => setShowRAG(false)} ragEnabled={ragEnabled} onToggleRAG={setRagEnabled} />}
+        {showWorkflow && (
+          <WorkflowBuilder settings={settings} onClose={() => setShowWorkflow(false)}
+            onInsertToChat={(text) => { setInput(prev => (prev ? prev + '\n\n' : '') + text); setShowWorkflow(false) }} />
+        )}
+        {showOrion && <ORION settings={settings} onClose={() => setShowOrion(false)} />}
+        {showProfiles && (
+          <ProfilesPanel
+            isOpen={showProfiles}
+            onClose={() => setShowProfiles(false)}
+            allProfiles={profiles.allProfiles}
+            activeProfileId={profiles.activeProfileId}
+            onActivate={profiles.activate}
+            onCreate={profiles.create}
+            onUpdate={profiles.update}
+            onRemove={profiles.remove}
+            onDuplicate={profiles.duplicate}
+            language={settings.language}
+          />
+        )}
+        {showScheduler && (
+          <ScheduledTasksPanel
+            isOpen={showScheduler}
+            onClose={() => setShowScheduler(false)}
+            tasks={scheduledTasks.tasks}
+            onCreate={scheduledTasks.create}
+            onUpdate={scheduledTasks.update}
+            onRemove={scheduledTasks.remove}
+            onToggle={scheduledTasks.toggle}
+            onRunNow={scheduledTasks.runNow}
+            profiles={profiles.allProfiles}
+            language={settings.language}
+          />
+        )}
+      </Suspense>
 
       {/* Titlebar */}
       <div className="titlebar">

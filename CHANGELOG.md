@@ -7,6 +7,18 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.5.0] — 2026-04-16
+
+### Added — Polish Sprint 2
+- **Code-splitting agressivo** via `React.lazy` + `<Suspense>` para 12 painéis pesados (Analytics, ParliamentMode, PromptVault, PersonaEngine, ModelArena, CodeWorkspace, VisionMode, RAGPanel, ORION, WorkflowBuilder, ProfilesPanel, ScheduledTasksPanel). Bundle principal **1541 KB → 313 KB (-80 %)**. Fallback unificado com spinner.
+- **`manualChunks` no Vite** — markdown+highlight.js (~976 KB), katex (~260 KB) e mammoth (~150 KB) isolados em chunks que cacheiam independentemente de updates do app.
+- **`prefers-color-scheme` detection** — sem `openclaude-theme` salvo, o app respeita o tema do sistema na primeira abertura. Override manual continua persistindo.
+- **Testes de hooks críticos** — `useToast` (9 casos), `useProfiles` (9 casos), `useScheduledTasks` (11 casos incluindo `calcNextRun` para interval/daily/weekly). Total 64 testes passando em 1.5s.
+- **CI workflow quality gate** — `typecheck` + `test` + `build` rodam em Ubuntu em todo push/PR (fast path). Windows installer só roda em release/manual dispatch, com `needs: quality`. Cache de npm via `actions/setup-node@v4 cache: 'npm'`.
+
+### Changed
+- `.github/workflows/build.yml` renomeado para "CI + Windows Installer"; agora dispara em push/PR além de release.
+
 ## [2.4.0] — 2026-04-16
 
 ### Added — Polish Sprint 1
