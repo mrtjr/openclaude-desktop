@@ -180,16 +180,34 @@ export function useChat({
       }
       history.push({ role: 'user', content: userMsg.content })
 
-      // Smart context management
+      // ─── Context assembly via ContextEngine ─────────────────────
+      // Strategy: prefer token-budget truncation over raw message count.
+      //   1. Compute budget = modelContextLimit * 0.60  (reserves headroom
+      //      for response + tools + system + memory injections).
+      //   2. engine.assemble() walks back from newest keeping messages
+      //      until the budget is exhausted.
+      //   3. If any messages were dropped, summarise the oldest chunk.
+      //
+      // This replaces the previous fixed 50-message cap, which was both
+      // too aggressive on large-context models (Gemini 1M) and too loose
+      // on small ones (gpt-4 8k).
+      const { createContextEngine, getModelContextLimit } = await import('../services/contextEngine')
+      const engine = createContextEngine()
+      const modelLimit = getModelContextLimit(finalModel)
+      const tokenBudget = Math.floor(modelLimit * 0.60)
       const MAX_CONTEXT_MESSAGES = settings.contextLimit || 50
-      const COMPACT_THRESHOLD = Math.floor(MAX_CONTEXT_MESSAGES * 0.7)
       let contextSummary = conv?.contextSummary || ''
-      let trimmedHistory = history
+      // Treat history as Message-shaped for token counting
+      const historyForEngine = history as any[]
+      const assembled = engine.assemble(historyForEngine, tokenBudget)
+      let trimmedHistory = assembled
+      const droppedByTokens = history.length - assembled.length
+      const droppedByCount = Math.max(0, history.length - MAX_CONTEXT_MESSAGES)
+      const droppedCount = Math.max(droppedByTokens, droppedByCount)
 
-      if (history.length > MAX_CONTEXT_MESSAGES) {
-        const overflow = history.length - COMPACT_THRESHOLD
-        const oldMessages = history.slice(0, overflow)
-        trimmedHistory = history.slice(overflow)
+      if (droppedCount > 0) {
+        const oldMessages = history.slice(0, droppedCount)
+        trimmedHistory = history.slice(droppedCount)
 
         try {
           const compactResult = await window.electron.compactContext({

@@ -7,6 +7,35 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.8.0] — 2026-04-17
+
+### Added — Sprint 5: Context Engine wired into the chat loop
+
+A formal `ContextEngine` had been defined in v2.5 but the chat loop was
+still truncating by raw message count (fixed 50-message cap). That
+penalised large-context models (Gemini 1M wasted) and under-protected
+small ones (gpt-4 8k). This sprint wires `engine.assemble()` into the
+actual request pipeline.
+
+- **Token-budget truncation** — budget = `getModelContextLimit(model) *
+  0.60`, reserving 40% headroom for the response + tools + system +
+  memory injections. Walks back from the newest message accumulating
+  until the budget is hit.
+- **Summarisation fallback preserved** — oldest dropped messages still
+  flow through `compactContext` to produce a `contextSummary` injected
+  as a system message on subsequent turns.
+- **Model limit table broadened** — exact match first, then prefix match
+  (so `gpt-4o-2024-08-06` resolves to `gpt-4o`'s 128k). Safe 8192
+  default for unknown IDs.
+- **Always-keep-one invariant** — even with a tiny budget, the newest
+  message is never dropped (otherwise the user's prompt would vanish).
+
+### Tests
+
+- `test/contextEngine.test.ts` — 11 tests covering assemble budget
+  compliance, always-keep-one, token-count sums, CJK density heuristic,
+  and model-limit resolution (exact / prefix / default / coverage).
+
 ## [2.7.1] — 2026-04-17
 
 ### Added
