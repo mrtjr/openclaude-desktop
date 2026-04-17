@@ -746,10 +746,34 @@ function saveMemory(data) {
 ipcMain.handle('load-memory', async () => loadMemory())
 ipcMain.handle('save-memory', async (event, data) => saveMemory(data))
 
+// ─── Helper: Parse a custom OpenAI-compatible base URL ──────────
+// Accepts forms like:
+//   https://api.groq.com/openai/v1
+//   http://localhost:1234/v1          (LM Studio, llama.cpp)
+//   https://my-proxy.example.com
+// Returns: { protocol, hostname, port, basePath, transport }
+function parseCustomBase(baseUrl) {
+  if (!baseUrl || typeof baseUrl !== 'string') return null
+  try {
+    const u = new URL(baseUrl)
+    const isHttps = u.protocol === 'https:'
+    return {
+      protocol: u.protocol,
+      hostname: u.hostname,
+      port: u.port ? parseInt(u.port, 10) : (isHttps ? 443 : 80),
+      // Strip trailing slash; keep path prefix (e.g. "/openai/v1")
+      basePath: u.pathname.replace(/\/+$/, ''),
+      transport: isHttps ? https : http,
+    }
+  } catch { return null }
+}
+
 // ─── IPC: Multi-provider chat (OpenAI, Gemini, Anthropic) ──────────
-ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, messages, tools, temperature, max_tokens, stream, modalHostname }) => {
+ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, messages, tools, temperature, max_tokens, stream, modalHostname, customBaseUrl }) => {
   return new Promise((resolve, reject) => {
     let hostname, apiPath, headers, bodyObj
+    let transport = https
+    let port
 
     if (provider === 'openai') {
       hostname = 'api.openai.com'
@@ -829,6 +853,16 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
         'User-Agent': 'OpenClaude-Desktop'
       }
       bodyObj = { model, messages, tools: tools || undefined, stream: false, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
+    } else if (provider === 'custom') {
+      const cfg = parseCustomBase(customBaseUrl)
+      if (!cfg) return resolve({ error: 'Custom provider: invalid baseUrl' })
+      hostname = cfg.hostname
+      port = cfg.port
+      transport = cfg.transport
+      apiPath = `${cfg.basePath}/chat/completions`
+      headers = { 'Content-Type': 'application/json', 'User-Agent': 'OpenClaude-Desktop' }
+      if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+      bodyObj = { model, messages, tools: tools || undefined, stream: false, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
     } else {
       return resolve({ error: `Provider "${provider}" not supported` })
     }
@@ -836,12 +870,13 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
     const body = JSON.stringify(bodyObj)
     const reqOptions = {
       hostname,
+      ...(port ? { port } : {}),
       path: apiPath,
       method: 'POST',
       headers: { ...headers, 'Content-Length': Buffer.byteLength(body) }
     }
 
-    const req = https.request(reqOptions, (res) => {
+    const req = transport.request(reqOptions, (res) => {
       let data = ''
       res.on('data', chunk => data += chunk)
       res.on('end', () => {
@@ -888,9 +923,11 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
 })
 
 // ─── IPC: Multi-provider chat STREAMING (OpenAI/OpenRouter/Modal/Anthropic) ─
-ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, messages, tools, temperature, max_tokens, modalHostname }) => {
+ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, messages, tools, temperature, max_tokens, modalHostname, customBaseUrl }) => {
   return new Promise((resolve) => {
     let hostname, apiPath, headers, bodyObj
+    let transport = https
+    let port
 
     if (provider === 'openai') {
       hostname = 'api.openai.com'
@@ -929,12 +966,22 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
       const anthropicTools = tools?.length ? tools.map(t => ({ name: t.function.name, description: t.function.description || '', input_schema: t.function.parameters || { type: 'object', properties: {} } })) : undefined
       headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }
       bodyObj = { model, max_tokens: max_tokens || 4096, messages: anthropicMsgs, ...(systemMsg ? { system: systemMsg.content } : {}), temperature: temperature ?? 0.7, stream: true, ...(anthropicTools ? { tools: anthropicTools } : {}) }
+    } else if (provider === 'custom') {
+      const cfg = parseCustomBase(customBaseUrl)
+      if (!cfg) return resolve({ error: 'Custom provider: invalid baseUrl' })
+      hostname = cfg.hostname
+      port = cfg.port
+      transport = cfg.transport
+      apiPath = `${cfg.basePath}/chat/completions`
+      headers = { 'Content-Type': 'application/json', 'User-Agent': 'OpenClaude-Desktop' }
+      if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+      bodyObj = { model, messages, tools: tools?.length ? tools : undefined, stream: true, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
     } else {
       return resolve({ error: `Provider "${provider}" does not support streaming` })
     }
 
     const body = JSON.stringify(bodyObj)
-    const reqOptions = { hostname, path: apiPath, method: 'POST', headers: { ...headers, 'Content-Length': Buffer.byteLength(body) } }
+    const reqOptions = { hostname, ...(port ? { port } : {}), path: apiPath, method: 'POST', headers: { ...headers, 'Content-Length': Buffer.byteLength(body) } }
 
     let doneSent = false
     const sendDone = (error) => {
@@ -944,7 +991,7 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
       try { event.sender.send('ollama-stream-chunk', { done: true, ...(error ? { error } : {}) }) } catch (e) { console.error('[provider-stream] sendDone error:', e) }
     }
 
-    const req = https.request(reqOptions, (res) => {
+    const req = transport.request(reqOptions, (res) => {
       // Check HTTP status
       if (res.statusCode && res.statusCode >= 400) {
         let errorBody = ''
@@ -1022,9 +1069,12 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
 })
 
 // ─── IPC: List provider models (OpenRouter, OpenAI, Gemini, Anthropic) ──
-ipcMain.handle('list-provider-models', async (event, { provider, apiKey, modalHostname }) => {
+ipcMain.handle('list-provider-models', async (event, { provider, apiKey, modalHostname, customBaseUrl }) => {
   return new Promise((resolve) => {
     let hostname, apiPath, headers, query = ''
+    let transport = https
+    let port
+    void query
 
     if (provider === 'openai') {
       hostname = 'api.openai.com'
@@ -1046,18 +1096,28 @@ ipcMain.handle('list-provider-models', async (event, { provider, apiKey, modalHo
       hostname = 'generativelanguage.googleapis.com'
       apiPath = `/v1beta/models?key=${apiKey}`
       headers = { 'User-Agent': 'OpenClaude-Desktop' }
+    } else if (provider === 'custom') {
+      const cfg = parseCustomBase(customBaseUrl)
+      if (!cfg) return resolve({ error: 'Custom provider: invalid baseUrl' })
+      hostname = cfg.hostname
+      port = cfg.port
+      transport = cfg.transport
+      apiPath = `${cfg.basePath}/models`
+      headers = { 'User-Agent': 'OpenClaude-Desktop' }
+      if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
     } else {
       return resolve({ error: `Provider "${provider}" not supported for model listing` })
     }
 
     const options = {
       hostname,
+      ...(port ? { port } : {}),
       path: apiPath,
       method: 'GET',
       headers
     }
 
-    const req = https.request(options, (res) => {
+    const req = transport.request(options, (res) => {
       let data = ''
       res.on('data', chunk => data += chunk)
       res.on('end', () => {
@@ -1068,7 +1128,7 @@ ipcMain.handle('list-provider-models', async (event, { provider, apiKey, modalHo
           }
 
           let models = []
-          if (provider === 'openai' || provider === 'openrouter' || provider === 'modal') {
+          if (provider === 'openai' || provider === 'openrouter' || provider === 'modal' || provider === 'custom') {
             models = (parsed.data || []).map(m => m.id).sort()
           } else if (provider === 'anthropic') {
             models = (parsed.data || []).map(m => m.id).sort()

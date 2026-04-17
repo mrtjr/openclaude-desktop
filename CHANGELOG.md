@@ -7,6 +7,23 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.7.1] — 2026-04-17
+
+### Added
+
+- **Custom OpenAI-compatible provider runtime** — wiring that was deferred
+  in v2.6.0 is now complete. The `custom` provider now runs real traffic
+  through `provider-chat`, `provider-chat-stream`, and
+  `list-provider-models` IPC handlers.
+  - New `parseCustomBase(baseUrl)` helper in `electron/main.js` resolves
+    protocol (http vs https), hostname, port, and path prefix. LM Studio
+    (`http://localhost:1234/v1`), Groq, Together, Ollama OpenAI-compat
+    endpoints, and proxies all work with one setting.
+  - Transport (`http` vs `https`) is selected dynamically — no more
+    silent failures against local servers over HTTP.
+  - `ProviderTestButton` and `useChat` now forward `customBaseUrl` on all
+    3 IPC surfaces.
+
 ## [2.7.0] — 2026-04-17
 
 ### Added — Sprint 4: Accounts & Cloud Sync (zero-knowledge E2EE)

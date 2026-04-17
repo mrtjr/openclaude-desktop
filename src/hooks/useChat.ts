@@ -114,7 +114,7 @@ export function useChat({
     setAgentSteps(0)
     stopRequestedRef.current = false
 
-    const { provider: finalProvider, model: finalModel, apiKey: finalApiKey, isNotOllama, modalHostname } = providerConfig
+    const { provider: finalProvider, model: finalModel, apiKey: finalApiKey, isNotOllama, modalHostname, customBaseUrl } = providerConfig
 
     // Session analytics tracker
     const sessionTracker = {
@@ -332,7 +332,7 @@ export function useChat({
                   provider: finalProvider, apiKey: finalApiKey, model: finalModel,
                   messages: requestMessages, tools: TOOLS,
                   temperature: settings.temperature, max_tokens: settings.maxTokens,
-                  modalHostname
+                  modalHostname, customBaseUrl
                 })
               : window.electron.ollamaChatStream({
                   model: finalModel, messages: requestMessages, tools: TOOLS,
@@ -404,7 +404,7 @@ export function useChat({
               provider: finalProvider, apiKey: finalApiKey, model: finalModel,
               messages: requestMessages, tools: TOOLS,
               temperature: settings.temperature, max_tokens: settings.maxTokens,
-              modalHostname
+              modalHostname, customBaseUrl
             })
           } else {
             response = await window.electron.ollamaChat({

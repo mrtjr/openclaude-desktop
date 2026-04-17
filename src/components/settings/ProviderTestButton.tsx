@@ -18,6 +18,7 @@ interface ProviderTestButtonProps {
   provider: Provider
   apiKey: string
   modalHostname?: string
+  customBaseUrl?: string
   disabled?: boolean
   language: 'pt' | 'en'
   onResult?: (r: TestResult) => void
@@ -28,6 +29,7 @@ export function ProviderTestButton({
   provider,
   apiKey,
   modalHostname,
+  customBaseUrl,
   disabled,
   language,
   onResult,
@@ -45,6 +47,7 @@ export function ProviderTestButton({
         provider,
         apiKey,
         modalHostname,
+        customBaseUrl,
       })
       const latency = Math.round(performance.now() - started)
       if (res?.error) {

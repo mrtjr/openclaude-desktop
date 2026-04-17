@@ -203,6 +203,7 @@ export function ProviderDetail({
           provider={meta.id}
           apiKey={apiKeyValue || ''}
           modalHostname={meta.id === 'modal' ? settings.modalHostname : undefined}
+          customBaseUrl={meta.id === 'custom' ? (settings as any).customBaseUrl : undefined}
           language={language}
           onModels={(models) => setFetchedModels(models)}
         />
