@@ -3298,3 +3298,11 @@ button:focus-visible,
 [data-theme="light"] .account-tabs { background: #f1f5f9; }
 [data-theme="light"] .btn-subtle { background: #f1f5f9; border-color: #e2e8f0; }
 [data-theme="light"] .btn-google { border-color: #cbd5e1; }
+
+/* Analytics tabs (Analytics / Custos) */
+.analytics-tabs { display: flex; gap: 4px; padding: 8px 16px 0; border-bottom: 1px solid var(--border, rgba(255,255,255,0.08)); }
+.analytics-tab { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--text-dim, #94a3b8); font-size: 13px; cursor: pointer; border-radius: 6px 6px 0 0; }
+.analytics-tab:hover { color: var(--text, #e2e8f0); background: rgba(255,255,255,0.04); }
+.analytics-tab.active { color: var(--accent, #7c3aed); border-bottom-color: var(--accent, #7c3aed); background: rgba(124,58,237,0.08); }
+[data-theme="light"] .analytics-tab:hover { background: #f1f5f9; }
+[data-theme="light"] .analytics-tab.active { background: rgba(124,58,237,0.1); }

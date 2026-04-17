@@ -7,6 +7,35 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.9.0] — 2026-04-17
+
+### Added — Sprint 7: Usage & Cost tracking dashboard (Fase 10)
+
+- **"Custos" tab in Analytics** — new tab beside the existing
+  "Analytics" view. Shows:
+  - Total cost over the last 30 days and today's cost
+  - Aggregate input/output token counts
+  - Bar chart of cost by provider (ordered, with call counts)
+  - Bar chart of cost by model (top 10)
+  - Clear-usage button + pricing-estimate disclaimer
+- Labels fully translated (pt/en). Empty state when no usage recorded.
+- Reuses the pre-existing `useUsageTracking` hook and `PRICING`
+  table — `recordUsage` was already wired via `useChat`'s `onUsage`
+  callback; this sprint surfaces the data.
+- **`.analytics-tabs` styling** — tab bar with active accent,
+  light-theme overrides.
+
+### Tests
+
+- `test/pricing.test.ts` — 10 tests: exact match, case-insensitive
+  prefix match, unknown→zero, linear scaling of `calculateCost`,
+  `formatCost` tier thresholds ($0.00 / sub-cent / sub-dollar / dollar).
+- `test/usageTracking.test.ts` — 3 tests: aggregation by provider &
+  model, 30-day window filtering, Ollama zero-cost semantics.
+- Combined Sprint 4→7 green tests: **34 passing** across crypto (6),
+  contextEngine (11), providerHealth (4), pricing (10),
+  usageTracking (3).
+
 ## [2.8.1] — 2026-04-17
 
 ### Added — Sprint 6: Provider fallback toast & health coverage
