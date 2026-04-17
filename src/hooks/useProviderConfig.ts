@@ -7,6 +7,8 @@ export interface ProviderConfig {
   apiKey: string
   isNotOllama: boolean
   modalHostname?: string
+  /** Custom OpenAI-compatible base URL (e.g. https://api.groq.com/openai/v1) */
+  customBaseUrl?: string
 }
 
 export function useProviderConfig(settings: AppSettings, selectedModel: string): ProviderConfig {
@@ -15,6 +17,7 @@ export function useProviderConfig(settings: AppSettings, selectedModel: string):
     let model = selectedModel
     let apiKey = ''
     let modalHostname: string | undefined
+    let customBaseUrl: string | undefined
 
     if (provider === 'anthropic') {
       model = settings.anthropicModel || 'claude-sonnet-4-20250514'
@@ -32,6 +35,10 @@ export function useProviderConfig(settings: AppSettings, selectedModel: string):
       model = settings.modalModel || 'zai-org/GLM-5.1-FP8'
       apiKey = settings.modalApiKey
       modalHostname = settings.modalHostname
+    } else if (provider === 'custom') {
+      model = settings.customModel || ''
+      apiKey = settings.customApiKey
+      customBaseUrl = settings.customBaseUrl
     }
 
     return {
@@ -39,7 +46,8 @@ export function useProviderConfig(settings: AppSettings, selectedModel: string):
       model,
       apiKey,
       isNotOllama: provider !== 'ollama',
-      modalHostname
+      modalHostname,
+      customBaseUrl,
     }
   }, [settings, selectedModel])
 }
@@ -51,5 +59,6 @@ export function getDisplayModel(settings: AppSettings, selectedModel: string): s
   if (settings.provider === 'openai') return settings.openaiModel
   if (settings.provider === 'openrouter') return settings.openrouterModel
   if (settings.provider === 'modal') return settings.modalModel
+  if (settings.provider === 'custom') return settings.customModel
   return settings.geminiModel
 }

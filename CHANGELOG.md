@@ -7,6 +7,49 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.6.0] — 2026-04-17
+
+### Added — Sprint 3: Providers Polish + Health UX
+
+- **Aba Provedores redesenhada** — layout split view inspirado em Linear + Cherry Studio: sidebar à esquerda com lista de provedores + busca; detalhe à direita. Cada provider mostra:
+  - **Health dot** colorido (🟢 healthy, 🟡 degraded, 🔴 down, ⚫ unconfigured)
+  - **Badge de key ativa** quando provider está selecionado como padrão
+  - **Badge de pool** (ex: `2`) quando Modal tem múltiplas keys no pool
+- **`src/config/providers.ts`** — registro declarativo único fonte-da-verdade. Adicionar um novo provider = 1 entrada, zero JSX.
+- **`<KeyField />`** — input password com toggle de visibilidade (👁), botão de limpar (×), e trim automático ao colar (elimina bug comum de newline na key).
+- **`<ProviderTestButton />`** — botão "Testar conexão" com feedback formatado: `✓ 342 ms • 47 modelos` ou `✗ 401 Unauthorized`. Inclui ícone Zap e Loader2 animado durante o teste.
+- **`<ProviderList />`** — sidebar com `role="navigation"`, `aria-current` no selecionado, `:focus-visible` ring.
+- **`<ProviderDetail />`** — renderiza fields dinamicamente conforme `providers.config.ts`. Suporta botão "Usar como padrão" (estrela) que promove o provider visualizado a `settings.provider`.
+- **Link "Como obter uma key"** em cada provider — abre URL da doc no navegador padrão via IPC `openTarget`.
+- **Custom OpenAI-compatible provider** (7º provider) — suporta Groq, Together, Fireworks, DeepInfra e similares via `customBaseUrl`. UI completa; roteamento runtime em v2.6.1 (follow-up).
+
+### Changed
+- `Settings.tsx` de **720 → 535 linhas (-185)**. Eliminada duplicação de ~180 linhas (6 blocos `{provider === 'X' && ...}`).
+- `DEFAULT_SETTINGS` ganha campos `customApiKey`, `customModel`, `customBaseUrl`, `customLabel`.
+- `Provider` union passa a incluir `'custom'`.
+
+### Fixed — Patch 2.5.1 (incluso)
+- **Pool de keys Modal: cooldown separado por tipo de erro.** Antes, "Too many concurrent requests" (limite de paralelismo) era tratado igual a 429 de quota (30s de cooldown) — UX ruim pois o erro resolve em segundos. Agora:
+  - `concurrent` → `COOLDOWN_CONCURRENT_MS = 5s`
+  - `429` / `rate limit` / `quota` → `COOLDOWN_429_MS = 30s` (inalterado)
+- Regex expandida: `/concurrent/i` tem precedência sobre `/429|rate.?limit|quota|too.?many.?request/i`.
+
+### Testing
+- Total de testes: **73 passando** (67 antes + 8 novos). Novo arquivo: `test/providers.config.test.ts` (8 casos cobrindo integridade do registro).
+- Novo caso em `useModalKeyPool.test.ts`: garante cooldown de 5s para "Too many concurrent requests" (não 30s).
+
+### Arquitetura
+```
+src/
+├── config/
+│   └── providers.ts           ← registro declarativo (1 entrada por provider)
+└── components/settings/
+    ├── KeyField.tsx           ← password + eye + clear + paste-trim
+    ├── ProviderTestButton.tsx ← latency + error formatted
+    ├── ProviderList.tsx       ← sidebar com health dots
+    └── ProviderDetail.tsx     ← renderiza por config, zero duplicação
+```
+
 ## [2.5.0] — 2026-04-16
 
 ### Added — Polish Sprint 2

@@ -2955,3 +2955,270 @@ button:focus-visible,
 [data-theme="light"] .onboarding-provider-icon { background: #fff; }
 [data-theme="light"] .onboarding-input { background: #f7fafc; border-color: #e2e8f0; }
 [data-theme="light"] .toast { background: #fff; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Sprint 3 — Provider tab split view (Linear/Cherry Studio inspired)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.provider-split {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 16px;
+  min-height: 420px;
+  height: 100%;
+}
+
+.provider-split-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-right: 1px solid var(--border, #2a2a30);
+  padding-right: 12px;
+  overflow: hidden;
+}
+
+.provider-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-subtle, #1a1a1f);
+  border: 1px solid var(--border, #2a2a30);
+  border-radius: 6px;
+}
+.provider-search svg { color: var(--text-muted, #888); flex-shrink: 0; }
+.provider-search input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: inherit;
+  font-size: 0.82rem;
+  min-width: 0;
+}
+.provider-search-empty {
+  font-size: 0.78rem;
+  color: var(--text-muted, #888);
+  text-align: center;
+  padding: 24px 8px;
+}
+
+.provider-list-wrap {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.provider-list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+  transition: background 0.12s;
+  width: 100%;
+}
+.provider-list-item:hover {
+  background: var(--bg-hover, rgba(255,255,255,0.04));
+}
+.provider-list-item.selected {
+  background: var(--bg-hover, rgba(99,102,241,0.1));
+  border-color: var(--accent, #6366f1);
+}
+.provider-list-item:focus-visible {
+  outline: 2px solid var(--accent, #6366f1);
+  outline-offset: -2px;
+}
+
+.provider-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.2);
+}
+
+.provider-list-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.provider-list-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.provider-list-active-badge {
+  color: var(--accent, #6366f1);
+  font-size: 0.6rem;
+  line-height: 1;
+}
+.provider-list-pool-badge {
+  background: var(--accent, #6366f1);
+  color: #fff;
+  font-size: 0.62rem;
+  padding: 1px 5px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+.provider-list-tagline {
+  font-size: 0.72rem;
+  color: var(--text-muted, #888);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Provider detail pane ─────────────────────────────────────── */
+
+.provider-split-detail {
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.provider-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.provider-detail-header h3 {
+  font-size: 1.1rem;
+  margin: 0 0 2px 0;
+}
+.provider-detail-tagline {
+  font-size: 0.78rem;
+  color: var(--text-muted, #888);
+  margin: 0;
+}
+.provider-detail-body {
+  font-size: 0.85rem;
+  color: var(--text-muted, #aaa);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+.provider-detail-active-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: color-mix(in srgb, var(--accent, #6366f1) 18%, transparent);
+  color: var(--accent, #6366f1);
+  border: 1px solid var(--accent, #6366f1);
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.provider-detail-doclink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--accent, #6366f1);
+  text-decoration: none;
+  margin-bottom: 12px;
+}
+.provider-detail-doclink:hover { text-decoration: underline; }
+
+/* ── KeyField ─────────────────────────────────────────────────── */
+
+.key-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.key-field .settings-input {
+  flex: 1;
+  padding-right: 64px;
+}
+.key-field-btn {
+  position: absolute;
+  right: 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted, #888);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  display: inline-flex;
+}
+.key-field-btn:hover {
+  background: var(--bg-hover, rgba(255,255,255,0.06));
+  color: var(--text, #eee);
+}
+.key-field-btn:nth-last-of-type(1) { right: 4px; }
+.key-field-btn:nth-last-of-type(2) { right: 30px; }
+
+/* ── ProviderTestButton result ────────────────────────────────── */
+
+.provider-test {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.provider-test-result {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.provider-test-result.ok {
+  color: #10b981;
+  background: color-mix(in srgb, #10b981 15%, transparent);
+}
+.provider-test-result.err {
+  color: #ef4444;
+  background: color-mix(in srgb, #ef4444 15%, transparent);
+}
+
+/* ── Modal pool editor ────────────────────────────────────────── */
+
+.provider-pool-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted, #888);
+  margin: 0 0 8px 0;
+}
+.provider-pool-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+  align-items: center;
+}
+.provider-pool-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.78rem;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+/* ── Light theme overrides ────────────────────────────────────── */
+
+[data-theme="light"] .provider-split-sidebar { border-color: #e2e8f0; }
+[data-theme="light"] .provider-search { background: #f7fafc; border-color: #e2e8f0; }
+[data-theme="light"] .provider-list-item:hover { background: rgba(99,102,241,0.05); }
+[data-theme="light"] .provider-list-item.selected { background: rgba(99,102,241,0.08); }
+[data-theme="light"] .provider-dot { box-shadow: 0 0 0 2px #fff; }

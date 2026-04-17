@@ -11,7 +11,7 @@ import { AppSettings } from './Settings'
 
 export interface ArenaModel {
   id: string
-  provider: 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal'
+  provider: 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'custom'
   model: string
   apiKey: string
   label: string

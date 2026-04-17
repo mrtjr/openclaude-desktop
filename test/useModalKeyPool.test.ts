@@ -121,6 +121,33 @@ describe('useModalKeyPool', () => {
     vi.useRealTimers()
   })
 
+  it('markError with "concurrent requests" applies short cooldown (5s, not 30s)', () => {
+    vi.useFakeTimers()
+    const { result } = renderHook(() =>
+      useModalKeyPool(makeSettings([{ key: K1, enabled: true }]))
+    )
+
+    let s: ReturnType<typeof result.current.acquire> = null
+    act(() => { s = result.current.acquire() })
+    act(() => {
+      result.current.markError(s!.key, 'Too many concurrent requests for this model')
+    })
+
+    // Still on cooldown at 4.9s
+    act(() => { vi.advanceTimersByTime(4_900) })
+    let s2: ReturnType<typeof result.current.acquire> = null
+    act(() => { s2 = result.current.acquire() })
+    expect(s2).toBeNull()
+
+    // Free at 5.1s (concurrent cooldown, not 30s)
+    act(() => { vi.advanceTimersByTime(200) })
+    let s3: ReturnType<typeof result.current.acquire> = null
+    act(() => { s3 = result.current.acquire() })
+    expect(s3).not.toBeNull()
+
+    vi.useRealTimers()
+  })
+
   it('markError without 429 does NOT apply cooldown', () => {
     const { result } = renderHook(() =>
       useModalKeyPool(makeSettings([{ key: K1, enabled: true }]))

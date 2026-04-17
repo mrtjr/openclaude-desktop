@@ -19,7 +19,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Provider = 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal'
+type Provider = 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'custom'
 
 interface Persona {
   id: string
@@ -174,6 +174,7 @@ const PROVIDER_LABELS: Record<Provider, string> = {
   gemini: 'Google Gemini',
   anthropic: 'Anthropic',
   openrouter: 'OpenRouter',
+  custom: 'Custom (OpenAI-compatible)',
   modal: 'Modal',
 }
 

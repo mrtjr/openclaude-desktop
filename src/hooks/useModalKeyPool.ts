@@ -96,8 +96,14 @@ export function useModalKeyPool(settings: AppSettings): ModalKeyPool {
     const slot = slotsRef.current.get(key)
     if (slot) {
       slot.lastError = err
-      const isRateLimit = /429|rate.?limit|too.?many/i.test(err)
-      if (isRateLimit) {
+      // Distinguish two distinct throttles:
+      //   - "concurrent requests" = parallelism limit → short cooldown, retry fast
+      //   - 429 / rate limit / quota = quota exhaustion → long cooldown
+      const isConcurrent = /concurrent/i.test(err)
+      const isRateLimit = /429|rate.?limit|quota|too.?many.?request/i.test(err)
+      if (isConcurrent) {
+        slot.cooldownUntil = Date.now() + POOL_CONFIG.COOLDOWN_CONCURRENT_MS
+      } else if (isRateLimit) {
         slot.cooldownUntil = Date.now() + POOL_CONFIG.COOLDOWN_429_MS
       }
       slot.busy = false

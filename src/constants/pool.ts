@@ -3,8 +3,14 @@
  * All timeouts, cooldowns, and limits live here for easy tuning.
  */
 export const POOL_CONFIG = {
-  /** Cooldown applied to a key after a 429 / rate-limit response. */
+  /** Cooldown applied to a key after a 429 / rate-limit response (quota-style). */
   COOLDOWN_429_MS: 30_000,
+  /**
+   * Cooldown applied after a "too many concurrent requests" error.
+   * This is a parallelism limit (not a quota), so a short cooldown suffices
+   * — the server is telling us "slow down", not "you're out of budget".
+   */
+  COOLDOWN_CONCURRENT_MS: 5_000,
   /** Max time a worker waits for a free key before giving up / falling back. */
   ACQUIRE_TIMEOUT_MS: 180_000,
   /** Per-request timeout on the Modal upstream call (main.js). */

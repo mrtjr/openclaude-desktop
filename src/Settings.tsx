@@ -1,7 +1,10 @@
-import { useState, useEffect } from 'react'
-import { X, RefreshCw, Loader2, Plus, Trash2 } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { X, Plus, Trash2, Search } from 'lucide-react'
+import { ProviderList } from './components/settings/ProviderList'
+import { ProviderDetail } from './components/settings/ProviderDetail'
+import { PROVIDERS } from './config/providers'
 
-export type Provider = 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal'
+export type Provider = 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'custom'
 export type Language = 'pt' | 'en'
 export type PermissionLevel = 'ask' | 'auto_edits' | 'planning' | 'ignore'
 
@@ -38,6 +41,11 @@ export interface AppSettings {
   modalPoolFallbackOllama: boolean
   modalModel: string
   modalHostname: string
+  // ── Custom OpenAI-compatible provider (Groq, Together, DeepInfra, Fireworks…)
+  customApiKey: string
+  customModel: string
+  customBaseUrl: string
+  customLabel: string
   contextLimit: number
   memoryEnabled: boolean
   analyticsEnabled: boolean
@@ -66,6 +74,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   modalPoolFallbackOllama: false,
   modalModel: 'zai-org/GLM-5.1-FP8',
   modalHostname: 'api.us-west-2.modal.direct',
+  customApiKey: '',
+  customModel: '',
+  customBaseUrl: '',
+  customLabel: 'Custom (OpenAI-compatible)',
   contextLimit: 50,
   memoryEnabled: false,
   analyticsEnabled: true,
@@ -108,24 +120,30 @@ type SettingsTab = 'general' | 'provider' | 'mcp'
 
 export default function Settings({ isOpen, onClose, settings, onSave }: SettingsProps) {
   const [local, setLocal] = useState<AppSettings>({ ...settings })
-  const [fetchedModels, setFetchedModels] = useState<Record<string, string[]>>({})
-  const [isFetching, setIsFetching] = useState(false)
-  const [fetchError, setFetchError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
   const [newMcpName, setNewMcpName] = useState('')
   const [newMcpCommand, setNewMcpCommand] = useState('')
+  // Provider tab state: which provider's detail pane is being edited
+  // (not necessarily the one set as default).
+  const [selectedProvider, setSelectedProvider] = useState<Provider>(settings.provider)
+  const [providerSearch, setProviderSearch] = useState('')
 
   useEffect(() => {
     if (isOpen) {
       setLocal({ ...settings })
-      setFetchedModels({})
-      setFetchError(null)
+      setSelectedProvider(settings.provider)
     }
   }, [isOpen, settings])
 
-  useEffect(() => {
-    setFetchError(null)
-  }, [local.provider])
+  const filteredProviders = useMemo(() => {
+    if (!providerSearch.trim()) return PROVIDERS
+    const q = providerSearch.toLowerCase()
+    return PROVIDERS.filter(p =>
+      p.label.toLowerCase().includes(q) ||
+      p.tagline.pt.toLowerCase().includes(q) ||
+      p.tagline.en.toLowerCase().includes(q)
+    )
+  }, [providerSearch])
 
   if (!isOpen) return null
 
@@ -140,41 +158,6 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
     } catch (e) { console.warn('[settings] save error:', e) }
     onSave(local)
     onClose()
-  }
-
-  const fetchModels = async () => {
-    const apiKey = local.provider === 'openai' ? local.openaiApiKey :
-                   local.provider === 'gemini' ? local.geminiApiKey :
-                   local.provider === 'anthropic' ? local.anthropicApiKey :
-                   local.provider === 'modal' ? local.modalApiKey :
-                   local.provider === 'openrouter' ? local.openrouterApiKey : ''
-
-    if (!apiKey) {
-      setFetchError(local.language === 'pt' ? 'Insira a API Key primeiro' : 'Enter API Key first')
-      return
-    }
-
-    setIsFetching(true)
-    setFetchError(null)
-    try {
-      const result = await (window as any).electron.listProviderModels({
-        provider: local.provider,
-        apiKey,
-        modalHostname: local.modalHostname
-      })
-      if (result.error) {
-        setFetchError(result.error)
-      } else if (result.models) {
-        setFetchedModels(prev => ({ ...prev, [local.provider]: result.models }))
-        if (result.models.length === 0) {
-          setFetchError(local.language === 'pt' ? 'Nenhum modelo encontrado' : 'No models found')
-        }
-      }
-    } catch (e: any) {
-      setFetchError(e.message)
-    } finally {
-      setIsFetching(false)
-    }
   }
 
   const addMcpServer = () => {
@@ -367,243 +350,46 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
             </>
           )}
 
-          {/* ── PROVIDER TAB ── */}
+          {/* ── PROVIDER TAB (split view: list + detail) ── */}
           {activeTab === 'provider' && (
-            <>
-              {/* Provider selector */}
-              <div className="settings-group">
-                <label className="settings-label">
-                  <span>{local.language === 'pt' ? 'Provedor de IA' : 'AI Provider'}</span>
-                </label>
-                <select
-                  className="settings-input"
-                  value={local.provider}
-                  onChange={(e) => setLocal(s => ({ ...s, provider: e.target.value as Provider }))}
-                >
-                  <option value="ollama">Ollama (Local)</option>
-                  <option value="openai">OpenAI</option>
-                  <option value="gemini">Google Gemini</option>
-                  <option value="anthropic">Anthropic Claude</option>
-                  <option value="openrouter">OpenRouter</option>
-                  <option value="modal">Modal (Research)</option>
-                </select>
-              </div>
-
-              {/* OpenAI settings */}
-              {local.provider === 'openai' && (
-                <>
-                  <div className="settings-group">
-                    <label className="settings-label"><span>API Key OpenAI</span></label>
-                    <input
-                      type="password"
-                      className="settings-input"
-                      value={local.openaiApiKey}
-                      onChange={(e) => setLocal(s => ({ ...s, openaiApiKey: e.target.value }))}
-                      placeholder="sk-..."
+            <div className="provider-split">
+              <aside className="provider-split-sidebar">
+                <div className="provider-search">
+                  <Search size={14} />
+                  <input
+                    type="text"
+                    placeholder={local.language === 'pt' ? 'Buscar...' : 'Search...'}
+                    value={providerSearch}
+                    onChange={(e) => setProviderSearch(e.target.value)}
+                    aria-label="Search providers"
+                  />
+                </div>
+                <div className="provider-list-wrap">
+                  {filteredProviders.length > 0 ? (
+                    <ProviderList
+                      settings={local}
+                      selectedId={selectedProvider}
+                      onSelect={setSelectedProvider}
+                      activeProviderId={local.provider}
                     />
-                    <button className="settings-fetch-btn" onClick={fetchModels} disabled={isFetching || !local.openaiApiKey}>
-                      {isFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                      <span>{local.language === 'pt' ? 'Detectar Modelos' : 'Detect Models'}</span>
-                    </button>
-                  </div>
-                  <div className="settings-group">
-                    <label className="settings-label"><span>Modelo OpenAI</span></label>
-                    <input type="text" className="settings-input" list="openai-models" value={local.openaiModel}
-                      onChange={(e) => setLocal(s => ({ ...s, openaiModel: e.target.value }))} placeholder="gpt-4o" />
-                    <datalist id="openai-models">
-                      {(fetchedModels['openai'] || []).map(m => <option key={m} value={m} />)}
-                      {!(fetchedModels['openai'] || []).length && (<><option value="gpt-4o" /><option value="gpt-4o-mini" /><option value="gpt-3.5-turbo" /></>)}
-                    </datalist>
-                  </div>
-                  {fetchError && <div className="settings-fetch-error">{fetchError}</div>}
-                </>
-              )}
-
-              {/* Gemini settings */}
-              {local.provider === 'gemini' && (
-                <>
-                  <div className="settings-group">
-                    <label className="settings-label"><span>API Key Gemini</span></label>
-                    <input type="password" className="settings-input" value={local.geminiApiKey}
-                      onChange={(e) => setLocal(s => ({ ...s, geminiApiKey: e.target.value }))} placeholder="AIza..." />
-                    <button className="settings-fetch-btn" onClick={fetchModels} disabled={isFetching || !local.geminiApiKey}>
-                      {isFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                      <span>{local.language === 'pt' ? 'Detectar Modelos' : 'Detect Models'}</span>
-                    </button>
-                  </div>
-                  <div className="settings-group">
-                    <label className="settings-label"><span>Modelo Gemini</span></label>
-                    <input type="text" className="settings-input" list="gemini-models" value={local.geminiModel}
-                      onChange={(e) => setLocal(s => ({ ...s, geminiModel: e.target.value }))} placeholder="gemini-2.0-flash" />
-                    <datalist id="gemini-models">
-                      {(fetchedModels['gemini'] || []).map(m => <option key={m} value={m} />)}
-                      {!(fetchedModels['gemini'] || []).length && (<><option value="gemini-2.0-flash" /><option value="gemini-1.5-pro" /><option value="gemini-1.5-flash" /></>)}
-                    </datalist>
-                  </div>
-                  {fetchError && <div className="settings-fetch-error">{fetchError}</div>}
-                </>
-              )}
-
-              {/* Anthropic settings */}
-              {local.provider === 'anthropic' && (
-                <>
-                  <div className="settings-group">
-                    <label className="settings-label"><span>API Key Anthropic</span></label>
-                    <input type="password" className="settings-input" value={local.anthropicApiKey}
-                      onChange={(e) => setLocal(s => ({ ...s, anthropicApiKey: e.target.value }))} placeholder="sk-ant-..." />
-                    <button className="settings-fetch-btn" onClick={fetchModels} disabled={isFetching || !local.anthropicApiKey}>
-                      {isFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                      <span>{local.language === 'pt' ? 'Detectar Modelos' : 'Detect Models'}</span>
-                    </button>
-                  </div>
-                  <div className="settings-group">
-                    <label className="settings-label"><span>Modelo Anthropic</span></label>
-                    <input type="text" className="settings-input" list="anthropic-models" value={local.anthropicModel}
-                      onChange={(e) => setLocal(s => ({ ...s, anthropicModel: e.target.value }))} placeholder="claude-sonnet-4-20250514" />
-                    <datalist id="anthropic-models">
-                      {(fetchedModels['anthropic'] || []).map(m => <option key={m} value={m} />)}
-                      {!(fetchedModels['anthropic'] || []).length && (<><option value="claude-3-5-sonnet-20241022" /><option value="claude-3-opus-20240229" /><option value="claude-3-haiku-20240307" /></>)}
-                    </datalist>
-                  </div>
-                  {fetchError && <div className="settings-fetch-error">{fetchError}</div>}
-                </>
-              )}
-
-              {/* OpenRouter settings */}
-              {local.provider === 'openrouter' && (
-                <>
-                  <div className="settings-group">
-                    <label className="settings-label"><span>API Key OpenRouter</span></label>
-                    <input type="password" className="settings-input" value={local.openrouterApiKey || ''}
-                      onChange={(e) => setLocal(s => ({ ...s, openrouterApiKey: e.target.value }))} placeholder="sk-or-v1-..." />
-                    <button className="settings-fetch-btn" onClick={fetchModels} disabled={isFetching || !local.openrouterApiKey}>
-                      {isFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                      <span>{local.language === 'pt' ? 'Detectar Modelos' : 'Detect Models'}</span>
-                    </button>
-                  </div>
-                  <div className="settings-group">
-                    <label className="settings-label"><span>Modelo OpenRouter</span></label>
-                    <input type="text" className="settings-input" list="openrouter-models" value={local.openrouterModel || ''}
-                      onChange={(e) => setLocal(s => ({ ...s, openrouterModel: e.target.value }))} placeholder="google/gemini-2.5-pro" />
-                    <datalist id="openrouter-models">
-                      {(fetchedModels['openrouter'] || []).map(m => <option key={m} value={m} />)}
-                      {!(fetchedModels['openrouter'] || []).length && (<><option value="google/gemini-2.0-flash-001" /><option value="openai/gpt-4o" /><option value="anthropic/claude-3.5-sonnet" /></>)}
-                    </datalist>
-                  </div>
-                  {fetchError && <div className="settings-fetch-error">{fetchError}</div>}
-                </>
-              )}
-
-              {/* Modal settings */}
-              {local.provider === 'modal' && (
-                <>
-                  <div className="settings-group">
-                    <label className="settings-label"><span>API Key Modal (principal)</span></label>
-                    <input type="password" className="settings-input" value={local.modalApiKey || ''}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setLocal(s => {
-                          // Sync first key in pool with principal key
-                          const keys = [...(s.modalApiKeys || [])]
-                          if (keys.length === 0) {
-                            keys.push({ id: 'primary-' + Date.now(), key: v, label: 'Principal', enabled: true })
-                          } else {
-                            keys[0] = { ...keys[0], key: v }
-                          }
-                          return { ...s, modalApiKey: v, modalApiKeys: keys }
-                        })
-                      }}
-                      placeholder="modalresearch_..." />
-                    <button className="settings-fetch-btn" onClick={fetchModels} disabled={isFetching || !local.modalApiKey}>
-                      {isFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                      <span>{local.language === 'pt' ? 'Detectar Modelos' : 'Detect Models'}</span>
-                    </button>
-                  </div>
-
-                  {/* Pool of additional keys for delegate_subtasks */}
-                  <div className="settings-group">
-                    <label className="settings-label">
-                      <span>{local.language === 'pt' ? 'Pool de API Keys (subagentes paralelos)' : 'API Key Pool (parallel subagents)'}</span>
-                    </label>
-                    <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted, #888)', marginBottom: '8px' }}>
-                      {local.language === 'pt'
-                        ? 'Cada key permite 1 subagente em paralelo. A key principal acima é automaticamente a primeira do pool.'
-                        : 'Each key enables 1 parallel subagent. The principal key above is automatically the first in the pool.'}
+                  ) : (
+                    <p className="provider-search-empty">
+                      {local.language === 'pt' ? 'Nenhum resultado' : 'No results'}
                     </p>
-                    {(local.modalApiKeys || []).map((mk, idx) => (
-                      <div key={mk.id} style={{ display: 'flex', gap: '6px', marginBottom: '6px', alignItems: 'center' }}>
-                        <input
-                          type="text"
-                          className="settings-input"
-                          value={mk.label || ''}
-                          placeholder={idx === 0 ? 'Principal' : `Key ${idx + 1}`}
-                          onChange={(e) => {
-                            const v = e.target.value
-                            setLocal(s => ({ ...s, modalApiKeys: s.modalApiKeys.map(k => k.id === mk.id ? { ...k, label: v } : k) }))
-                          }}
-                          style={{ flex: '0 0 120px' }}
-                          disabled={idx === 0}
-                        />
-                        <input
-                          type="password"
-                          className="settings-input"
-                          value={mk.key}
-                          placeholder="modalresearch_..."
-                          onChange={(e) => {
-                            const v = e.target.value
-                            setLocal(s => {
-                              const keys = s.modalApiKeys.map(k => k.id === mk.id ? { ...k, key: v } : k)
-                              // If editing first key, also sync principal
-                              return idx === 0
-                                ? { ...s, modalApiKey: v, modalApiKeys: keys }
-                                : { ...s, modalApiKeys: keys }
-                            })
-                          }}
-                          style={{ flex: 1, minWidth: 0 }}
-                          disabled={idx === 0}
-                        />
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem', flexShrink: 0 }}>
-                          <input
-                            type="checkbox"
-                            checked={mk.enabled}
-                            onChange={(e) => {
-                              const v = e.target.checked
-                              setLocal(s => ({ ...s, modalApiKeys: s.modalApiKeys.map(k => k.id === mk.id ? { ...k, enabled: v } : k) }))
-                            }}
-                          />
-                          {local.language === 'pt' ? 'Ativa' : 'On'}
-                        </label>
-                        {idx > 0 && (
-                          <button
-                            className="mcp-server-remove"
-                            onClick={() => setLocal(s => ({ ...s, modalApiKeys: s.modalApiKeys.filter(k => k.id !== mk.id) }))}
-                            title={local.language === 'pt' ? 'Remover' : 'Remove'}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    <button
-                      className="settings-fetch-btn"
-                      onClick={() => setLocal(s => ({
-                        ...s,
-                        modalApiKeys: [...(s.modalApiKeys || []), { id: 'key-' + Date.now(), key: '', label: '', enabled: true }]
-                      }))}
-                      disabled={(local.modalApiKeys || []).length >= 10}
-                      style={{ marginTop: '4px' }}
-                    >
-                      <Plus size={14} />
-                      <span>{local.language === 'pt' ? 'Adicionar Key' : 'Add Key'}</span>
-                    </button>
-                    <p style={{ fontSize: '0.72rem', color: 'var(--color-text-muted, #888)', marginTop: '6px' }}>
-                      {local.language === 'pt'
-                        ? `Pool atual: ${(local.modalApiKeys || []).filter(k => k.enabled && k.key).length} key(s) ativa(s) · max 10`
-                        : `Current pool: ${(local.modalApiKeys || []).filter(k => k.enabled && k.key).length} active key(s) · max 10`}
-                    </p>
-                  </div>
-
-                  <div className="settings-group">
+                  )}
+                </div>
+              </aside>
+              <div className="provider-split-detail">
+                <ProviderDetail
+                  providerId={selectedProvider}
+                  settings={local}
+                  setSettings={setLocal}
+                  language={local.language}
+                  isActiveDefault={local.provider === selectedProvider}
+                  onMakeActive={() => setLocal(s => ({ ...s, provider: selectedProvider }))}
+                />
+                {selectedProvider === 'modal' && (
+                  <div className="settings-group" style={{ marginTop: '16px' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer' }}>
                       <input
                         type="checkbox"
@@ -617,26 +403,11 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                       </span>
                     </label>
                   </div>
-
-                  <div className="settings-group">
-                    <label className="settings-label"><span>Modelo Modal</span></label>
-                    <input type="text" className="settings-input" list="modal-models" value={local.modalModel || ''}
-                      onChange={(e) => setLocal(s => ({ ...s, modalModel: e.target.value }))} placeholder="zai-org/GLM-5.1-FP8" />
-                    <datalist id="modal-models">
-                      {(fetchedModels['modal'] || []).map(m => <option key={m} value={m} />)}
-                      {!(fetchedModels['modal'] || []).length && <option value="zai-org/GLM-5.1-FP8" />}
-                    </datalist>
-                  </div>
-                  <div className="settings-group">
-                    <label className="settings-label"><span>Hostname Modal</span></label>
-                    <input type="text" className="settings-input" value={local.modalHostname || ''}
-                      onChange={(e) => setLocal(s => ({ ...s, modalHostname: e.target.value }))} placeholder="api.us-west-2.modal.direct" />
-                  </div>
-                  {fetchError && <div className="settings-fetch-error">{fetchError}</div>}
-                </>
-              )}
-            </>
+                )}
+              </div>
+            </div>
           )}
+
 
           {/* ── MCP TAB ── */}
           {activeTab === 'mcp' && (

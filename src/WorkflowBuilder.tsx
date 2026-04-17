@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 
 interface AppSettings {
-  provider: 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal'
+  provider: 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'custom'
   openaiApiKey: string; openaiModel: string
   geminiApiKey: string; geminiModel: string
   anthropicApiKey: string; anthropicModel: string

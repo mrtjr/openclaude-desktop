@@ -7,7 +7,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
 interface AppSettings {
-  provider: 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal'
+  provider: 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'custom'
   openaiApiKey: string; openaiModel: string
   geminiApiKey: string; geminiModel: string
   anthropicApiKey: string; anthropicModel: string
@@ -80,7 +80,7 @@ export default function VisionMode({ settings, ollamaModels, onClose, onInsertTo
   const [copied, setCopied] = useState(false)
   const responseRef = useRef<HTMLDivElement>(null)
 
-  const providers: Array<'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal'> = [
+  const providers: Array<'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'custom'> = [
     'ollama', 'openai', 'gemini', 'anthropic', 'openrouter', 'modal'
   ]
 
