@@ -69,6 +69,7 @@ export default function CommandPalette(props: CommandPaletteProps) {
   const [query, setQuery] = useState('')
   const [selectedIdx, setSelectedIdx] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const resultsRef = useRef<HTMLDivElement>(null)
 
   const items: CommandItem[] = [
     // AI
@@ -148,6 +149,13 @@ export default function CommandPalette(props: CommandPaletteProps) {
     setSelectedIdx(0)
   }, [query])
 
+  // Scroll active item into view when navigating with arrow keys
+  useEffect(() => {
+    if (!isOpen || !resultsRef.current) return
+    const el = resultsRef.current.querySelector<HTMLElement>(`[data-cmd-idx="${selectedIdx}"]`)
+    if (el) el.scrollIntoView({ block: 'nearest' })
+  }, [selectedIdx, isOpen])
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') { onClose(); return }
     if (e.key === 'ArrowDown') {
@@ -170,10 +178,16 @@ export default function CommandPalette(props: CommandPaletteProps) {
   let flatIdx = -1
 
   return (
-    <div className="cmd-palette-overlay" onClick={onClose}>
-      <div className="cmd-palette" onClick={e => e.stopPropagation()}>
+    <div className="cmd-palette-overlay" onClick={onClose} role="presentation">
+      <div
+        className="cmd-palette"
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-label={language === 'pt' ? 'Paleta de comandos' : 'Command palette'}
+        aria-modal="true"
+      >
         <div className="cmd-search-row">
-          <Search size={16} className="cmd-search-icon" />
+          <Search size={16} className="cmd-search-icon" aria-hidden="true" />
           <input
             ref={inputRef}
             className="cmd-search-input"
@@ -181,28 +195,46 @@ export default function CommandPalette(props: CommandPaletteProps) {
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={language === 'pt' ? 'Buscar comando ou ferramenta...' : 'Search command or tool...'}
+            role="combobox"
+            aria-expanded={flatItems.length > 0}
+            aria-controls="cmd-results-listbox"
+            aria-activedescendant={flatItems[selectedIdx] ? `cmd-item-${flatItems[selectedIdx].id}` : undefined}
+            aria-autocomplete="list"
           />
           <kbd className="cmd-kbd">Esc</kbd>
         </div>
 
-        <div className="cmd-results">
+        <div
+          className="cmd-results"
+          ref={resultsRef}
+          id="cmd-results-listbox"
+          role="listbox"
+          aria-label={language === 'pt' ? 'Resultados' : 'Results'}
+        >
           {grouped.length === 0 && (
-            <div className="cmd-empty">{language === 'pt' ? 'Nenhum resultado' : 'No results'}</div>
+            <div className="cmd-empty" role="status">
+              {language === 'pt' ? 'Nenhum resultado' : 'No results'}
+            </div>
           )}
           {grouped.map(group => (
-            <div key={group.category} className="cmd-group">
+            <div key={group.category} className="cmd-group" role="group" aria-label={group.label}>
               <div className="cmd-group-label">{group.label}</div>
               {group.items.map(item => {
                 flatIdx++
                 const idx = flatIdx
+                const isSelected = idx === selectedIdx
                 return (
                   <div
                     key={item.id}
-                    className={`cmd-item ${idx === selectedIdx ? 'selected' : ''} ${item.active ? 'active' : ''} ${item.special ? 'special' : ''}`}
+                    id={`cmd-item-${item.id}`}
+                    data-cmd-idx={idx}
+                    className={`cmd-item ${isSelected ? 'selected' : ''} ${item.active ? 'active' : ''} ${item.special ? 'special' : ''}`}
                     onClick={() => { item.action(); onClose() }}
                     onMouseEnter={() => setSelectedIdx(idx)}
+                    role="option"
+                    aria-selected={isSelected}
                   >
-                    <div className={`cmd-item-icon ${item.active ? 'active' : ''}`}>
+                    <div className={`cmd-item-icon ${item.active ? 'active' : ''}`} aria-hidden="true">
                       <item.icon size={16} />
                     </div>
                     <div className="cmd-item-info">
@@ -210,7 +242,7 @@ export default function CommandPalette(props: CommandPaletteProps) {
                       <span className="cmd-item-desc">{item.description}</span>
                     </div>
                     {item.shortcut && <kbd className="cmd-kbd">{item.shortcut}</kbd>}
-                    {item.active && <div className="cmd-item-dot" />}
+                    {item.active && <div className="cmd-item-dot" aria-label={language === 'pt' ? 'ativo' : 'active'} />}
                   </div>
                 )
               })}

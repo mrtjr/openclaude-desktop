@@ -7,7 +7,19 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
-## [2.3.0] — 2026-04-16
+## [2.4.0] — 2026-04-16
+
+### Added — Polish Sprint 1
+- **First-run onboarding** (`OnboardingModal`) — fluxo 3-step para novos usuários: escolha de provider (Ollama/Anthropic/OpenAI/Gemini/OpenRouter com ícone + tagline) → paste de API key + botão de **teste de conexão inline** (usa `listProviderModels`) → confirmação. Flag `oc.onboarded` em localStorage; nunca aparece de novo.
+- **Toasts com severidade** (`useToast` + `<Toasts />`) — 4 níveis (success/info/warn/error) com ícone colorido, dismiss manual, suporte a `action` inline, e erros persistem até dispensa explícita. API tipada: `toast.success(msg)`, `toast.error(msg)`, etc. Posição mudou para bottom-right (padrão Linear/Vercel).
+- **EmptyState reutilizável** (`<EmptyState />`) — componente unificado para todos os painéis vazios: ícone Lucide + título + body + CTA opcional. Modo `compact` para contextos inline.
+- **Skeleton loaders** (`Skeleton`, `SkeletonLines`, `SkeletonMessage`, `SkeletonListItem`) — shimmer CSS com suporte a light mode, para substituir estados "pop" de listas assíncronas.
+- **CopyButton** — componente self-contained com feedback visual (ícone muda para ✓ por 1.5s após clique). Substitui o botão de copy inline nas mensagens.
+- **Command Palette a11y completo** — `role="combobox"` + `role="listbox"` + `role="option"` + `aria-selected` + `aria-activedescendant` + `aria-controls`. Focus ring visível (borda lateral de 3px + background) no item selecionado. Scroll automático ao navegar por teclado. `:focus-visible` global para todos os botões.
+
+### Changed
+- Toast container movido de top-right para bottom-right; animação de entrada refinada (cubic-bezier 0.16, 1, 0.3, 1).
+- `msg-action-btn` agora é composto pelo `<CopyButton />` com animação de check.
 
 ### Added
 - **Agent Profiles** — perfis por conversa com overrides de provider, modelo, temperatura, system prompt e permissões. 4 built-in (Coder, Writer, Analyst, Safe Mode) + criação de custom profiles. `effectiveSettings` mergeia overrides antes de `useChat`/`useProviderConfig`.

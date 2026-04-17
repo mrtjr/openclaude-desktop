@@ -15,6 +15,9 @@ import WorkflowBuilder from './WorkflowBuilder'
 import CommandPalette from './components/CommandPalette'
 import ProfilesPanel from './ProfilesPanel'
 import ScheduledTasksPanel from './ScheduledTasksPanel'
+import Toasts from './components/Toasts'
+import OnboardingModal from './components/OnboardingModal'
+import CopyButton from './components/CopyButton'
 
 // ─── Extracted modules ──────────────────────────────────────────────
 import type { Message } from './types'
@@ -36,18 +39,7 @@ import { useMemoryDreaming } from './hooks/useMemoryDreaming'
 import { useProfiles } from './hooks/useProfiles'
 import { useScheduledTasks } from './hooks/useScheduledTasks'
 import { runSecurityAudit } from './utils/securityAudit'
-
-// ─── Toast notification system ──────────────────────────────────
-let toastId = 0
-function useToast() {
-  const [toasts, setToasts] = useState<{ id: number; message: string }[]>([])
-  const show = useCallback((message: string) => {
-    const id = ++toastId
-    setToasts(prev => [...prev, { id, message }])
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000)
-  }, [])
-  return { toasts, show }
-}
+import { useToast } from './hooks/useToast'
 
 // ─── App ─────────────────────────────────────────────────────────────
 export default function App() {
@@ -92,7 +84,14 @@ export default function App() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const isNearBottomRef = useRef(true)
 
-  const { toasts, show: showToast } = useToast()
+  const { toasts, show: showToast, dismiss: dismissToast, success: toastSuccess, error: toastError } = useToast()
+  // Suppress unused warnings — helpers available for future callers
+  void toastSuccess; void toastError
+
+  // ─── First-run onboarding ─────────────────────────────────────
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    return !localStorage.getItem('oc.onboarded')
+  })
 
   // ─── Agent Profiles ────────────────────────────────────────────
   const profiles = useProfiles()
@@ -366,9 +365,21 @@ export default function App() {
   return (
     <div className={`app-container ${settings.permissionLevel === 'ignore' ? 'ignore-mode-active' : ''}`}>
       {/* Toast notifications */}
-      <div className="toast-container">
-        {toasts.map(t => <div key={t.id} className="toast">{t.message}</div>)}
-      </div>
+      <Toasts toasts={toasts} onDismiss={dismissToast} />
+
+      {/* First-run onboarding */}
+      {showOnboarding && (
+        <OnboardingModal
+          onComplete={(updates) => {
+            const newSettings = { ...settings, ...updates }
+            setSettings(newSettings)
+            localStorage.setItem('openclaude-settings', JSON.stringify(newSettings))
+            setShowOnboarding(false)
+            toastSuccess('Configuração concluída!')
+          }}
+          onDismiss={() => setShowOnboarding(false)}
+        />
+      )}
 
       {/* Drag overlay */}
       {dragOver && (
@@ -674,7 +685,7 @@ export default function App() {
                     <div className="message-footer">
                       <span className="message-timestamp">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       <div className="message-actions">
-                        {msg.content && <button className="msg-action-btn" onClick={() => copyMessage(msg.content)} title="Copiar"><Copy size={12} /></button>}
+                        {msg.content && <CopyButton text={msg.content} title="Copiar como Markdown" onCopied={() => showToast('Copiado como Markdown')} />}
                         <button className="msg-action-btn" onClick={() => deleteMessage(msg.id)} title="Excluir mensagem"><Trash size={12} /></button>
                       </div>
                     </div>
