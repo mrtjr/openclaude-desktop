@@ -9,9 +9,10 @@
 // shows an explainer instead of auth UI.
 
 import { useEffect, useMemo, useState } from 'react'
-import { X, Mail, Lock, LogOut, RefreshCw, Shield, Cloud, AlertTriangle, Check, Eye, EyeOff } from 'lucide-react'
+import { X, Mail, Lock, LogOut, RefreshCw, Shield, Cloud, AlertTriangle, Check, Eye, EyeOff, Database, ExternalLink } from 'lucide-react'
 import type { AuthSession, SyncPreferences, SyncState } from './types/account'
 import { passphraseStrength } from './services/crypto'
+import { setSupabaseCredentials } from './services/supabase'
 
 type View = 'auth' | 'passphrase' | 'dashboard'
 
@@ -66,26 +67,107 @@ export default function AccountPanel(props: Props) {
   )
 }
 
-// ─── Not configured ──────────────────────────────────────────────────
+// ─── Not configured — inline setup form ─────────────────────────────
+//
+// Rather than a dead-end ("build without credentials — see docs"), give the
+// user a working path: paste URL + anon key from their own Supabase project.
+// Saved to localStorage via setSupabaseCredentials; caller reloads so the
+// lazy client picks up the new values.
 
 function NotConfigured({ t }: { t: (pt: string, en: string) => string }) {
+  const [url, setUrl] = useState('')
+  const [anonKey, setAnonKey] = useState('')
+  const [showKey, setShowKey] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const save = (e: React.FormEvent) => {
+    e.preventDefault()
+    setErr(null)
+    const u = url.trim()
+    const k = anonKey.trim()
+    // Minimal validation — full failure surfaces on next Supabase call
+    if (!/^https?:\/\/.+\.supabase\.(co|in)/.test(u) && !/^https?:\/\//.test(u)) {
+      setErr(t('URL inválida — esperado algo como https://xxxxx.supabase.co', 'Invalid URL — expected something like https://xxxxx.supabase.co'))
+      return
+    }
+    if (k.length < 40) {
+      setErr(t('Chave anônima muito curta — copie o "anon public" do painel Supabase', 'Anon key looks too short — copy the "anon public" key from your Supabase dashboard'))
+      return
+    }
+    setSupabaseCredentials(u, k)
+    // Reload so React state tree reinitializes with the now-configured client.
+    window.location.reload()
+  }
+
+  const openDocs = () => {
+    const el = (window as any).electron
+    const url = 'https://supabase.com/dashboard'
+    if (el?.openTarget) el.openTarget(url)
+    else window.open(url, '_blank')
+  }
+
   return (
     <div className="account-body">
-      <div className="account-notice">
-        <AlertTriangle size={18} />
+      <div className="account-notice info">
+        <Database size={18} />
         <div>
-          <strong>{t('Sincronização não habilitada', 'Sync not enabled')}</strong>
+          <strong>{t('Sincronização opcional', 'Optional cloud sync')}</strong>
           <p>
             {t(
-              'Este build não foi compilado com credenciais Supabase. O OpenClaude funciona 100% localmente — a sincronização na nuvem é opcional.',
-              'This build has no Supabase credentials. OpenClaude works fully offline — cloud sync is optional.',
+              'O OpenClaude funciona 100% localmente. Se quiser sincronizar conversas, chaves de API (E2EE) e perfis entre máquinas, conecte seu próprio projeto Supabase abaixo — é gratuito.',
+              'OpenClaude works 100% offline. To sync conversations, API keys (E2EE) and profiles across machines, connect your own Supabase project below — free tier is fine.',
             )}
           </p>
-          <p style={{ marginTop: 8, fontSize: 13, opacity: 0.75 }}>
-            {t('Veja docs/ACCOUNTS.md para configurar sua própria instância.', 'See docs/ACCOUNTS.md to configure your own instance.')}
-          </p>
+          <button type="button" className="btn-subtle" style={{ marginTop: 10 }} onClick={openDocs}>
+            <ExternalLink size={12} /> {t('Abrir painel Supabase', 'Open Supabase dashboard')}
+          </button>
         </div>
       </div>
+
+      <form onSubmit={save} className="account-form" style={{ marginTop: 16 }}>
+        <label>
+          <span><Database size={14} /> Supabase URL</span>
+          <input
+            type="url"
+            required
+            placeholder="https://xxxxx.supabase.co"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            spellCheck={false}
+            autoComplete="off"
+          />
+        </label>
+        <label>
+          <span><Lock size={14} /> {t('Chave anônima (anon public)', 'Anon public key')}</span>
+          <div className="input-with-action">
+            <input
+              type={showKey ? 'text' : 'password'}
+              required
+              placeholder="eyJhbGciOi…"
+              value={anonKey}
+              onChange={(e) => setAnonKey(e.target.value)}
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <button type="button" className="icon-btn" onClick={() => setShowKey((v) => !v)} aria-label={showKey ? 'Hide' : 'Show'}>
+              {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+        </label>
+
+        {err && <div className="account-error"><AlertTriangle size={14} /> {err}</div>}
+
+        <button className="btn-primary" type="submit">
+          {t('Conectar e recarregar', 'Connect and reload')}
+        </button>
+
+        <p className="account-hint">
+          <Shield size={12} /> {t(
+            'As credenciais ficam apenas neste dispositivo (localStorage). Nada é enviado para OpenClaude.',
+            'Credentials are stored only on this device (localStorage). Nothing is sent to OpenClaude servers.',
+          )}
+        </p>
+      </form>
     </div>
   )
 }

@@ -643,21 +643,31 @@ export default function App() {
       <div className="titlebar">
         <div className="titlebar-drag">
           <div className="titlebar-logo">
-            <div className="oc-logo-small">OC</div>
-            <span>OpenClaude Desktop</span>
+            <div className="titlebar-logo-mark">OC</div>
+            <span className="titlebar-logo-text">OpenClaude</span>
           </div>
-          <div className={`ollama-status ${ollamaOnline ? 'online' : 'offline'}`}>
-            <span className="status-dot" />
-            <span className="status-text">{ollamaOnline ? 'Ollama Online' : 'Ollama Offline'}</span>
-          </div>
-          {settings.provider !== 'ollama' && (
-            <div className={`provider-health provider-health-${providerHealth.currentHealth.status}`} title={providerHealth.currentHealth.lastError || ''}>
+          <div className="titlebar-badges">
+            <div
+              className={`status-pill ${ollamaOnline ? 'ok' : 'err'}`}
+              title={ollamaOnline ? 'Ollama local está respondendo' : 'Ollama local offline — instale/inicie em ollama.ai'}
+            >
               <span className="status-dot" />
-              <span className="status-text">{settings.provider} {providerHealth.currentHealth.status === 'healthy' ? '●' : providerHealth.currentHealth.status === 'degraded' ? '◐' : '○'}</span>
+              <span className="status-text">Ollama</span>
             </div>
-          )}
+            {settings.provider !== 'ollama' && (
+              <div
+                className={`status-pill ${providerHealth.currentHealth.status === 'healthy' ? 'ok' : providerHealth.currentHealth.status === 'degraded' ? 'warn' : 'err'}`}
+                title={providerHealth.currentHealth.lastError || `${settings.provider}: ${providerHealth.currentHealth.status}`}
+              >
+                <span className="status-dot" />
+                <span className="status-text">{settings.provider}</span>
+              </div>
+            )}
+          </div>
         </div>
-        <div className="titlebar-center">{activeConv ? activeConv.title : ''}</div>
+        {activeConv && activeConv.title && (
+          <div className="titlebar-center" title={activeConv.title}>{activeConv.title}</div>
+        )}
         <div className="titlebar-actions">
           <button className="titlebar-action-btn" onClick={() => setSidebarOpen(p => !p)} title="Toggle sidebar">
             {sidebarOpen ? <PanelLeftClose size={14} /> : <PanelLeft size={14} />}
@@ -676,21 +686,25 @@ export default function App() {
             </>
           )}
           <button className="titlebar-action-btn" onClick={() => setShowAnalytics(true)} title="Analytics & Insights"><BarChart3 size={14} /></button>
-          {/* Account button only appears when this build has Supabase
-              credentials. Otherwise clicking it opened a dead-end modal
-              saying "not configured — see docs", which was the UX
-              complaint in v2.9.1. Local-only builds hide the entry
-              entirely rather than advertise a feature the user can't use. */}
-          {isSupabaseConfigured() && (
-            <button
-              className="titlebar-action-btn"
-              onClick={() => setShowAccount(true)}
-              title={auth.session ? `${auth.session.user.email} — Conta & Sincronização` : 'Conta & Sincronização'}
-            >
-              <User size={14} />
-              {auth.session && <span className="account-dot" aria-hidden="true" />}
-            </button>
-          )}
+          {/* Account button is always visible. When Supabase isn't
+              configured, the panel now shows an inline setup form
+              (URL + anon key) rather than a dead-end "not configured"
+              message — so the feature is discoverable even on builds
+              without baked-in credentials. */}
+          <button
+            className="titlebar-action-btn"
+            onClick={() => setShowAccount(true)}
+            title={
+              !isSupabaseConfigured()
+                ? 'Conta & Sincronização — conectar Supabase'
+                : auth.session
+                  ? `${auth.session.user.email} — Conta & Sincronização`
+                  : 'Conta & Sincronização'
+            }
+          >
+            <User size={14} />
+            {auth.session && <span className="account-dot" aria-hidden="true" />}
+          </button>
           <button className="titlebar-action-btn" onClick={() => setShowSettings(true)} title="Configurações (Ctrl+,)"><SettingsIcon size={14} /></button>
         </div>
         <div className="titlebar-controls">

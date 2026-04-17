@@ -7,6 +7,74 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.9.3] — 2026-04-17
+
+### Changed — Desktop UX polish + runtime Supabase setup
+
+Feedback direto do usuário: "não estou vendo o campo de criar conta e
+login no desktop". O gate `isSupabaseConfigured()` introduzido em v2.9.2
+escondia o botão em vez de educar — correto seria dar ao usuário um
+caminho para configurar. Além disso, uma passada de polimento visual
+usando referências de apps desktop modernos (Linear, Raycast).
+
+#### Contas
+
+- **Botão Conta sempre visível.** O gate de v2.9.2 foi substituído por
+  uma tela de setup inline: quando Supabase não está configurado, o
+  AccountPanel agora mostra dois campos (URL + anon key) + link para
+  o dashboard Supabase. O usuário cola as credenciais, clica
+  "Conectar e recarregar" e o app reinicia com sync habilitada.
+- **Credenciais em `localStorage`.** `services/supabase.ts` agora lê
+  `oc.supabaseUrl` e `oc.supabaseAnonKey` antes do env de build. Novas
+  funções exportadas: `setSupabaseCredentials(url, key)` e
+  `clearSupabaseCredentials()`. Build-time env continua funcionando
+  como fallback, então builds auto-hospedados não precisam mudar nada.
+- **Tooltip contextual no botão.** Mostra "conectar Supabase" se não
+  configurado, email logado se conectado, ou "Conta & Sincronização"
+  genérico.
+
+#### Titlebar
+
+- **Título truncado no centro removido quando não há conversa ativa.**
+  O "poderia buscar por falhas criticas no me…" que o usuário viu no
+  screenshot só aparece agora se `activeConv.title` existir, e com
+  `title` HTML (tooltip nativo) para ver o nome completo em hover.
+- **Badges de status unificadas em `.status-pill`.** Antes havia duas
+  classes divergentes (`.ollama-status` e `.provider-health`) com
+  estilos inconsistentes. Agora é um único componente redondo/pill
+  com três variantes (`ok`/`warn`/`err`) que usa o mesmo visual do
+  resto da UI.
+- Logo reusando `titlebar-logo-mark` (classe já existente no CSS),
+  eliminando o `oc-logo-small` ad-hoc.
+
+#### Sidebar
+
+- **Indicador ativo redesenhado.** Barrinha vertical animada à
+  esquerda (cubic-bezier easing) em vez de border-left estático.
+  Fundo em gradient sutil esquerda→direita, não cor chapada.
+- **Novo botão "Nova conversa"** com transições mais sutis (brilho +
+  translateY em vez de scale agressivo) e sombra dupla camada.
+- **Search input** com focus ring em accent-dim + hover state.
+- Item de conversa: ícone ganha cor accent quando ativo.
+
+#### Chat
+
+- **Input bar**: padding interno maior (16px esquerda vs 14px),
+  radius 18px, hover sutil em `bg-tertiary`, focus ring triplo
+  (shadow + accent border + glow).
+- **Gradient suave** no topo do input area (transição invisível do
+  chat para o composer).
+- **Message footer** (copy/regenerate) aparece em `:hover` da
+  mensagem, não só do próprio footer — mais descobrível.
+- Banner "Modo Bypass Ativo" com dot pulsante à esquerda em vez
+  de ícone estático.
+
+### Verificação
+
+- `npm run typecheck` — 0 erros
+- `npx vitest run` — 14/14 test files, 125/125 tests passing
+- `npm run build` — ok
+
 ## [2.9.2] — 2026-04-17
 
 ### Fixed — Audit-fix release: correcting regressions from v2.7–v2.9

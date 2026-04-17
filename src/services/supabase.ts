@@ -1,46 +1,80 @@
 // ─── Supabase client factory ──────────────────────────────────────
 //
-// Initialized lazily — if the build doesn't have a Supabase URL configured,
-// the whole Accounts/Sync feature gracefully degrades to "not configured"
-// in the UI (local-first continues to work 100%).
+// Credentials resolution order (first non-empty wins):
+//   1. localStorage `oc.supabaseUrl` / `oc.supabaseAnonKey` — set at runtime
+//      via the Account panel's setup form. Lets end-users enable cloud sync
+//      without rebuilding the app.
+//   2. Build-time env: VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY.
 //
-// Setup (for developers building their own):
+// If neither source has values, `isSupabaseConfigured()` returns false and
+// the Account panel shows its inline setup form. Local-first usage keeps
+// working 100% regardless.
+//
+// Setup (for self-hosters):
 //   1. Create a free Supabase project at https://supabase.com
-//   2. Run the migration in `supabase/migrations/001_initial.sql`
+//   2. Run `supabase/migrations/001_initial.sql`
 //   3. Configure redirect URLs for Google OAuth (http://127.0.0.1:* loopback)
-//   4. Set VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY at build time
-//
-// See docs/ACCOUNTS.md for full setup.
+//   4. Either set env vars at build time, or paste URL+anon key into the
+//      Account panel — same effect.
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
-const URL = (import.meta as any).env?.VITE_SUPABASE_URL as string | undefined
-const ANON_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY as string | undefined
+const LS_URL = 'oc.supabaseUrl'
+const LS_KEY = 'oc.supabaseAnonKey'
+
+const ENV_URL = (import.meta as any).env?.VITE_SUPABASE_URL as string | undefined
+const ENV_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY as string | undefined
 
 let client: SupabaseClient | null = null
 
+function readCreds(): { url: string | undefined; key: string | undefined } {
+  let url: string | undefined
+  let key: string | undefined
+  try {
+    url = localStorage.getItem(LS_URL) || undefined
+    key = localStorage.getItem(LS_KEY) || undefined
+  } catch {
+    /* localStorage unavailable — fall through to env */
+  }
+  return { url: url || ENV_URL, key: key || ENV_KEY }
+}
+
 export function isSupabaseConfigured(): boolean {
-  return Boolean(URL && ANON_KEY)
+  const { url, key } = readCreds()
+  return Boolean(url && key)
 }
 
 export function getSupabase(): SupabaseClient {
-  if (!isSupabaseConfigured()) {
+  const { url, key } = readCreds()
+  if (!url || !key) {
     throw new Error(
-      'Supabase is not configured in this build. ' +
-      'Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY at build time.'
+      'Supabase is not configured. Set credentials in Account → Setup, or ' +
+      'export VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY at build time.',
     )
   }
   if (!client) {
-    client = createClient(URL!, ANON_KEY!, {
+    client = createClient(url, key, {
       auth: {
-        // Electron persists session via localStorage — safe because
-        // contextIsolation is enabled (no 3rd-party JS in renderer).
         persistSession: true,
         autoRefreshToken: true,
-        // OAuth redirect uses loopback HTTP server in main process
         detectSessionInUrl: false,
       },
     })
   }
   return client
+}
+
+/** Persist URL+anon key to localStorage. Caller is responsible for
+ *  prompting a reload afterwards (the Supabase client caches internally
+ *  and we don't attempt to hot-swap). */
+export function setSupabaseCredentials(url: string, anonKey: string): void {
+  localStorage.setItem(LS_URL, url.trim())
+  localStorage.setItem(LS_KEY, anonKey.trim())
+  client = null
+}
+
+export function clearSupabaseCredentials(): void {
+  localStorage.removeItem(LS_URL)
+  localStorage.removeItem(LS_KEY)
+  client = null
 }
