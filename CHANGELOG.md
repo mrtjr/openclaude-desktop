@@ -7,6 +7,28 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.8.1] — 2026-04-17
+
+### Added — Sprint 6: Provider fallback toast & health coverage
+
+- **Fallback suggestion toast** — when a provider trips the "down"
+  threshold (5 consecutive errors), the error handler now calls
+  `providerHealth.suggestFallback()` and surfaces a toast pointing the
+  user at a healthy alternative. We deliberately **do not** auto-switch
+  (cost safety) — the user makes the call.
+- **Custom provider included in health inventory** — fixes a gap where
+  a user's self-hosted endpoint wouldn't be considered a valid fallback
+  target. Requires both API key and base URL to be set.
+- `test/providerHealth.test.ts` — 4 new tests covering
+  `getConfiguredProviders` (ollama always present, gated by keys,
+  custom requires baseUrl+key) and a null-healthy `suggestFallback`.
+
+### Notes
+
+- `sanitizers.test.ts` (13 tests) already covered reasoning-leak
+  sanitisation from v2.5. No changes needed to `StreamingSanitizer`
+  itself for this sprint.
+
 ## [2.8.0] — 2026-04-17
 
 ### Added — Sprint 5: Context Engine wired into the chat loop

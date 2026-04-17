@@ -215,7 +215,18 @@ export default function App() {
     speakText: voice.speakText,
     showToast,
     onProviderSuccess: providerHealth.reportSuccess,
-    onProviderError: (err) => providerHealth.reportError(err),
+    onProviderError: (err) => {
+      providerHealth.reportError(err)
+      // Suggest a fallback when the current provider trips the "down"
+      // threshold. We deliberately don't auto-switch (cost safety) — the
+      // user clicks the toast action to change providers.
+      const fallback = providerHealth.suggestFallback()
+      if (fallback && fallback !== settings.provider) {
+        showToast(
+          `${settings.provider} indisponível — tentar ${fallback}? (Configurações → Provedores)`,
+        )
+      }
+    },
     onUsage: (inputTokens, outputTokens) => usageTracking.recordUsage(effectiveSettings.provider, providerConfig.model, inputTokens, outputTokens),
   })
 
