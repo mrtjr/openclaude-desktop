@@ -7,6 +7,29 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.9.1] — 2026-04-17
+
+### Added — Sprint 8: Test coverage for Security Audit & Memory Dreaming
+
+Sprint 8 was re-scoped from an App.tsx refactor (already completed in
+prior work — App.tsx is down from 1 843 → 947 lines) to hardening
+the two least-tested modules on the roadmap. Both were functional but
+had zero automated coverage.
+
+- `test/securityAudit.test.ts` — 7 tests: all-clear on pristine
+  config, permission-bypass = danger, API-key-in-localStorage warning
+  lists providers + counts them, high-temperature warning, long
+  system-prompt info, MCP server inventory, severity ordering
+  (danger < warn < info).
+- `test/memoryDreaming.test.ts` — 9 tests: `calculateHealth` half-life
+  math + floor clamp, `updateHealthScores` assigns health to every
+  entry, `lightDream` no-op + promotion semantics, `deepDream` prunes
+  low-health entries, `shouldDream` gating on unconsolidated episodes.
+
+Combined Sprint 4-8 green tests: **50 passing** across crypto (6),
+contextEngine (11), providerHealth (4), pricing (10), usageTracking
+(3), securityAudit (7), memoryDreaming (9).
+
 ## [2.9.0] — 2026-04-17
 
 ### Added — Sprint 7: Usage & Cost tracking dashboard (Fase 10)
