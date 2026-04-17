@@ -107,20 +107,12 @@ export function onAuthStateChange(
   return () => data.subscription.unsubscribe()
 }
 
-/** Expose the current user (sync, assumes session was already fetched). */
-export function getCurrentUser(): AuthUser | null {
-  if (!isSupabaseConfigured()) return null
-  const sb = getSupabase()
-  const u = sb.auth.getUser
-  // Synchronous access via internal state (safe-guarded)
-  const session = (sb.auth as any).session?.()
-  if (!session?.user) return null
-  return {
-    id: session.user.id,
-    email: session.user.email ?? '',
-    provider: session.user.app_metadata?.provider === 'google' ? 'google' : 'email',
-    createdAt: session.user.created_at ?? new Date().toISOString(),
-  }
+/** Expose the current user using the public supabase-js API.
+ *  Previous implementation reached into `(sb.auth as any).session?.()`
+ *  which is an internal/private accessor that was removed between
+ *  supabase-js v1 and v2 — it always returned undefined on v2.
+ *  `getSession()` is the stable public replacement. */
+export async function getCurrentUser(): Promise<AuthUser | null> {
+  const session = await getCurrentSession()
+  return session?.user ?? null
 }
-
-void mapSession  // silence ts unused if tree-shaken

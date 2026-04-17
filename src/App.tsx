@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react'
 import 'highlight.js/styles/github-dark.css'
-import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, FileCode, Info, ArrowUpCircle, Zap, BotOff, Copy, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Image, Trash, Mic, MicOff, Volume2, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Scale, Camera, Database, BookMarked, Swords, FolderOpen, GitBranch, Monitor, UserCog } from 'lucide-react'
+import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Image, Trash, Mic, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog } from 'lucide-react'
 import SettingsModal, { loadSettings, type AppSettings } from './Settings'
 import type { Persona } from './PersonaEngine'
 // Small / hot-path components — eager
@@ -48,6 +48,7 @@ import { runSecurityAudit } from './utils/securityAudit'
 import { useToast } from './hooks/useToast'
 import { useAuth } from './hooks/useAuth'
 import { useSync } from './hooks/useSync'
+import { isSupabaseConfigured } from './services/supabase'
 
 // ─── App ─────────────────────────────────────────────────────────────
 export default function App() {
@@ -105,27 +106,46 @@ export default function App() {
   // Suppress unused warnings — helpers available for future callers
   void toastSuccess; void toastError
 
-  // ─── Accounts & Cloud Sync (v2.7.0) ───────────────────────────
+  // ─── Accounts & Cloud Sync (v2.7.0, snapshot completo em v2.9.2) ─────
+  // AccountPanel expõe 5 toggles (settings / apiKeys / profiles /
+  // personas / scheduledTasks). Antes o snapshotProvider só preenchia os
+  // 2 primeiros — os outros 3 toggles ficavam decorativos: nada era
+  // enviado, nada era aplicado. Agora usamos refs atualizadas adiante
+  // (profilesRef, scheduledTasksRef) e um IPC call para personas.
   const auth = useAuth()
+  const profilesRef = useRef<any>(null)
+  const scheduledTasksRef = useRef<any>(null)
   const sync = useSync({
     session: auth.session,
     passphrase: auth.passphrase,
-    // Snapshot: what to push. Keep minimal & safe for v0.
-    snapshotProvider: () => ({
-      settings: {
-        theme, language: settings.language, provider: settings.provider,
-        // other non-secret preferences can grow over time
-      },
-      apiKeys: {
-        openai: settings.openaiApiKey || '',
-        anthropic: settings.anthropicApiKey || '',
-        gemini: settings.geminiApiKey || '',
-        openrouter: settings.openrouterApiKey || '',
-        modal: settings.modalApiKey || '',
-        customApiKey: (settings as any).customApiKey || '',
-      },
-    }),
-    applySnapshot: (snap) => {
+    snapshotProvider: async () => {
+      const snap: any = {
+        settings: {
+          theme, language: settings.language, provider: settings.provider,
+        },
+        apiKeys: {
+          openai: settings.openaiApiKey || '',
+          anthropic: settings.anthropicApiKey || '',
+          gemini: settings.geminiApiKey || '',
+          openrouter: settings.openrouterApiKey || '',
+          modal: settings.modalApiKey || '',
+          customApiKey: (settings as any).customApiKey || '',
+        },
+      }
+      if (profilesRef.current?.customProfiles) {
+        // only custom profiles sync — built-ins are identical everywhere
+        snap.profiles = profilesRef.current.customProfiles
+      }
+      if (scheduledTasksRef.current?.tasks) {
+        snap.scheduledTasks = scheduledTasksRef.current.tasks
+      }
+      try {
+        const personasRes = await window.electron.personaLoad?.()
+        if (personasRes?.personas) snap.personas = personasRes.personas
+      } catch (e) { console.warn('[sync] persona snapshot load failed:', e) }
+      return snap
+    },
+    applySnapshot: async (snap) => {
       if (snap.settings) {
         const remote = snap.settings.data || {}
         if (remote.theme && (remote.theme === 'dark' || remote.theme === 'light')) setTheme(remote.theme)
@@ -147,6 +167,16 @@ export default function App() {
         } as any
         setSettings(next); localStorage.setItem('openclaude-settings', JSON.stringify(next))
       }
+      if (snap.profiles?.data && Array.isArray(snap.profiles.data)) {
+        profilesRef.current?.replaceAll?.(snap.profiles.data)
+      }
+      if (snap.scheduledTasks?.data && Array.isArray(snap.scheduledTasks.data)) {
+        scheduledTasksRef.current?.replaceAll?.(snap.scheduledTasks.data)
+      }
+      if (snap.personas?.data && Array.isArray(snap.personas.data)) {
+        try { await window.electron.personaSave?.(snap.personas.data) }
+        catch (e) { console.warn('[sync] persona apply failed:', e) }
+      }
     },
   })
 
@@ -157,6 +187,9 @@ export default function App() {
 
   // ─── Agent Profiles ────────────────────────────────────────────
   const profiles = useProfiles()
+  // Keep the sync ref pointing at the latest hook object so snapshotProvider
+  // (which runs later, from useSync's closure) reads current state.
+  profilesRef.current = profiles
 
   // Merge active profile overrides into effective settings
   const effectiveSettings = useMemo(() => {
@@ -219,12 +252,23 @@ export default function App() {
       providerHealth.reportError(err)
       // Suggest a fallback when the current provider trips the "down"
       // threshold. We deliberately don't auto-switch (cost safety) — the
-      // user clicks the toast action to change providers.
+      // toast has an explicit action button the user clicks to confirm.
       const fallback = providerHealth.suggestFallback()
       if (fallback && fallback !== settings.provider) {
-        showToast(
-          `${settings.provider} indisponível — tentar ${fallback}? (Configurações → Provedores)`,
-        )
+        showToast({
+          message: `${settings.provider} indisponível — trocar para ${fallback}?`,
+          severity: 'warn',
+          duration: 10000,
+          action: {
+            label: `Trocar para ${fallback}`,
+            onClick: () => {
+              const next = { ...settings, provider: fallback as any } as AppSettings
+              setSettings(next)
+              localStorage.setItem('openclaude-settings', JSON.stringify(next))
+              showToast({ message: `Provedor ativo: ${fallback}`, severity: 'success' })
+            },
+          },
+        })
       }
     },
     onUsage: (inputTokens, outputTokens) => usageTracking.recordUsage(effectiveSettings.provider, providerConfig.model, inputTokens, outputTokens),
@@ -254,6 +298,7 @@ export default function App() {
       }, 100)
     },
   })
+  scheduledTasksRef.current = scheduledTasks
 
   // ─── Check for updates ─────────────────────────────────────────
   useEffect(() => {
@@ -631,14 +676,21 @@ export default function App() {
             </>
           )}
           <button className="titlebar-action-btn" onClick={() => setShowAnalytics(true)} title="Analytics & Insights"><BarChart3 size={14} /></button>
-          <button
-            className="titlebar-action-btn"
-            onClick={() => setShowAccount(true)}
-            title={auth.session ? `${auth.session.user.email} — Conta & Sincronização` : 'Conta & Sincronização'}
-          >
-            <User size={14} />
-            {auth.session && <span className="account-dot" aria-hidden="true" />}
-          </button>
+          {/* Account button only appears when this build has Supabase
+              credentials. Otherwise clicking it opened a dead-end modal
+              saying "not configured — see docs", which was the UX
+              complaint in v2.9.1. Local-only builds hide the entry
+              entirely rather than advertise a feature the user can't use. */}
+          {isSupabaseConfigured() && (
+            <button
+              className="titlebar-action-btn"
+              onClick={() => setShowAccount(true)}
+              title={auth.session ? `${auth.session.user.email} — Conta & Sincronização` : 'Conta & Sincronização'}
+            >
+              <User size={14} />
+              {auth.session && <span className="account-dot" aria-hidden="true" />}
+            </button>
+          )}
           <button className="titlebar-action-btn" onClick={() => setShowSettings(true)} title="Configurações (Ctrl+,)"><SettingsIcon size={14} /></button>
         </div>
         <div className="titlebar-controls">

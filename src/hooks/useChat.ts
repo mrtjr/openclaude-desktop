@@ -4,7 +4,11 @@ import { TOOLS, AGENT_SAFETY_LIMIT, NORMAL_SAFETY_LIMIT, IDLE_STEP_THRESHOLD } f
 import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIMING, LANGUAGE_REMINDER } from '../constants/prompts'
 import { generateId, isSmallModel } from '../utils/formatting'
 import { sanitizeReasoningLeaks, StreamingSanitizer } from '../utils/sanitizers'
+import { createContextEngine, getModelContextLimit } from '../services/contextEngine'
 import type { ProviderConfig } from './useProviderConfig'
+
+// The engine is pure and stateless — create once at module load.
+const contextEngine = createContextEngine()
 
 interface UseChatOptions {
   settings: AppSettings
@@ -191,19 +195,22 @@ export function useChat({
       // This replaces the previous fixed 50-message cap, which was both
       // too aggressive on large-context models (Gemini 1M) and too loose
       // on small ones (gpt-4 8k).
-      const { createContextEngine, getModelContextLimit } = await import('../services/contextEngine')
-      const engine = createContextEngine()
+      // Use static import: the previous dynamic import was redundant
+      // (useTokenCounter already pulls it statically) and the rolldown
+      // warning "dynamic import will not move module into another chunk"
+      // was burying real warnings in the build output.
       const modelLimit = getModelContextLimit(finalModel)
       const tokenBudget = Math.floor(modelLimit * 0.60)
-      const MAX_CONTEXT_MESSAGES = settings.contextLimit || 50
       let contextSummary = conv?.contextSummary || ''
-      // Treat history as Message-shaped for token counting
       const historyForEngine = history as any[]
-      const assembled = engine.assemble(historyForEngine, tokenBudget)
+      const assembled = contextEngine.assemble(historyForEngine, tokenBudget)
       let trimmedHistory = assembled
-      const droppedByTokens = history.length - assembled.length
-      const droppedByCount = Math.max(0, history.length - MAX_CONTEXT_MESSAGES)
-      const droppedCount = Math.max(droppedByTokens, droppedByCount)
+      // Drop count is defined strictly by the token budget now. The old
+      // parallel 50-message cap was dead code — kept after the token
+      // engine landed but never removed. We relied on Math.max(a, b)
+      // which made the budget effectively min(50msg, 60% tokens),
+      // silently ignoring the token setting on most conversations.
+      const droppedCount = history.length - assembled.length
 
       if (droppedCount > 0) {
         const oldMessages = history.slice(0, droppedCount)
@@ -305,6 +312,10 @@ export function useChat({
           const sanitizer = new StreamingSanitizer()
           let toolCallsData: any[] = []
           let finishReason = ''
+          // Usage reported by the provider (OpenAI stream_options.include_usage
+          // or Anthropic message_start/message_delta). Null when the provider
+          // doesn't support it (e.g. Ollama local, Gemini stream path).
+          let streamUsage: { prompt_tokens: number; completion_tokens: number } | null = null
           setIsStreaming(true)
           setStreamingText('')
 
@@ -322,6 +333,14 @@ export function useChat({
                 return
               }
               if (chunk.error) { cleanup(); streamCleanupRef.current = null; reject(new Error(chunk.error)); return }
+              // Capture usage if the provider sent it (OpenAI-compat final chunk
+              // or Anthropic synthetic chunk). Uniform shape {prompt_tokens, completion_tokens}.
+              if (chunk.usage && typeof chunk.usage === 'object') {
+                streamUsage = {
+                  prompt_tokens: chunk.usage.prompt_tokens ?? chunk.usage.input_tokens ?? 0,
+                  completion_tokens: chunk.usage.completion_tokens ?? chunk.usage.output_tokens ?? 0,
+                }
+              }
               const delta = chunk.choices?.[0]?.delta
               if (delta) {
                 if (delta.content) {
@@ -368,6 +387,31 @@ export function useChat({
           accumulated = sanitizeReasoningLeaks(accumulated)
           console.log('[useChat] Stream completed:', { accumulatedLen: accumulated.length, toolCalls: toolCallsData.length, finishReason })
           onProviderSuccessRef.current?.()
+
+          // ─── Per-turn usage reporting ────────────────────────────
+          // Preferred: real numbers from the provider (stream_options.include_usage
+          // for OpenAI-compat, message_start+message_delta for Anthropic).
+          // Fallback: heuristic on *this turn only* — requestMessages for input
+          // and `accumulated` for output. Never sum across turns (was the bug).
+          try {
+            const usageFn = onUsageRef.current
+            if (usageFn) {
+              // Extract to a local const — TS flow analysis narrows
+              // `streamUsage` (a `let` reassigned inside a callback)
+              // back to `null` without this.
+              const u = streamUsage as { prompt_tokens: number; completion_tokens: number } | null
+              if (u) {
+                usageFn(u.prompt_tokens, u.completion_tokens)
+              } else {
+                const inputChars = requestMessages.reduce((s: number, m: any) => {
+                  const c = typeof m.content === 'string' ? m.content : JSON.stringify(m.content || '')
+                  return s + c.length
+                }, 0)
+                const outputChars = accumulated.length
+                usageFn(Math.ceil(inputChars / 4), Math.ceil(outputChars / 4))
+              }
+            }
+          } catch (e) { console.warn('[useChat] usage report error:', e) }
 
           if (toolCallsData.length > 0 && toolCallsData[0]?.function?.name) {
             const { message: thinkingMsg, shouldContinue } = await processToolCalls(
@@ -534,16 +578,11 @@ export function useChat({
         }).catch((e: any) => console.warn('[useChat] analytics save error:', e))
       }
 
-      // Report usage for cost tracking (rough estimate from message lengths)
-      const usageFn = onUsageRef.current
-      if (usageFn) {
-        const conv = conversationsRef.current.find(c => c.id === convId)
-        if (conv) {
-          const inputChars = conv.messages.filter(m => m.role !== 'assistant').reduce((s, m) => s + m.content.length, 0)
-          const outputChars = conv.messages.filter(m => m.role === 'assistant').slice(-sessionTracker.agentSteps || -1).reduce((s, m) => s + m.content.length, 0)
-          usageFn(Math.ceil(inputChars / 4), Math.ceil(outputChars / 4))
-        }
-      }
+      // NOTE: usage reporting moved inside the stream loop so it fires per
+      // turn with real provider numbers (stream_options.include_usage /
+      // Anthropic message_delta). The previous implementation here summed
+      // the ENTIRE conversation on every turn, causing exponential
+      // double-counting and inflated costs in the dashboard.
     }
   }, [isLoading, providerConfig, settings, isAgentMode, conversationsRef, setConversations, executeTool, speakText, showToast])
 

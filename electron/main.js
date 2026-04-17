@@ -929,21 +929,27 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
     let transport = https
     let port
 
+    // `stream_options.include_usage` makes OpenAI-compatible APIs emit a final
+     // chunk with `usage: {prompt_tokens, completion_tokens, total_tokens}`.
+     // Without this, cost tracking has to guess via heuristic. We only send it
+     // for providers that understand it (OpenAI, OpenRouter, Modal, custom).
+    const openaiStreamOpts = { include_usage: true }
+
     if (provider === 'openai') {
       hostname = 'api.openai.com'
       apiPath = '/v1/chat/completions'
       headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
-      bodyObj = { model, messages, tools: tools?.length ? tools : undefined, stream: true, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
+      bodyObj = { model, messages, tools: tools?.length ? tools : undefined, stream: true, stream_options: openaiStreamOpts, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
     } else if (provider === 'openrouter') {
       hostname = 'openrouter.ai'
       apiPath = '/api/v1/chat/completions'
       headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://github.com/mrtjr/openclaude-desktop', 'X-Title': 'OpenClaude Desktop' }
-      bodyObj = { model, messages, tools: tools?.length ? tools : undefined, stream: true, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
+      bodyObj = { model, messages, tools: tools?.length ? tools : undefined, stream: true, stream_options: openaiStreamOpts, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
     } else if (provider === 'modal') {
       hostname = modalHostname || 'api.us-west-2.modal.direct'
       apiPath = '/v1/chat/completions'
       headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'User-Agent': 'OpenClaude-Desktop' }
-      bodyObj = { model, messages, tools: tools?.length ? tools : undefined, stream: true, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
+      bodyObj = { model, messages, tools: tools?.length ? tools : undefined, stream: true, stream_options: openaiStreamOpts, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
     } else if (provider === 'anthropic') {
       hostname = 'api.anthropic.com'
       apiPath = '/v1/messages'
@@ -1008,6 +1014,10 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
       let buffer = ''
       // Anthropic streaming state
       let anthropicToolAccum = {} // { [index]: { id, name, argsStr } }
+      // Anthropic usage accumulator — message_start gives input_tokens,
+      // message_delta gives the final output_tokens. Emit one synthetic
+      // OpenAI-shaped usage chunk at the end so useChat has a uniform path.
+      let anthropicUsage = { prompt_tokens: 0, completion_tokens: 0 }
 
       res.on('data', (chunk) => {
         buffer += chunk.toString()
@@ -1025,7 +1035,15 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
             if (provider === 'anthropic') {
               // Normalize Anthropic SSE events to OpenAI chunk format
               const evType = parsed.type
-              if (evType === 'content_block_delta') {
+              if (evType === 'message_start') {
+                const u = parsed.message?.usage
+                if (u) {
+                  anthropicUsage.prompt_tokens = (u.input_tokens || 0)
+                    + (u.cache_read_input_tokens || 0)
+                    + (u.cache_creation_input_tokens || 0)
+                  anthropicUsage.completion_tokens = u.output_tokens || 0
+                }
+              } else if (evType === 'content_block_delta') {
                 const delta = parsed.delta
                 if (delta?.type === 'text_delta') {
                   event.sender.send('ollama-stream-chunk', { choices: [{ delta: { content: delta.text }, finish_reason: null }] })
@@ -1036,20 +1054,29 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
               } else if (evType === 'content_block_start' && parsed.content_block?.type === 'tool_use') {
                 const idx = parsed.index
                 anthropicToolAccum[idx] = { id: parsed.content_block.id, name: parsed.content_block.name, argsStr: '' }
-              } else if (evType === 'message_delta' && parsed.delta?.stop_reason) {
-                const toolEntries = Object.values(anthropicToolAccum)
-                if (toolEntries.length > 0) {
-                  const tool_calls = toolEntries.map(t => ({ id: t.id, type: 'function', function: { name: t.name, arguments: t.argsStr } }))
-                  event.sender.send('ollama-stream-chunk', { choices: [{ delta: { tool_calls }, finish_reason: 'tool_calls' }] })
+              } else if (evType === 'message_delta') {
+                if (parsed.usage?.output_tokens != null) {
+                  anthropicUsage.completion_tokens = parsed.usage.output_tokens
                 }
-                sendDone()
+                if (parsed.delta?.stop_reason) {
+                  const toolEntries = Object.values(anthropicToolAccum)
+                  if (toolEntries.length > 0) {
+                    const tool_calls = toolEntries.map(t => ({ id: t.id, type: 'function', function: { name: t.name, arguments: t.argsStr } }))
+                    event.sender.send('ollama-stream-chunk', { choices: [{ delta: { tool_calls }, finish_reason: 'tool_calls' }] })
+                  }
+                  // Emit final usage in OpenAI-shape so the renderer has a single path.
+                  event.sender.send('ollama-stream-chunk', { choices: [], usage: { ...anthropicUsage, total_tokens: anthropicUsage.prompt_tokens + anthropicUsage.completion_tokens } })
+                  sendDone()
+                }
               } else if (evType === 'message_stop') {
                 sendDone()
               } else if (evType === 'error') {
                 sendDone(parsed.error?.message || 'Anthropic stream error')
               }
             } else {
-              // OpenAI-compatible SSE — pass through directly
+              // OpenAI-compatible SSE — pass through directly.
+              // With stream_options.include_usage the final chunk has
+              // `choices: []` + a `usage` field; useChat picks it up.
               event.sender.send('ollama-stream-chunk', parsed)
               if (parsed.choices?.[0]?.finish_reason) sendDone()
             }

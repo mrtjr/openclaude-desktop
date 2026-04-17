@@ -13,9 +13,31 @@ describe('getModelPricing', () => {
     expect(p.input).toBeGreaterThan(0)
   })
 
-  it('returns {0,0} for unknown models (e.g. local Ollama)', () => {
+  it('returns {0,0} for local/Ollama models', () => {
     expect(getModelPricing('llama3:8b')).toEqual({ input: 0, output: 0 })
-    expect(getModelPricing('some-nonexistent-model')).toEqual({ input: 0, output: 0 })
+    expect(getModelPricing('qwen2.5-coder:32b')).toEqual({ input: 0, output: 0 })
+    expect(getModelPricing('mistral-nemo:12b')).toEqual({ input: 0, output: 0 })
+  })
+
+  it('returns {0,0} + warns for truly unknown models (no family match)', () => {
+    expect(getModelPricing('some-nonexistent-provider-model-xyz')).toEqual({ input: 0, output: 0 })
+  })
+
+  it('uses family-tier fallback for new variants not in PRICING', () => {
+    // Hypothetical future models — should land in the right tier, not $0
+    const gpt5 = getModelPricing('gpt-5-turbo-2025-01-01')
+    expect(gpt5.input).toBeGreaterThan(0)
+    expect(gpt5.output).toBeGreaterThan(gpt5.input)  // output always dearer
+
+    const opus = getModelPricing('claude-opus-5-20260101')
+    expect(opus.input).toBeGreaterThanOrEqual(15)  // opus tier
+    expect(opus.output).toBeGreaterThanOrEqual(75)
+
+    const haiku = getModelPricing('claude-3-7-haiku-20250601')
+    expect(haiku.input).toBeLessThan(2)  // haiku tier is cheap
+
+    const gflash = getModelPricing('gemini-3.0-flash')
+    expect(gflash.input).toBeLessThan(1)
   })
 })
 

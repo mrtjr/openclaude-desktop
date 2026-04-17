@@ -26,10 +26,12 @@ export type SyncSnapshot = Partial<Record<SyncKind, any>>
 export interface UseSyncOptions {
   session: AuthSession | null
   passphrase: string | undefined
-  /** Called when sync wants the current local state to push. */
-  snapshotProvider: () => SyncSnapshot
-  /** Called with server data after a successful pull. */
-  applySnapshot: (snapshot: Partial<Record<SyncKind, SyncItem>>) => void
+  /** Called when sync wants the current local state to push.
+   *  May be async — some sources (e.g. persona files) need IPC. */
+  snapshotProvider: () => SyncSnapshot | Promise<SyncSnapshot>
+  /** Called with server data after a successful pull.
+   *  May be async — applying personas writes via IPC. */
+  applySnapshot: (snapshot: Partial<Record<SyncKind, SyncItem>>) => void | Promise<void>
   /** Push debounce (ms) when autoPush is enabled. */
   autoPushDebounceMs?: number
 }
@@ -73,7 +75,7 @@ export function useSync(opts: UseSyncOptions): UseSyncResult {
     if (!prefs.enabled) return
     setState((s) => ({ ...s, status: 'syncing' }))
     try {
-      const snapshot = snapshotProvider()
+      const snapshot = await Promise.resolve(snapshotProvider())
       const { errors } = await pushAll(session.user.id, prefs, snapshot, passphrase)
       pendingRef.current = 0
       setState({
@@ -93,7 +95,7 @@ export function useSync(opts: UseSyncOptions): UseSyncResult {
     setState((s) => ({ ...s, status: 'syncing' }))
     try {
       const { snapshot, errors } = await pullAll(session.user.id, prefs, passphrase)
-      applySnapshot(snapshot)
+      await Promise.resolve(applySnapshot(snapshot))
       setState({
         status: errors.length ? 'error' : 'idle',
         lastSyncAt: Date.now(),

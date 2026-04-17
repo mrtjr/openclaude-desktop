@@ -39,13 +39,63 @@ export const PRICING: Record<string, ModelPricing> = {
   'meta-llama/llama-3.3-70b-instruct': { input: 0.39, output: 0.39 },
 }
 
-/** Get pricing for a model. Returns {0,0} for local/unknown models. */
+/** Family-tier fallbacks for models we haven't added to PRICING yet.
+ *  Chosen to match the median of that family's public prices so a new
+ *  GPT-5 or Claude-Opus-5 doesn't get silently tracked as free. Always
+ *  an over-estimate for safer/older models, never an under-estimate
+ *  for newer/bigger ones. */
+const FAMILY_FALLBACK: Array<{ match: RegExp; pricing: ModelPricing; family: string }> = [
+  { match: /^gpt-4o-mini|4o-mini/i, pricing: { input: 0.15, output: 0.60 }, family: 'gpt-4o-mini' },
+  { match: /^gpt-4o|o4|4o\b/i, pricing: { input: 2.50, output: 10.00 }, family: 'gpt-4o' },
+  { match: /^gpt-5|gpt-4\.5|o5/i, pricing: { input: 10.00, output: 40.00 }, family: 'gpt-5-tier' },
+  { match: /^o3|o1(-|$)/i, pricing: { input: 10.00, output: 40.00 }, family: 'o-series' },
+  { match: /^gpt-4/i, pricing: { input: 10.00, output: 30.00 }, family: 'gpt-4' },
+  { match: /^gpt-3/i, pricing: { input: 0.50, output: 1.50 }, family: 'gpt-3.5' },
+  { match: /haiku/i, pricing: { input: 0.80, output: 4.00 }, family: 'claude-haiku' },
+  { match: /sonnet/i, pricing: { input: 3.00, output: 15.00 }, family: 'claude-sonnet' },
+  { match: /opus/i, pricing: { input: 15.00, output: 75.00 }, family: 'claude-opus' },
+  { match: /claude-\d/i, pricing: { input: 3.00, output: 15.00 }, family: 'claude-generic' },
+  { match: /gemini.*flash/i, pricing: { input: 0.15, output: 0.60 }, family: 'gemini-flash' },
+  { match: /gemini.*pro/i, pricing: { input: 1.25, output: 10.00 }, family: 'gemini-pro' },
+  { match: /gemini-\d/i, pricing: { input: 0.15, output: 0.60 }, family: 'gemini-generic' },
+]
+
+/** Local-model prefixes that are legitimately free. */
+const LOCAL_MODEL_PREFIXES = ['llama', 'qwen', 'mistral', 'mixtral', 'deepseek-r1-distill', 'phi', 'gemma', 'codellama', 'nous-', 'dolphin', 'uncensored']
+
+/** Track which unknown models we've already warned about (once per model). */
+const WARNED_UNKNOWN = new Set<string>()
+
+/** Returns true if the model name looks like a local/Ollama model. */
+function isLikelyLocalModel(model: string): boolean {
+  const lower = model.toLowerCase()
+  // Ollama-style tags use ":" (e.g. llama3:8b) — always local.
+  if (lower.includes(':')) return true
+  return LOCAL_MODEL_PREFIXES.some(p => lower.startsWith(p) || lower.includes('/' + p))
+}
+
+/** Get pricing for a model.
+ *  1. Exact match in PRICING table wins.
+ *  2. Case-insensitive substring match against PRICING keys (handles
+ *     OpenRouter-style `openai/gpt-4o-2024-11-20` → `gpt-4o`).
+ *  3. Family regex fallback — a new `gpt-5-turbo` gets the gpt-5 tier
+ *     instead of $0. A `claude-opus-5` gets opus pricing.
+ *  4. Local-model prefixes (Ollama llama/qwen/mistral/…) → $0.
+ *  5. Truly unknown — log a one-time warning and return $0. This at
+ *     least surfaces the gap in the devtools console. */
 export function getModelPricing(model: string): ModelPricing {
   if (PRICING[model]) return PRICING[model]
-  // Partial match
   const modelLower = model.toLowerCase()
   for (const [key, pricing] of Object.entries(PRICING)) {
     if (modelLower.includes(key.toLowerCase())) return pricing
+  }
+  for (const fb of FAMILY_FALLBACK) {
+    if (fb.match.test(model)) return fb.pricing
+  }
+  if (isLikelyLocalModel(model)) return { input: 0, output: 0 }
+  if (!WARNED_UNKNOWN.has(model)) {
+    WARNED_UNKNOWN.add(model)
+    console.warn(`[pricing] Unknown model "${model}" — cost tracking will show $0. Add it to PRICING or a FAMILY_FALLBACK pattern.`)
   }
   return { input: 0, output: 0 }
 }

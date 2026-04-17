@@ -7,6 +7,65 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.9.2] — 2026-04-17
+
+### Fixed — Audit-fix release: correcting regressions from v2.7–v2.9
+
+Após feedback direto do usuário ("revise todo o trabalho ficou mau feito,
+feito as pressas com falhas"), um audit independente identificou 25
+problemas reais introduzidos durante os Sprints 4–8. Esta versão corrige
+os 9 mais críticos, todos validados com `npm run typecheck` limpo e
+**125/125 testes passando** (salto de 50 → 125 ao desbloquear suites
+que estavam silenciosamente falhando ao importar).
+
+- **Cost tracking agora usa usage real do provider.** O pipeline antigo
+  estimava `chars/4` a cada turno e somava a conversa inteira, causando
+  double-counting grave. Agora:
+  - `electron/main.js` envia `stream_options.include_usage: true` para
+    OpenAI/OpenRouter/Modal, capturando o chunk final com
+    `{prompt_tokens, completion_tokens}`.
+  - Handler Anthropic captura `message_start.usage` + `message_delta.usage`
+    e emite chunk sintético no formato OpenAI antes do `[DONE]`.
+  - `useChat.ts` consome `chunk.usage` e reporta uso por turno; se o
+    provider não enviar, a heurística `chars/4` aplica apenas ao turno
+    atual (não re-soma o histórico).
+- **Account button oculto quando Supabase não está configurado.** Era o
+  exemplo dado pelo usuário — clicar mostrava um dead-end "Sincronização
+  não habilitada". Agora `isSupabaseConfigured()` gate no botão.
+- **Sync snapshot completo.** `snapshotProvider` ficou async e inclui
+  custom profiles (`useProfiles.replaceAll`), scheduled tasks
+  (`useScheduledTasks.replaceAll` com recompute de `nextRun`) e personas
+  (via IPC `personaLoad`/`personaSave`). Antes só ia settings + conversas.
+- **Pricing family-regex fallback.** Modelos futuros (gpt-5-turbo-2025-01,
+  claude-opus-5, gemini-3.0-flash) agora caem na tier correta em vez de
+  retornar `$0` silenciosamente. Prefixos locais reconhecidos
+  (llama/qwen/mistral/deepseek-r1-distill/phi/gemma…) retornam `$0`
+  corretamente sem warning. Modelos realmente desconhecidos logam
+  warning único via `WARNED_UNKNOWN` set.
+- **Fallback toast acionável.** `onProviderError` agora oferece botão
+  "Trocar para X" quando há `fallbackProvider` configurado, em vez de
+  apenas mostrar mensagem passiva.
+- **Truncation code morto removido.** `Math.max(droppedByTokens,
+  droppedByCount)` com `MAX_CONTEXT_MESSAGES=50` fazia o token-budget do
+  contextEngine ser ignorado na maioria das conversas. Agora
+  `droppedCount = history.length - assembled.length` vem puro do budget.
+- **`getCurrentUser()` usa API pública supabase-js v2.** A implementação
+  antiga chamava `(sb.auth as any).session?.()` — acessor privado da v1
+  removido na v2, que sempre retornava `undefined`. Agora delega para
+  `getCurrentSession()` (async).
+- **`@testing-library/dom` adicionada como devDep.** No npm 7+ peers não
+  são auto-instaladas — 4 suites (`useModalKeyPool`, `useProfiles`,
+  `useScheduledTasks`, `useToast`) falhavam silenciosamente no import.
+  Com a dep declarada, contagem de testes saltou de 50 → 125.
+- **Imports lucide-react limpos.** Removidos ~12 ícones importados mas
+  não usados em `App.tsx`.
+
+### Verificação
+
+- `npm run typecheck` — 0 erros
+- `npm run build` — ok
+- `npx vitest run` — 14/14 test files, 125/125 tests passing
+
 ## [2.9.1] — 2026-04-17
 
 ### Added — Sprint 8: Test coverage for Security Audit & Memory Dreaming

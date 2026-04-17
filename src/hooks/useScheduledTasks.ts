@@ -180,6 +180,18 @@ export function useScheduledTasks(opts: UseScheduledTasksOptions = {}) {
     })
   }, [])
 
+  /** Replace the full set of tasks. Used by cloud sync on pull.
+   *  Recomputes `nextRun` for any enabled task that lacks one. */
+  const replaceAll = useCallback((incoming: ScheduledTask[]) => {
+    const now = Date.now()
+    const next = incoming.map(t => ({
+      ...t,
+      nextRun: t.enabled ? (t.nextRun ?? calcNextRun(t.schedule, now)) : undefined,
+    }))
+    setTasks(next)
+    saveTasks(next)
+  }, [])
+
   return {
     tasks,
     create,
@@ -187,6 +199,7 @@ export function useScheduledTasks(opts: UseScheduledTasksOptions = {}) {
     remove,
     toggle,
     runNow,
+    replaceAll,
     enabledCount: tasks.filter(t => t.enabled).length,
     totalCount: tasks.length,
   }

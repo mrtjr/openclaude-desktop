@@ -95,6 +95,14 @@ export function useProfiles() {
     })
   }, [allProfiles, create])
 
+  /** Replace the full set of *custom* profiles (built-ins untouched).
+   *  Used by cloud sync when pulling a remote snapshot. */
+  const replaceAll = useCallback((profiles: AgentProfile[]) => {
+    const custom = profiles.filter(p => !p.isBuiltIn)
+    setCustomProfiles(custom)
+    saveCustomProfiles(custom)
+  }, [])
+
   return {
     allProfiles,
     customProfiles,
@@ -105,5 +113,6 @@ export function useProfiles() {
     update,
     remove,
     duplicate,
+    replaceAll,
   }
 }
