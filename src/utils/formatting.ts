@@ -60,3 +60,61 @@ export function getRelativeTime(d: Date): string {
   const months = Math.floor(diff / 43200)
   return `há ${months} ${months === 1 ? 'mês' : 'meses'}`
 }
+
+/** Sidebar bucket labels for ChatGPT/Claude-style temporal grouping. */
+export type TimeBucket = 'today' | 'yesterday' | 'week' | 'month' | 'older'
+
+const BUCKET_LABEL_PT: Record<TimeBucket, string> = {
+  today: 'Hoje',
+  yesterday: 'Ontem',
+  week: 'Últimos 7 dias',
+  month: 'Últimos 30 dias',
+  older: 'Anterior',
+}
+
+const BUCKET_LABEL_EN: Record<TimeBucket, string> = {
+  today: 'Today',
+  yesterday: 'Yesterday',
+  week: 'Previous 7 days',
+  month: 'Previous 30 days',
+  older: 'Older',
+}
+
+export function bucketLabel(b: TimeBucket, lang: 'pt' | 'en' = 'pt'): string {
+  return (lang === 'en' ? BUCKET_LABEL_EN : BUCKET_LABEL_PT)[b]
+}
+
+/** Classify a timestamp into one of five temporal buckets.
+ *  Based on the *start* of today, not a rolling 24h — "ontem" means
+ *  the calendar day before today, matching user intuition. */
+export function timeBucket(d: Date | string | number): TimeBucket {
+  const t = new Date(d).getTime()
+  const now = new Date()
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const DAY = 86_400_000
+  if (t >= startOfToday) return 'today'
+  if (t >= startOfToday - DAY) return 'yesterday'
+  if (t >= startOfToday - 7 * DAY) return 'week'
+  if (t >= startOfToday - 30 * DAY) return 'month'
+  return 'older'
+}
+
+/** Preserve chronological order of buckets. */
+export const BUCKET_ORDER: TimeBucket[] = ['today', 'yesterday', 'week', 'month', 'older']
+
+/** Group a pre-sorted conversation list by temporal bucket.
+ *  Returns an ordered array of [bucket, items[]] — empty buckets omitted. */
+export function groupByBucket<T extends { createdAt: Date | string | number }>(
+  items: T[],
+): Array<[TimeBucket, T[]]> {
+  const groups = new Map<TimeBucket, T[]>()
+  for (const item of items) {
+    const b = timeBucket(item.createdAt)
+    const arr = groups.get(b)
+    if (arr) arr.push(item)
+    else groups.set(b, [item])
+  }
+  return BUCKET_ORDER
+    .filter(b => groups.has(b))
+    .map(b => [b, groups.get(b)!] as [TimeBucket, T[]])
+}

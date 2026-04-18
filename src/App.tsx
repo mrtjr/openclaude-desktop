@@ -28,7 +28,7 @@ const AccountPanel = lazy(() => import('./AccountPanel'))
 // ─── Extracted modules ──────────────────────────────────────────────
 import type { Message } from './types'
 import { PLACEHOLDER_HINTS, SUGGESTIONS } from './constants/prompts'
-import { formatMarkdown, getRelativeTime } from './utils/formatting'
+import { formatMarkdown, getRelativeTime, groupByBucket, bucketLabel } from './utils/formatting'
 
 // ─── Custom hooks ───────────────────────────────────────────────────
 import { useProviderConfig, getDisplayModel } from './hooks/useProviderConfig'
@@ -383,21 +383,70 @@ export default function App() {
   }, [])
 
   // ─── Keyboard shortcuts ────────────────────────────────────────
+  // Dynamic overlay stack: Esc closes whichever is on top (last-opened first).
+  // Each overlay registers its (open, close) pair; order matters — command
+  // palette and small dropdowns come last so they close before big panels.
   useEffect(() => {
+    const overlays: Array<[boolean, () => void]> = [
+      [showModelDropdown, () => setShowModelDropdown(false)],
+      [showFeatureMenu, () => setShowFeatureMenu(false)],
+      [showCommandPalette, () => setShowCommandPalette(false)],
+      [showSettings, () => setShowSettings(false)],
+      [showAccount, () => setShowAccount(false)],
+      [showAnalytics, () => setShowAnalytics(false)],
+      [showProfiles, () => setShowProfiles(false)],
+      [showScheduler, () => setShowScheduler(false)],
+      [showVault, () => setShowVault(false)],
+      [showPersona, () => setShowPersona(false)],
+      [showArena, () => setShowArena(false)],
+      [showRAG, () => setShowRAG(false)],
+      [showWorkflow, () => setShowWorkflow(false)],
+      [showOrion, () => setShowOrion(false)],
+      [showVision, () => setShowVision(false)],
+      [showCodeWorkspace, () => setShowCodeWorkspace(false)],
+      [showParliament, () => setShowParliament(false)],
+    ]
+
     const handleGlobalKeys = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey
+      const target = e.target as HTMLElement | null
+      const inTextField =
+        !!target && (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable
+        )
+
+      // Esc: close topmost overlay (dropdowns first, then modals).
       if (e.key === 'Escape') {
-        if (showSettings) setShowSettings(false)
-        if (showModelDropdown) setShowModelDropdown(false)
+        for (const [open, close] of overlays) {
+          if (open) { close(); return }
+        }
       }
-      if (e.ctrlKey && e.key === 'n') { e.preventDefault(); convManager.newConversation() }
-      if (e.ctrlKey && e.key === 'k') { e.preventDefault(); setShowCommandPalette(v => !v) }
-      if (e.ctrlKey && e.key === ',') { e.preventDefault(); setShowSettings(true) }
-      if (e.ctrlKey && e.shiftKey && e.key === 'V') { e.preventDefault(); setShowVision(true) }
-      if (e.ctrlKey && e.key === 'p') { e.preventDefault(); setShowPersona(true) }
+
+      // `/` focuses chat composer when not already typing (Discord/GitHub pattern)
+      if (e.key === '/' && !inTextField && !mod) {
+        const ta = document.querySelector<HTMLTextAreaElement>('.message-input')
+        if (ta) { e.preventDefault(); ta.focus() }
+        return
+      }
+
+      if (mod && e.key === 'n') { e.preventDefault(); convManager.newConversation() }
+      else if (mod && e.key === 'k') { e.preventDefault(); setShowCommandPalette(v => !v) }
+      else if (mod && e.key === ',') { e.preventDefault(); setShowSettings(true) }
+      else if (mod && e.shiftKey && e.key === 'V') { e.preventDefault(); setShowVision(true) }
+      else if (mod && e.key === 'p' && !e.shiftKey) { e.preventDefault(); setShowPersona(true) }
+      // Toggle sidebar: Ctrl/Cmd+\ (VS Code convention; avoids clobbering / focus)
+      else if (mod && e.key === '\\') { e.preventDefault(); setSidebarOpen(v => !v) }
     }
     window.addEventListener('keydown', handleGlobalKeys)
     return () => window.removeEventListener('keydown', handleGlobalKeys)
-  }, [showSettings, showModelDropdown])
+  }, [
+    showSettings, showModelDropdown, showFeatureMenu, showCommandPalette,
+    showAccount, showAnalytics, showProfiles, showScheduler, showVault,
+    showPersona, showArena, showRAG, showWorkflow, showOrion, showVision,
+    showCodeWorkspace, showParliament, convManager,
+  ])
 
   // ─── Drag & Drop ──────────────────────────────────────────────
   useEffect(() => {
@@ -466,7 +515,11 @@ export default function App() {
   }, [input])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Enter sends; Shift+Enter inserts newline. Ctrl/Cmd+Enter also sends
+    // (ChatGPT/Claude.ai muscle memory — some users disable plain Enter via
+    // IME or accessibility tools and rely on the modifier variant).
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
+    else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSend() }
   }
 
   const handleSecurityAudit = useCallback(() => {
@@ -742,8 +795,15 @@ export default function App() {
           <div className="conversations-list">
             {convManager.loadingConversations ? (
               <>{[1,2,3,4,5].map(i => <div key={i} className="conv-item skeleton"><div className="skeleton-bar" /></div>)}</>
-            ) : (
-              convManager.filteredConversations.map(conv => (
+            ) : (() => {
+              // ChatGPT/Claude-style sidebar: pinned first (no bucket header),
+              // then temporal buckets ("Hoje", "Ontem", "7 dias"…). Buckets with
+              // zero items are omitted by groupByBucket.
+              const all = convManager.filteredConversations
+              const pinned = all.filter(c => convManager.pinnedConvs.has(c.id))
+              const rest = all.filter(c => !convManager.pinnedConvs.has(c.id))
+              const buckets = groupByBucket(rest)
+              const renderItem = (conv: typeof all[number]) => (
                 <div key={conv.id}
                   className={`conv-item ${conv.id === convManager.activeConvId ? 'active' : ''} ${convManager.pinnedConvs.has(conv.id) ? 'pinned' : ''}`}
                   onClick={() => convManager.setActiveConvId(conv.id)}>
@@ -761,8 +821,24 @@ export default function App() {
                     </button>
                   </div>
                 </div>
-              ))
-            )}
+              )
+              return (
+                <>
+                  {pinned.length > 0 && (
+                    <div className="conv-bucket">
+                      <div className="conv-bucket-label">{settings.language === 'en' ? 'Pinned' : 'Fixadas'}</div>
+                      {pinned.map(renderItem)}
+                    </div>
+                  )}
+                  {buckets.map(([b, items]) => (
+                    <div key={b} className="conv-bucket">
+                      <div className="conv-bucket-label">{bucketLabel(b, settings.language)}</div>
+                      {items.map(renderItem)}
+                    </div>
+                  ))}
+                </>
+              )
+            })()}
           </div>
 
           <div className="sidebar-footer">
@@ -875,7 +951,11 @@ export default function App() {
                 </div>
               </div>
             )}
-            {isActiveConvLoading && (
+            {/* Typing indicator — only while waiting for the first token.
+                Once streamingText has content, the streaming bubble above
+                already shows a blinking cursor; rendering dots here too
+                produces a double-indicator race (bug in v2.9.x). */}
+            {isActiveConvLoading && !(chat.isStreaming && chat.streamingText) && (
               <div className="message message-assistant">
                 <div className="message-avatar"><div className={`oc-logo ${isAgentMode ? 'agent-active' : ''}`}>OC</div></div>
                 <div className="message-content">

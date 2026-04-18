@@ -7,6 +7,82 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.10.0] — 2026-04-17
+
+### Added / Changed — Polish pass (P0 + P1 + P2 from design audit)
+
+Release guiada por audit independente cruzado com referências de apps
+desktop modernos (Claude Desktop, ChatGPT, Raycast, Linear, Arc, Cursor).
+Foco: acessibilidade de teclado, robustez de feedback visual, e
+padronização de design tokens.
+
+#### P0 — Acessibilidade & robustez
+
+- **Esc universal fecha todos os overlays.** Antes só fechava Settings
+  e o model dropdown — 14 outros painéis (Analytics, Vision, Persona,
+  Vault, Arena, Workspace, ORION, WorkflowBuilder, RAG, AccountPanel,
+  Parliament, CommandPalette, Profiles, Scheduler) só fechavam via
+  clique. Agora a stack de overlays é percorrida em ordem (dropdowns
+  primeiro, modais depois) e só o mais recente fecha por Esc.
+- **`/` foca o composer** quando não está em campo de texto (padrão
+  Discord/GitHub/Slack). `Ctrl/Cmd+Enter` envia mensagem (atalho
+  ChatGPT/Claude.ai para usuários que desabilitam Enter via IME).
+  `Ctrl/Cmd+\` toggle sidebar (VS Code).
+- **macOS support nos atalhos.** Todo handler agora checa
+  `ctrlKey || metaKey`. Antes nenhum atalho funcionava no build mac.
+- **Toast stack com cap (5) + dedupe.** Mensagem+severity idênticas
+  em janela de 800ms são swallowed. Oldest-out quando excede. Timers
+  rastreados por `Map<id, TimeoutHandle>` e cancelados no dismiss
+  (antes vazavam e às vezes fechavam o toast errado após ID recycle).
+- **Race condition do streaming resolvida.** Antes, janela curta onde
+  cursor piscante + typing dots apareciam simultaneamente ao começar
+  a receber tokens. Agora typing indicator some assim que
+  `streamingText` tem conteúdo.
+
+#### P1 — Design tokens
+
+- **Variáveis CSS novas** em `:root`: `--radius-sm/md/lg/xl/pill`,
+  `--tr-fast/base/slow` (com easing `cubic-bezier(0.16, 1, 0.3, 1)`
+  do sistema de design do Linear/Arc), `--z-dropdown/modal/overlay/
+  toast/tooltip`. Valores legacy mantidos para compat.
+- **`.update-banner` sem `!important`.** Os 9 `!important` empilhados
+  foram substituídos por especificidade via `body .update-banner` +
+  uso de `--z-overlay`. Queda total de ~20 → ~13 `!important`
+  no index.css.
+- **Headers de modal unificados.** Audit achou 8 classes divergindo
+  em font-size (16 vs 17), weight (600 vs 700) e padding (4 combos
+  diferentes). Novo seletor `:where(...)` normaliza padding 16×20 e
+  h2 17px/600 sem alterar classes, preservando overrides locais
+  (ex: `.orion-header h2` mantém cor/fonte customizadas).
+
+#### P2 — UX com referência direta
+
+- **Agrupamento temporal no sidebar** (ChatGPT/Claude Desktop pattern).
+  Buckets "Hoje", "Ontem", "Últimos 7 dias", "Últimos 30 dias",
+  "Anterior". Labels sticky no scroll com blur backdrop. Fixadas no
+  topo sob seção "Fixadas" separada. Helpers novos em
+  `utils/formatting.ts`: `timeBucket`, `groupByBucket`, `bucketLabel`.
+- **Send button vira Stop** durante streaming (mesma posição, troca
+  ícone + handler). Já existia via `send-circle.stop` mas não estava
+  consistentemente documentado.
+- Empty state já tinha suggestion chips (`.suggestions-grid`) — só
+  reforçamos a apresentação.
+
+### Testes
+
+- **+8 testes** em `test/formatting-buckets.test.ts` cobrindo
+  `timeBucket` (classificação em 5 buckets relativos a start-of-today,
+  aceita Date/string/number), `groupByBucket` (ordem cronológica,
+  omissão de buckets vazios, preservação de ordem interna) e
+  `bucketLabel` (PT/EN).
+- Total: **133 testes passando** (era 125 em v2.9.3).
+
+### Verificação
+
+- `npm run typecheck` — 0 erros
+- `npx vitest run` — 15/15 test files, 133/133 tests passing
+- `npm run build` — ok
+
 ## [2.9.3] — 2026-04-17
 
 ### Changed — Desktop UX polish + runtime Supabase setup
