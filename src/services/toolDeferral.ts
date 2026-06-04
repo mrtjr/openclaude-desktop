@@ -56,6 +56,51 @@ export const TOOL_SEARCH_TOOL = {
   },
 }
 
+// ─── Auto-deferral decision ────────────────────────────────────────
+// Deferral mode is no longer a plain on/off toggle. In 'auto' (the
+// default) we decide per-turn from *context pressure*: how big a slice of
+// the model's context window the full tool-schema set would occupy. With
+// today's 24 built-in tools (~2.2k tokens) that crosses the threshold only
+// on tiny local models (Ollama 8k → ~27%), which defer; roomy models (16k+,
+// all cloud) stay eager, where the extra round-trip would be pure overhead.
+// The ratio is self-scaling: grow the tool set and the crossover rises.
+
+export type DeferralMode = 'auto' | 'on' | 'off'
+
+/** Defer in 'auto' once the full tool schemas would occupy at least this
+ *  fraction of the model's context window. 0.15 ≈ "tools shouldn't eat more
+ *  than ~1/7 of your context". Measured: 24 built-in tools ≈ 2.2k tokens, so
+ *  the crossover sits at ~14.9k context → 8k models defer, 16k+ stay eager. */
+export const AUTO_DEFER_CONTEXT_RATIO = 0.15
+
+export interface DeferralDecision {
+  enabled: boolean
+  mode: DeferralMode
+  reason: string
+}
+
+/** Decide whether to defer tool schemas this turn.
+ *  - 'on'/'off' are explicit user overrides.
+ *  - 'auto' (default, incl. when mode is undefined) enables deferral when
+ *    `toolTokens / contextLimit >= AUTO_DEFER_CONTEXT_RATIO`. */
+export function decideDeferral(
+  mode: DeferralMode | undefined,
+  contextLimit: number,
+  toolTokens: number,
+): DeferralDecision {
+  const m: DeferralMode = mode ?? 'auto'
+  if (m === 'on') return { enabled: true, mode: m, reason: 'forced on' }
+  if (m === 'off') return { enabled: false, mode: m, reason: 'forced off' }
+
+  const ratio = contextLimit > 0 ? toolTokens / contextLimit : 0
+  const pct = Math.round(ratio * 100)
+  const threshold = Math.round(AUTO_DEFER_CONTEXT_RATIO * 100)
+  if (ratio >= AUTO_DEFER_CONTEXT_RATIO) {
+    return { enabled: true, mode: m, reason: `auto: tools ~${pct}% of ${contextLimit}t ctx ≥ ${threshold}%` }
+  }
+  return { enabled: false, mode: m, reason: `auto: tools ~${pct}% of ${contextLimit}t ctx < ${threshold}%` }
+}
+
 export interface DeferredPartition {
   eager: unknown[]       // full schemas, injected into the request
   deferredNames: Array<{ name: string; description: string }>  // names only

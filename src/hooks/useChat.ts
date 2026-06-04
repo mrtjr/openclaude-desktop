@@ -2,10 +2,10 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import type { Message, ToolResult, Conversation, AppSettings } from '../types'
 import { TOOLS, AGENT_SAFETY_LIMIT, NORMAL_SAFETY_LIMIT, IDLE_STEP_THRESHOLD } from '../constants/tools'
 import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIMING, LANGUAGE_REMINDER } from '../constants/prompts'
-import { partitionTools, renderDeferredManifest } from '../services/toolDeferral'
+import { partitionTools, renderDeferredManifest, decideDeferral } from '../services/toolDeferral'
 import { generateId, isSmallModel } from '../utils/formatting'
 import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice } from '../utils/sanitizers'
-import { createContextEngine, getModelContextLimit } from '../services/contextEngine'
+import { createContextEngine, getModelContextLimit, countToolSchemas } from '../services/contextEngine'
 import type { ProviderConfig } from './useProviderConfig'
 
 // The engine is pure and stateless — create once at module load.
@@ -188,14 +188,23 @@ export function useChat({
       }
       systemPrompt += LANGUAGE_RULE[lang]
 
-      // Tool deferral (v2.12.6): when enabled, move rarely-used tools out
-      // of the request schema list and into a compact name/desc manifest
-      // in the system prompt. The model calls `tool_search` to pull full
-      // schemas on demand. Saves 3-8k tokens in the default config.
-      const deferralEnabled = settings.toolDeferralEnabled === true
+      // Tool deferral (v2.12.6; auto-decided since v2.12.11): move
+      // rarely-used tools out of the request schema list into a compact
+      // name/desc manifest in the system prompt; the model calls
+      // `tool_search` to pull full schemas on demand. The decision is per
+      // turn and per model — see decideDeferral (context-pressure heuristic).
+      const deferral = decideDeferral(
+        settings.toolDeferralMode,
+        getModelContextLimit(finalModel),
+        countToolSchemas(TOOLS as any),
+      )
+      const deferralEnabled = deferral.enabled
       const toolPartition = partitionTools(TOOLS as any, deferralEnabled)
       if (deferralEnabled && toolPartition.deferredNames.length > 0) {
         systemPrompt += '\n\n' + renderDeferredManifest(toolPartition.deferredNames, lang)
+        console.log(`[useChat] tool deferral ON — ${deferral.reason} | eager ${toolPartition.eagerTokens}t, ~${toolPartition.deferredTokens}t deferred`)
+      } else {
+        console.log(`[useChat] tool deferral OFF — ${deferral.reason}`)
       }
 
       const systemMessages: any[] = systemPrompt ? [{ role: 'system', content: systemPrompt }] : []

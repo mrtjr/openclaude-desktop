@@ -7,6 +7,41 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.11] — 2026-06-04
+
+### Changed — Tool Deferral inteligente (auto por pressão de contexto)
+
+O diferimento de tools (v2.12.6) existia mas era *default-off* — inerte
+para quase todos. Agora é decidido **automaticamente por modelo**, com
+default `auto`.
+
+- **`decideDeferral(mode, contextLimit, toolTokens)` (novo, `toolDeferral.ts`)**
+  — heurística de *pressão de contexto*: liga o diferimento quando os schemas
+  das tools ocupariam ≥ `AUTO_DEFER_CONTEXT_RATIO` (15 %) da janela do modelo.
+  **Medido:** 24 tools built-in ≈ 2.237 tokens → crossover em ~14,9k de
+  contexto, ou seja **modelos 8k diferem (~27 %)** e 16k+ ficam eager (onde o
+  round-trip extra seria puro overhead). A regra é auto-escalável: se o
+  conjunto de tools crescer, o crossover sobe sozinho.
+- **Setting tri-state `toolDeferralMode: 'auto' | 'on' | 'off'`** (default
+  `auto`), substituindo o booleano `toolDeferralEnabled`. Migração automática
+  em `loadSettings`: quem tinha o booleano ligado vira `'on'`; o resto vira
+  `'auto'`. A UI vira um controle segmentado (Auto / Lig. / Desl.) com hint
+  explicando o gatilho.
+- **`useChat.ts`** decide por turno usando o modelo real da requisição e loga
+  a economia (`eager Xt, ~Yt deferred`) — a medição fica visível no console.
+  **`App.tsx`** usa a mesma decisão no painel `/context`, então o que o painel
+  mostra bate com o que vai de fato na request.
+
+### Notas
+
+- Mudança de comportamento: usuários em contexto pequeno (Ollama 8k) passam
+  a ter diferimento ligado automaticamente. Override manual via Settings
+  (Auto / Lig. / Desl.). Tools hot-path (`update_working_memory`,
+  `plan_tasks`, `update_task_status`) seguem sempre eager.
+- 193 testes passando (eram 185). +8 casos cobrindo a heurística (on/off
+  explícito, auto em janelas 8k–200k, fronteira exata do threshold,
+  divisão-por-zero e default de mode indefinido). Typecheck limpo.
+
 ## [2.12.10] — 2026-06-04
 
 ### Added — Renderização de matemática (KaTeX) lazy no chat

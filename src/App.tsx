@@ -52,8 +52,9 @@ import PermissionModeButton from './components/PermissionModeButton'
 import ContextWindowPanel from './components/ContextWindowPanel'
 import { useContextBreakdown } from './hooks/useContextBreakdown'
 import { useMathReady } from './hooks/useMathReady'
-import { partitionTools } from './services/toolDeferral'
+import { partitionTools, decideDeferral } from './services/toolDeferral'
 import { TOOLS } from './constants/tools'
+import { getModelContextLimit, countToolSchemas } from './services/contextEngine'
 import { useUsageTracking } from './hooks/useUsageTracking'
 import { loadEnabledFeatures, saveEnabledFeatures, isFeatureEnabled } from './config/features'
 import { useMemoryDreaming } from './hooks/useMemoryDreaming'
@@ -331,8 +332,10 @@ export default function App() {
   // only carries the eager subset; deferredToolNames are rendered
   // into the system prompt as a compact manifest.
   const toolPartition = useMemo(() =>
-    partitionTools(TOOLS as any, settings.toolDeferralEnabled === true),
-    [settings.toolDeferralEnabled])
+    partitionTools(TOOLS as any, decideDeferral(
+      settings.toolDeferralMode, getModelContextLimit(selectedModel), countToolSchemas(TOOLS as any),
+    ).enabled),
+    [settings.toolDeferralMode, selectedModel])
   const memoryText = useMemo(() => {
     const parts: string[] = []
     if (activeConv?.contextSummary) parts.push(activeConv.contextSummary)

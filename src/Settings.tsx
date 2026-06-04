@@ -57,11 +57,14 @@ export interface AppSettings {
   /** v2.12.3 — user-chosen display name shown in the sidebar profile
    *  row and UserMenu header. Local-only, no cloud identity. */
   profileName?: string
-  /** v2.12.6 — when true, non-hot-path tools are not injected with
-   *  their full JSONSchema; the model calls `tool_search` to fetch
-   *  schemas on demand. Saves ~80% of tool-schema tokens in exchange
-   *  for one extra round-trip when a deferred tool is first needed. */
+  /** Legacy boolean (v2.12.6). Superseded by `toolDeferralMode` in
+   *  v2.12.11; kept only so loadSettings can migrate old installs. */
   toolDeferralEnabled?: boolean
+  /** v2.12.11 — tool-schema deferral mode. 'auto' (default) decides per
+   *  turn from model context pressure; 'on'/'off' force it. Deferred tools
+   *  appear as name+description in the system prompt and load via
+   *  `tool_search`. See decideDeferral() in services/toolDeferral.ts. */
+  toolDeferralMode?: 'auto' | 'on' | 'off'
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -95,7 +98,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   permissionLevel: 'ask',
   mcpServers: [],
   notifyOnComplete: true,
-  toolDeferralEnabled: false,
+  toolDeferralMode: 'auto',
 }
 
 export function loadSettings(): AppSettings {
@@ -123,6 +126,11 @@ export function loadSettings(): AppSettings {
       ])
       if (STALE_MODAL_MODELS.has(merged.modalModel)) {
         merged.modalModel = DEFAULT_SETTINGS.modalModel
+      }
+      // Migration (v2.12.11): legacy boolean → tri-state mode. 'auto' is the
+      // new smart default; honour a legacy explicit opt-in as 'on'.
+      if (merged.toolDeferralMode == null) {
+        merged.toolDeferralMode = merged.toolDeferralEnabled === true ? 'on' : 'auto'
       }
       return merged
     }
@@ -287,18 +295,33 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                 <label className="settings-label">
                   <span>
                     {local.language === 'pt'
-                      ? 'Diferir schemas de ferramentas (economiza ~5k tokens)'
-                      : 'Defer tool schemas (saves ~5k tokens)'}
+                      ? 'Diferir schemas de ferramentas'
+                      : 'Defer tool schemas'}
                   </span>
-                  <div className={`toggle ${local.toolDeferralEnabled ? 'on' : ''}`}
-                    onClick={() => setLocal(s => ({ ...s, toolDeferralEnabled: !s.toolDeferralEnabled }))}>
-                    <div className="toggle-knob" />
+                  <div style={{ display: 'inline-flex', gap: 2, padding: 2, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }} role="group">
+                    {(['auto', 'on', 'off'] as const).map(m => {
+                      const active = (local.toolDeferralMode ?? 'auto') === m
+                      return (
+                        <button key={m} type="button"
+                          onClick={() => setLocal(s => ({ ...s, toolDeferralMode: m }))}
+                          style={{
+                            appearance: 'none', border: 0, cursor: 'pointer', font: 'inherit', fontSize: 12,
+                            padding: '4px 12px', borderRadius: 6, transition: 'background .15s, color .15s',
+                            background: active ? 'var(--accent, #7c5cff)' : 'transparent',
+                            color: active ? '#fff' : 'var(--text-secondary, #9ca3af)',
+                          }}>
+                          {m === 'auto' ? 'Auto' : m === 'on'
+                            ? (local.language === 'pt' ? 'Lig.' : 'On')
+                            : (local.language === 'pt' ? 'Desl.' : 'Off')}
+                        </button>
+                      )
+                    })}
                   </div>
                 </label>
                 <p className="settings-hint">
                   {local.language === 'pt'
-                    ? 'Lista tools raramente usadas como nome+descrição no system prompt; o modelo chama tool_search para carregar schemas sob demanda.'
-                    : 'Lists rarely-used tools by name+description in the system prompt; the model calls tool_search to load schemas on demand.'}
+                    ? 'Auto liga o diferimento quando os schemas das tools ocupariam ≥15% da janela do modelo — na prática, modelos de contexto pequeno (Ollama 8k). Tools diferidas viram nome+descrição no system prompt; o modelo chama tool_search sob demanda.'
+                    : 'Auto enables deferral when tool schemas would take ≥15% of the model context — in practice, small-context models (Ollama 8k). Deferred tools become name+description in the system prompt; the model calls tool_search on demand.'}
                 </p>
               </div>
 
