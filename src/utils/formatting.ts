@@ -7,6 +7,7 @@ import { marked } from 'marked'
 // the getLanguage() guard below — a worthwhile trade for a ~800KB lighter boot.
 import hljs from 'highlight.js/lib/common'
 import DOMPurify from 'dompurify'
+import { ensureKatex, isKatexReady, hasMath } from './katexLoader'
 
 // Configure marked
 marked.setOptions({ breaks: true, gfm: true })
@@ -19,6 +20,9 @@ renderer.code = ({ text, lang }: any) => {
 marked.use({ renderer })
 
 export function formatMarkdown(text: string): string {
+  // Lazy-load KaTeX the first time math appears. This render stays plain and
+  // upgrades to typeset output once the lib is ready (see useMathReady).
+  if (!isKatexReady() && hasMath(text)) ensureKatex()
   const html = marked.parse(text) as string
   return DOMPurify.sanitize(html)
 }

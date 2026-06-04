@@ -7,6 +7,37 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.10] — 2026-06-04
+
+### Added — Renderização de matemática (KaTeX) lazy no chat
+
+Transforma a dependência morta `katex` + `marked-katex-extension`
+(sinalizada como achado no Ciclo 2) numa feature real, sem custo no boot.
+Fórmulas `$inline$` e `$$display$$` agora são tipografadas no chat (e em
+Parliament/Arena, que compartilham o `marked` singleton).
+
+- **`katexLoader.ts` (novo)** — carregamento sob demanda *por conteúdo*:
+  KaTeX (~280 KB) + seu CSS só são importados (dinamicamente) na primeira
+  mensagem que contém matemática. Detecção via `hasMath()` com regex
+  conservadora que ignora cifrão de moeda ("$5 e $10" não dispara). Máquina
+  de estado idle→loading→ready single-flight + assinatura `onKatexReady`.
+- **`useMathReady.ts` (novo)** — hook que re-renderiza quando o KaTeX fica
+  pronto: a primeira mensagem (pintada como `$…$` cru) "sobe" para a fórmula
+  tipografada assim que a lib carrega. Chamado uma vez em `App`.
+- **`formatting.ts`** — `formatMarkdown` dispara `ensureKatex()` ao detectar
+  matemática se a lib ainda não estiver pronta; o registro usa `output:'html'`
+  + `throwOnError:false` para sobreviver ao passe DOMPurify e degradar uma
+  expressão inválida em texto vermelho em vez de quebrar o render.
+
+### Notas
+
+- Boot inalterado: KaTeX fica num **chunk lazy** separado, fora do bundle
+  inicial — zero custo para quem nunca usa matemática.
+- 185 testes passando (eram 178). +7 casos: detecção (`hasMath`, incl.
+  imunidade a moeda e a quebra de linha) e um teste de integração que
+  renderiza `$x^2$` e confirma que a saída KaTeX **sobrevive ao DOMPurify**.
+- Typecheck limpo.
+
 ## [2.12.9] — 2026-06-04
 
 ### Changed — Boot ~778 KB mais leve: highlight.js slim + chunks limpos

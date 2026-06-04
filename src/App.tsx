@@ -51,6 +51,7 @@ import UserMenu from './components/UserMenu'
 import PermissionModeButton from './components/PermissionModeButton'
 import ContextWindowPanel from './components/ContextWindowPanel'
 import { useContextBreakdown } from './hooks/useContextBreakdown'
+import { useMathReady } from './hooks/useMathReady'
 import { partitionTools } from './services/toolDeferral'
 import { TOOLS } from './constants/tools'
 import { useUsageTracking } from './hooks/useUsageTracking'
@@ -65,6 +66,8 @@ import { useSync } from './hooks/useSync'
 
 // ─── App ─────────────────────────────────────────────────────────────
 export default function App() {
+  // Upgrade raw `$…$` to typeset math once KaTeX finishes lazy-loading.
+  useMathReady()
   const [input, setInput] = useState('')
   const [models, setModels] = useState<string[]>([])
   const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('openclaude-model') || 'qwen35-uncensored')
