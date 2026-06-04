@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react'
 import 'highlight.js/styles/github-dark.css'
-import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Image, Trash, Mic, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog } from 'lucide-react'
+import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Trash, Mic, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, GitBranch } from 'lucide-react'
 import SettingsModal, { loadSettings, type AppSettings } from './Settings'
 import type { Persona } from './PersonaEngine'
 // Small / hot-path components — eager
@@ -23,7 +23,8 @@ const ORION = lazy(() => import('./ORION'))
 const WorkflowBuilder = lazy(() => import('./WorkflowBuilder'))
 const ProfilesPanel = lazy(() => import('./ProfilesPanel'))
 const ScheduledTasksPanel = lazy(() => import('./ScheduledTasksPanel'))
-const AccountPanel = lazy(() => import('./AccountPanel'))
+const AgentDashboard = lazy(() => import('./AgentDashboard'))
+const ShortcutCheatSheet = lazy(() => import('./components/ShortcutCheatSheet'))
 
 // ─── Extracted modules ──────────────────────────────────────────────
 import type { Message } from './types'
@@ -37,8 +38,21 @@ import { useConversations } from './hooks/useConversations'
 import { useToolExecution } from './hooks/useToolExecution'
 import { useModalKeyPool } from './hooks/useModalKeyPool'
 import { useChat } from './hooks/useChat'
+import { useConversationFork } from './hooks/useConversationFork'
 import { useProviderHealth } from './hooks/useProviderHealth'
 import { useTokenCounter, formatTokenCount } from './hooks/useTokenCounter'
+import { useAccentColor } from './hooks/useAccentColor'
+import { AccentPicker } from './components/AccentPicker'
+import { parseSlashInput } from './utils/slashCommands'
+import { RegenSplit } from './components/RegenSplit'
+import { AmbientOrb } from './components/AmbientOrb'
+import { SlashPopover } from './components/SlashPopover'
+import UserMenu from './components/UserMenu'
+import PermissionModeButton from './components/PermissionModeButton'
+import ContextWindowPanel from './components/ContextWindowPanel'
+import { useContextBreakdown } from './hooks/useContextBreakdown'
+import { partitionTools } from './services/toolDeferral'
+import { TOOLS } from './constants/tools'
 import { useUsageTracking } from './hooks/useUsageTracking'
 import { loadEnabledFeatures, saveEnabledFeatures, isFeatureEnabled } from './config/features'
 import { useMemoryDreaming } from './hooks/useMemoryDreaming'
@@ -48,7 +62,6 @@ import { runSecurityAudit } from './utils/securityAudit'
 import { useToast } from './hooks/useToast'
 import { useAuth } from './hooks/useAuth'
 import { useSync } from './hooks/useSync'
-import { isSupabaseConfigured } from './services/supabase'
 
 // ─── App ─────────────────────────────────────────────────────────────
 export default function App() {
@@ -57,7 +70,6 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('openclaude-model') || 'qwen35-uncensored')
   const [showModelDropdown, setShowModelDropdown] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [showAccount, setShowAccount] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [ollamaOnline, setOllamaOnline] = useState(false)
   const [dragOver, setDragOver] = useState(false)
@@ -66,15 +78,24 @@ export default function App() {
   const [collapsedTools, setCollapsedTools] = useState<Set<string>>(new Set())
   const [taskPlanCollapsed, setTaskPlanCollapsed] = useState(false)
   const [updateAvailable, setUpdateAvailable] = useState<{available: boolean, releaseUrl: string, latestVersion: string} | null>(null)
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    // Priority: explicit user choice > OS preference > dark default
+  const [theme, setTheme] = useState<'dark' | 'light' | 'oled'>(() => {
+    // Priority: explicit user choice > OS preference > dark default.
+    // OLED is opt-in only (never auto) — it's a power-user preference
+    // for AMOLED hardware, not a sensible default.
     const saved = localStorage.getItem('openclaude-theme')
-    if (saved === 'dark' || saved === 'light') return saved
+    if (saved === 'dark' || saved === 'light' || saved === 'oled') return saved
     if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: light)').matches) {
       return 'light'
     }
     return 'dark'
   })
+  // Three-state cycle: dark → light → oled → dark.
+  // OLED sits at the end so users must pass through light first —
+  // discourages accidental activation and keeps the common 2-state
+  // flow (dark↔light) reachable with two clicks from any state.
+  const cycleTheme = () => setTheme(t => t === 'dark' ? 'light' : t === 'light' ? 'oled' : 'dark')
+  const themeIcon = theme === 'dark' ? <Sun size={14} /> : theme === 'light' ? <Moon size={14} /> : <Contrast size={14} />
+  const themeLabel = theme === 'dark' ? 'Tema: escuro (clique para claro)' : theme === 'light' ? 'Tema: claro (clique para OLED)' : 'Tema: OLED (clique para escuro)'
   const [isAgentMode, setIsAgentMode] = useState(false)
   const [showAnalytics, setShowAnalytics] = useState(false)
   const [showParliament, setShowParliament] = useState(false)
@@ -94,6 +115,12 @@ export default function App() {
   const [showCommandPalette, setShowCommandPalette] = useState(false)
   const [showProfiles, setShowProfiles] = useState(false)
   const [showScheduler, setShowScheduler] = useState(false)
+  const [showAgentDashboard, setShowAgentDashboard] = useState(false)
+  const [showShortcuts, setShowShortcuts] = useState(false)
+  const [showUserMenu, setShowUserMenu] = useState(false)
+  const userMenuAnchorRef = useRef<HTMLButtonElement>(null)
+  const [showContextPanel, setShowContextPanel] = useState(false)
+  const contextPanelAnchorRef = useRef<HTMLButtonElement>(null)
   const [enabledFeatures, setEnabledFeatures] = useState<Record<string, boolean>>(loadEnabledFeatures)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -148,7 +175,7 @@ export default function App() {
     applySnapshot: async (snap) => {
       if (snap.settings) {
         const remote = snap.settings.data || {}
-        if (remote.theme && (remote.theme === 'dark' || remote.theme === 'light')) setTheme(remote.theme)
+        if (remote.theme && (remote.theme === 'dark' || remote.theme === 'light' || remote.theme === 'oled')) setTheme(remote.theme)
         const next: AppSettings = { ...settings }
         if (remote.language) (next as any).language = remote.language
         if (remote.provider) (next as any).provider = remote.provider
@@ -218,6 +245,14 @@ export default function App() {
   // ─── Custom hooks ──────────────────────────────────────────────
   const providerConfig = useProviderConfig(effectiveSettings, selectedModel)
   const providerHealth = useProviderHealth(settings)
+  // Accent color — writes --accent tokens into :root on mount + changes.
+  const accent = useAccentColor()
+  const [showAccentPicker, setShowAccentPicker] = useState(false)
+  // Slash-command popover state. `slashIdx` is the selected suggestion
+  // while the popover is open. Reset on input changes that no longer
+  // look like a command.
+  const [slashIdx, setSlashIdx] = useState(0)
+  const [showRegenMenu, setShowRegenMenu] = useState(false)
   const usageTracking = useUsageTracking()
 
   const voice = useVoice({
@@ -226,6 +261,14 @@ export default function App() {
   })
 
   const convManager = useConversations()
+  // useConversationFork has its own local Message shape that omits id/timestamp;
+  // our app's Message is stricter. The fork logic only reads role/content/
+  // arbitrary fields via spread, so the mismatch is cosmetic — cast away.
+  const { forkFrom } = useConversationFork({
+    conversationsRef: convManager.conversationsRef as any,
+    setConversations: convManager.setConversations as any,
+    setActiveConvId: convManager.setActiveConvId,
+  })
 
   const modalKeyPool = useModalKeyPool(settings)
 
@@ -279,26 +322,76 @@ export default function App() {
   const isActiveConvLoading = chat.isLoading && chat.streamingConvId === convManager.activeConvId
   const tokenInfo = useTokenCounter(activeConv, providerConfig.model, input)
 
+  // ─── Context breakdown (Claude-style /context panel, v2.12.6) ───
+  // Memoized partition of TOOLS into eager + deferred based on the
+  // user's setting. Passed to the chat pipeline so the request body
+  // only carries the eager subset; deferredToolNames are rendered
+  // into the system prompt as a compact manifest.
+  const toolPartition = useMemo(() =>
+    partitionTools(TOOLS as any, settings.toolDeferralEnabled === true),
+    [settings.toolDeferralEnabled])
+  const memoryText = useMemo(() => {
+    const parts: string[] = []
+    if (activeConv?.contextSummary) parts.push(activeConv.contextSummary)
+    return parts.join('\n\n')
+  }, [activeConv?.contextSummary])
+  const ctxBreakdown = useContextBreakdown({
+    activeConv,
+    model: providerConfig.model,
+    inputText: input,
+    systemPrompt: settings.systemPrompt || '',
+    memoryText,
+    eagerTools: toolPartition.eager,
+    deferredToolNames: toolPartition.deferredNames,
+    deferredToolSchemas: (TOOLS as any[]).filter((t: any) => toolPartition.deferredNames.some(d => d.name === t.function.name)) as any,
+    skillHeaders: activePersona ? `${activePersona.name}: ${activePersona.description || ''}` : '',
+  })
+
   useMemoryDreaming({
     enabled: settings.memoryEnabled,
     onToast: showToast,
   })
 
   // Forward ref for sendMessage — declared early so scheduledTasks can use it
-  const sendMessageRef = useRef<(text: string) => void>(() => {})
+  const sendMessageRef = useRef<(text: string, convId?: string) => void>(() => {})
 
   const scheduledTasks = useScheduledTasks({
     enabled: true,
     onTaskFire: (task) => {
-      convManager.newConversation()
-      // Send the scheduled prompt after a tick so the new conversation is active
+      // Capture the new conv id up-front — otherwise a batch of tasks
+      // firing on the same tick would all pile into the LAST new
+      // conversation (activeConvId only holds the most recent). Passing
+      // the id explicitly through sendMessage routes each prompt to its
+      // own fresh conversation.
+      const newConvId = convManager.newConversation()
       setTimeout(() => {
-        sendMessageRef.current(task.prompt)
+        sendMessageRef.current(task.prompt, newConvId)
         showToast(`⏰ ${task.name}`)
-      }, 100)
+      }, 150)
     },
   })
   scheduledTasksRef.current = scheduledTasks
+
+  // ─── v2.12.0: Native notification on response complete ──────────
+  // Fires exactly on the loading → done edge, and only when the window
+  // is blurred (otherwise the user already sees the response). Opt-out
+  // via settings.notifyOnComplete.
+  const wasLoadingRef = useRef(false)
+  useEffect(() => {
+    const wasLoading = wasLoadingRef.current
+    wasLoadingRef.current = isActiveConvLoading
+    if (!wasLoading || isActiveConvLoading) return
+    if (settings.notifyOnComplete === false) return
+    if (!window.electron.showNotification || !window.electron.isWindowFocused) return
+    window.electron.isWindowFocused().then(r => {
+      if (r.focused) return  // don't nag a user who is already looking
+      const title = settings.language === 'en' ? 'OpenClaude' : 'OpenClaude'
+      const body = activeConv?.title
+        ? (settings.language === 'en' ? `Response ready — ${activeConv.title}` : `Resposta pronta — ${activeConv.title}`)
+        : (settings.language === 'en' ? 'Response ready' : 'Resposta pronta')
+      window.electron.showNotification!({ title, body, silent: false })
+    }).catch(() => {})
+  }, [isActiveConvLoading, settings.notifyOnComplete, settings.language, activeConv?.title])
 
   // ─── Check for updates ─────────────────────────────────────────
   useEffect(() => {
@@ -391,8 +484,9 @@ export default function App() {
       [showModelDropdown, () => setShowModelDropdown(false)],
       [showFeatureMenu, () => setShowFeatureMenu(false)],
       [showCommandPalette, () => setShowCommandPalette(false)],
+      [showAccentPicker, () => setShowAccentPicker(false)],
+      [showRegenMenu, () => setShowRegenMenu(false)],
       [showSettings, () => setShowSettings(false)],
-      [showAccount, () => setShowAccount(false)],
       [showAnalytics, () => setShowAnalytics(false)],
       [showProfiles, () => setShowProfiles(false)],
       [showScheduler, () => setShowScheduler(false)],
@@ -405,6 +499,8 @@ export default function App() {
       [showVision, () => setShowVision(false)],
       [showCodeWorkspace, () => setShowCodeWorkspace(false)],
       [showParliament, () => setShowParliament(false)],
+      [showAgentDashboard, () => setShowAgentDashboard(false)],
+      [showShortcuts, () => setShowShortcuts(false)],
     ]
 
     const handleGlobalKeys = (e: KeyboardEvent) => {
@@ -438,22 +534,42 @@ export default function App() {
       else if (mod && e.key === 'p' && !e.shiftKey) { e.preventDefault(); setShowPersona(true) }
       // Toggle sidebar: Ctrl/Cmd+\ (VS Code convention; avoids clobbering / focus)
       else if (mod && e.key === '\\') { e.preventDefault(); setSidebarOpen(v => !v) }
+      // Ctrl/Cmd+Shift+D: open Agent Dashboard (unified ops view)
+      else if (mod && e.shiftKey && e.key === 'D') { e.preventDefault(); setShowAgentDashboard(true) }
+      // `?` opens the shortcut cheat sheet (when not in text field)
+      else if (e.key === '?' && !inTextField && !mod) { e.preventDefault(); setShowShortcuts(true) }
     }
     window.addEventListener('keydown', handleGlobalKeys)
     return () => window.removeEventListener('keydown', handleGlobalKeys)
   }, [
     showSettings, showModelDropdown, showFeatureMenu, showCommandPalette,
-    showAccount, showAnalytics, showProfiles, showScheduler, showVault,
+    showAccentPicker, showRegenMenu,
+    showAnalytics, showProfiles, showScheduler, showVault,
     showPersona, showArena, showRAG, showWorkflow, showOrion, showVision,
-    showCodeWorkspace, showParliament, convManager,
+    showCodeWorkspace, showParliament, showAgentDashboard, showShortcuts, convManager,
   ])
 
   // ─── Drag & Drop ──────────────────────────────────────────────
   useEffect(() => {
-    const handleDragOver = (e: DragEvent) => { e.preventDefault(); e.stopPropagation(); setDragOver(true) }
-    const handleDragLeave = (e: DragEvent) => { e.preventDefault(); e.stopPropagation(); setDragOver(false) }
+    // Drag counter — the browser fires dragleave every time the cursor
+    // crosses a child element boundary, which would otherwise make the
+    // overlay flicker. By counting enter/leave pairs we only hide the
+    // overlay when the drag has truly left the window.
+    let dragDepth = 0
+    const handleDragEnter = (e: DragEvent) => {
+      e.preventDefault(); e.stopPropagation()
+      dragDepth++
+      if (dragDepth === 1) setDragOver(true)
+    }
+    const handleDragOver  = (e: DragEvent) => { e.preventDefault(); e.stopPropagation() }
+    const handleDragLeave = (e: DragEvent) => {
+      e.preventDefault(); e.stopPropagation()
+      dragDepth = Math.max(0, dragDepth - 1)
+      if (dragDepth === 0) setDragOver(false)
+    }
     const handleDrop = async (e: DragEvent) => {
-      e.preventDefault(); e.stopPropagation(); setDragOver(false)
+      e.preventDefault(); e.stopPropagation()
+      dragDepth = 0; setDragOver(false)
       if (e.dataTransfer?.files) {
         for (let i = 0; i < e.dataTransfer.files.length; i++) {
           const file = e.dataTransfer.files[i]
@@ -471,10 +587,16 @@ export default function App() {
         }
       }
     }
+    document.addEventListener('dragenter', handleDragEnter)
     document.addEventListener('dragover', handleDragOver)
     document.addEventListener('dragleave', handleDragLeave)
     document.addEventListener('drop', handleDrop)
-    return () => { document.removeEventListener('dragover', handleDragOver); document.removeEventListener('dragleave', handleDragLeave); document.removeEventListener('drop', handleDrop) }
+    return () => {
+      document.removeEventListener('dragenter', handleDragEnter)
+      document.removeEventListener('dragover', handleDragOver)
+      document.removeEventListener('dragleave', handleDragLeave)
+      document.removeEventListener('drop', handleDrop)
+    }
   }, [])
 
   // ─── Actions ───────────────────────────────────────────────────
@@ -491,30 +613,180 @@ export default function App() {
   // Keep sendMessageRef up to date with the latest chat.sendMessage
   sendMessageRef.current = chat.sendMessage
 
-  const regenerateResponse = useCallback(() => {
+  const regenerateResponse = useCallback((modelOverride?: string) => {
     if (!activeConv || isActiveConvLoading) return
-    const msgs = activeConv.messages
-    let lastUserIdx = -1
-    for (let i = msgs.length - 1; i >= 0; i--) {
-      if (msgs[i].role === 'user') { lastUserIdx = i; break }
+    // Grab last user content from the current snapshot for the resend call,
+    // but recompute the slice index inside the updater against the *fresh*
+    // prev state — otherwise rapid regen clicks or in-flight streams leave
+    // us slicing against a stale message array and dropping live messages.
+    const snapshot = activeConv.messages
+    let snapLastUserIdx = -1
+    for (let i = snapshot.length - 1; i >= 0; i--) {
+      if (snapshot[i].role === 'user') { snapLastUserIdx = i; break }
     }
-    if (lastUserIdx === -1) return
-    const lastUserContent = msgs[lastUserIdx].content
+    if (snapLastUserIdx === -1) return
+    const lastUserContent = snapshot[snapLastUserIdx].content
     convManager.setConversations(prev => prev.map(c => {
       if (c.id !== convManager.activeConvId) return c
-      return { ...c, messages: msgs.slice(0, lastUserIdx) }
+      let idx = -1
+      for (let i = c.messages.length - 1; i >= 0; i--) {
+        if (c.messages[i].role === 'user') { idx = i; break }
+      }
+      if (idx === -1) return c
+      return { ...c, messages: c.messages.slice(0, idx) }
     }))
+    // Model override: apply before send. Timeout lets the state update
+    // flush so useChat sees the new providerConfig on the next tick.
+    if (modelOverride) {
+      const prov = settings.provider
+      if (prov === 'ollama') {
+        setSelectedModel(modelOverride)
+        localStorage.setItem('openclaude-model', modelOverride)
+      } else {
+        const key = prov === 'openai' ? 'openaiModel'
+          : prov === 'anthropic' ? 'anthropicModel'
+          : prov === 'gemini' ? 'geminiModel'
+          : prov === 'openrouter' ? 'openrouterModel'
+          : prov === 'modal' ? 'modalModel'
+          : null
+        if (key) {
+          const next = { ...settings, [key]: modelOverride } as typeof settings
+          setSettings(next); localStorage.setItem('openclaude-settings', JSON.stringify(next))
+        }
+      }
+    }
     // Directly call sendMessage instead of fragile DOM querySelector
-    setTimeout(() => sendMessageRef.current(lastUserContent), 50)
-  }, [activeConv, isActiveConvLoading, convManager])
+    setTimeout(() => sendMessageRef.current(lastUserContent), 80)
+  }, [activeConv, isActiveConvLoading, convManager, settings])
+
+  // Slash command parse + execute. Memoised so the popover render
+  // doesn't re-walk SLASH_COMMANDS on every unrelated state change.
+  const slash = useMemo(() => parseSlashInput(input), [input])
+  useEffect(() => { setSlashIdx(0) }, [slash?.name])
+
+  const executeSlash = useCallback((cmdName: string, arg: string) => {
+    const lang = settings.language
+    const clean = arg.trim()
+    switch (cmdName) {
+      case 'clear':
+        convManager.newConversation()
+        setInput('')
+        break
+      case 'model':
+        if (clean) {
+          // Best-effort: if arg matches a known ollama/local model id,
+          // apply directly; otherwise open the dropdown filtered.
+          const match = models.find(m => m.toLowerCase() === clean.toLowerCase())
+            || models.find(m => m.toLowerCase().includes(clean.toLowerCase()))
+          if (match) {
+            setSettings(s => ({ ...s, ollamaModel: match }))
+            showToast(lang === 'en' ? `Model set to ${match}` : `Modelo: ${match}`, 'success')
+          } else {
+            setShowModelDropdown(true)
+            showToast(lang === 'en' ? `No model matched "${clean}"` : `Nenhum modelo "${clean}"`, 'info')
+          }
+        } else {
+          setShowModelDropdown(true)
+        }
+        setInput('')
+        break
+      case 'system':
+        if (clean) {
+          const next = { ...settings, systemPrompt: clean }
+          setSettings(next); localStorage.setItem('openclaude-settings', JSON.stringify(next))
+          showToast(lang === 'en' ? 'System prompt updated' : 'System prompt atualizado', 'success')
+        } else {
+          setShowSettings(true)
+        }
+        setInput('')
+        break
+      case 'regen':
+        regenerateResponse()
+        setInput('')
+        break
+      case 'theme':
+        if (clean === 'dark' || clean === 'light' || clean === 'oled') {
+          setTheme(clean)
+        } else {
+          cycleTheme()
+        }
+        setInput('')
+        break
+      case 'context':
+        setShowContextPanel(true)
+        setInput('')
+        break
+      case 'compact':
+        // Manual compact: if conv has history, send the current history
+        // through the existing compactContext IPC and store the summary.
+        (async () => {
+          const conv = activeConv
+          if (!conv || conv.messages.length < 2) {
+            showToast(lang === 'en' ? 'Nothing to compact yet' : 'Nada para compactar ainda', 'info')
+            return
+          }
+          try {
+            const res = await window.electron.compactContext({
+              messages: conv.messages as any,
+              model: providerConfig.model,
+              language: lang,
+              provider: settings.provider,
+              ...(clean ? { instructions: clean } : {}),
+            } as any)
+            if (res?.summary) {
+              const prev = conv.contextSummary || ''
+              const merged = (prev ? prev + '\n\n' : '') + res.summary
+              const trimmed = merged.length > 2000 ? merged.slice(-2000) : merged
+              convManager.setConversations(list => list.map(c =>
+                c.id !== conv.id ? c : { ...c, contextSummary: trimmed }
+              ))
+              showToast(lang === 'en' ? 'Context compacted' : 'Contexto compactado', 'success')
+            } else {
+              showToast(lang === 'en' ? 'Compact returned no summary' : 'Compactação sem resumo', 'info')
+            }
+          } catch (e) {
+            console.warn('[slash/compact] failed:', e)
+            showToast(lang === 'en' ? 'Compact failed' : 'Falha ao compactar', 'error')
+          }
+        })()
+        setInput('')
+        break
+      default:
+        // Unknown — fall through to normal send.
+        sendMessageRef.current(input.trim())
+        setInput('')
+    }
+  }, [convManager, models, settings, regenerateResponse, showToast, input, cycleTheme, activeConv, providerConfig.model])
 
   const handleSend = useCallback(() => {
     if (!input.trim()) return
-    sendMessageRef.current(input.trim())
+    // If the input is a complete, unambiguous slash command, route it
+    // through the executor instead of sending to the model.
+    if (slash && slash.matches.length > 0) {
+      const exact = slash.matches.find(m => m.name === slash.name) || slash.matches[slashIdx] || slash.matches[0]
+      executeSlash(exact.name, slash.arg)
+      return
+    }
+    // Escape hatch: leading "//" sends literal "/..." without the escape.
+    const payload = input.startsWith('//') ? input.slice(1) : input
+    sendMessageRef.current(payload.trim())
     setInput('')
-  }, [input])
+  }, [input, slash, slashIdx, executeSlash])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Slash popover: capture navigation keys before sending.
+    if (slash && slash.matches.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIdx(i => (i + 1) % slash.matches.length); return }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); setSlashIdx(i => (i - 1 + slash.matches.length) % slash.matches.length); return }
+      if (e.key === 'Tab') {
+        // Tab completes the name (adds a trailing space so user can type args).
+        e.preventDefault()
+        const pick = slash.matches[slashIdx] || slash.matches[0]
+        setInput('/' + pick.name + ' ')
+        return
+      }
+      if (e.key === 'Escape') { e.preventDefault(); setInput(''); return }
+    }
     // Enter sends; Shift+Enter inserts newline. Ctrl/Cmd+Enter also sends
     // (ChatGPT/Claude.ai muscle memory — some users disable plain Enter via
     // IME or accessibility tools and rely on the modifier variant).
@@ -568,32 +840,18 @@ export default function App() {
         onSave={(s) => { setSettings(s); showToast('Configuracoes salvas!') }}
       />
 
-      {/* Account & Sync */}
-      {showAccount && (
-        <Suspense fallback={null}>
-          <AccountPanel
-            isOpen={showAccount}
-            onClose={() => setShowAccount(false)}
-            language={settings.language}
-            configured={auth.configured}
-            session={auth.session}
-            loading={auth.loading}
-            passphrase={auth.passphrase}
-            onSetPassphrase={auth.setPassphrase}
-            onSignInEmail={auth.signInEmail}
-            onSignUpEmail={auth.signUpEmail}
-            onSignInGoogle={auth.signInGoogle}
-            onSignOut={auth.signOut}
-            prefs={sync.prefs}
-            onPrefsChange={sync.setPrefs}
-            syncState={sync.state}
-            onPushNow={sync.pushNow}
-            onPullNow={sync.pullNow}
-          />
-        </Suspense>
-      )}
-
       {/* Command Palette (Ctrl+K) */}
+      <AccentPicker
+        isOpen={showAccentPicker}
+        onClose={() => setShowAccentPicker(false)}
+        value={accent.value}
+        currentHex={accent.currentHex}
+        isCustom={accent.isCustom}
+        onPreset={accent.setPreset}
+        onCustomHex={accent.setCustomHex}
+        onReset={accent.reset}
+        language={settings.language}
+      />
       <CommandPalette
         isOpen={showCommandPalette}
         onClose={() => setShowCommandPalette(false)}
@@ -615,7 +873,7 @@ export default function App() {
         activePersona={activePersona}
         ragEnabled={ragEnabled}
         theme={theme}
-        onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+        onToggleTheme={cycleTheme}
         isListening={voice.isListening}
         onToggleListening={() => voice.toggleListening(setInput)}
         ttsEnabled={voice.ttsEnabled}
@@ -627,6 +885,16 @@ export default function App() {
         activeProfileName={profiles.activeProfile?.name}
         scheduledTaskCount={scheduledTasks.enabledCount}
         onSecurityAudit={handleSecurityAudit}
+        onNewChat={() => convManager.newConversation()}
+        onOpenAgentDashboard={() => setShowAgentDashboard(true)}
+        onExportConversation={() => convManager.exportConversation(showToast)}
+        onClearConversation={() => {
+          if (!activeConv) return
+          convManager.setConversations(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [] } : c))
+          showToast(settings.language === 'en' ? 'Conversation cleared' : 'Conversa limpa')
+        }}
+        onOpenSettings={() => setShowSettings(true)}
+        onOpenShortcuts={() => setShowShortcuts(true)}
       />
 
       {/* ═══ Lazy-loaded feature panels — single Suspense boundary ═══
@@ -690,6 +958,37 @@ export default function App() {
             language={settings.language}
           />
         )}
+        {showAgentDashboard && (
+          <AgentDashboard
+            isOpen={showAgentDashboard}
+            onClose={() => setShowAgentDashboard(false)}
+            settings={settings}
+            language={settings.language}
+            activePersona={activePersona}
+            onOpenPersonas={() => { setShowAgentDashboard(false); setShowPersona(true) }}
+            scheduledTasks={scheduledTasks.tasks}
+            onOpenScheduler={() => { setShowAgentDashboard(false); setShowScheduler(true) }}
+            onRunTaskNow={scheduledTasks.runNow}
+            onToggleTask={scheduledTasks.toggle}
+            todayCost={usageTracking.getTodayCost()}
+            monthCost={usageTracking.getSummary(30).totalCost}
+            monthEntries={usageTracking.getSummary(30).entries.length}
+            healthMap={providerHealth.healthMap}
+            configuredProviders={providerHealth.getConfiguredProviders()}
+            onOpenSettings={() => { setShowAgentDashboard(false); setShowSettings(true) }}
+            isAgentMode={isAgentMode}
+            onToggleAgentMode={() => setIsAgentMode(v => !v)}
+            onOpenWorkflows={() => { setShowAgentDashboard(false); setShowWorkflow(true) }}
+            onOpenAnalytics={() => { setShowAgentDashboard(false); setShowAnalytics(true) }}
+          />
+        )}
+        {showShortcuts && (
+          <ShortcutCheatSheet
+            isOpen={showShortcuts}
+            onClose={() => setShowShortcuts(false)}
+            language={settings.language}
+          />
+        )}
       </Suspense>
 
       {/* Titlebar */}
@@ -721,44 +1020,32 @@ export default function App() {
         {activeConv && activeConv.title && (
           <div className="titlebar-center" title={activeConv.title}>{activeConv.title}</div>
         )}
+        {/* Titlebar só com sidebar toggle + ações específicas da
+            conversa (Regen/Export) + Analytics. Tudo ligado a
+            preferência do usuário (tema, accent, idioma, perfil,
+            configurações, dashboard do agente) migrou para o
+            UserMenu ancorado na sidebar — evita duplicação. */}
         <div className="titlebar-actions">
           <button className="titlebar-action-btn" onClick={() => setSidebarOpen(p => !p)} title="Toggle sidebar">
             {sidebarOpen ? <PanelLeftClose size={14} /> : <PanelLeft size={14} />}
           </button>
-          <button className="titlebar-action-btn" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} title="Alternar tema">
-            {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
-          </button>
           {activeConv && activeConv.messages.length > 0 && (
             <>
-              <button className="titlebar-action-btn" onClick={regenerateResponse} title="Regenerar última resposta" disabled={isActiveConvLoading}>
-                <RefreshCw size={14} />
-              </button>
+              <RegenSplit
+                isLoading={isActiveConvLoading}
+                settings={settings}
+                selectedModel={selectedModel}
+                ollamaModels={models}
+                onRegenerate={regenerateResponse}
+                open={showRegenMenu}
+                onOpenChange={setShowRegenMenu}
+              />
               <button className="titlebar-action-btn export-btn" onClick={() => convManager.exportConversation(showToast)} title="Exportar conversa">
                 <Download size={14} /><span>Exportar</span>
               </button>
             </>
           )}
           <button className="titlebar-action-btn" onClick={() => setShowAnalytics(true)} title="Analytics & Insights"><BarChart3 size={14} /></button>
-          {/* Account button is always visible. When Supabase isn't
-              configured, the panel now shows an inline setup form
-              (URL + anon key) rather than a dead-end "not configured"
-              message — so the feature is discoverable even on builds
-              without baked-in credentials. */}
-          <button
-            className="titlebar-action-btn"
-            onClick={() => setShowAccount(true)}
-            title={
-              !isSupabaseConfigured()
-                ? 'Conta & Sincronização — conectar Supabase'
-                : auth.session
-                  ? `${auth.session.user.email} — Conta & Sincronização`
-                  : 'Conta & Sincronização'
-            }
-          >
-            <User size={14} />
-            {auth.session && <span className="account-dot" aria-hidden="true" />}
-          </button>
-          <button className="titlebar-action-btn" onClick={() => setShowSettings(true)} title="Configurações (Ctrl+,)"><SettingsIcon size={14} /></button>
         </div>
         <div className="titlebar-controls">
           <button onClick={() => window.electron.minimize()} className="ctrl-btn minimize"><Minus size={12}/></button>
@@ -842,6 +1129,53 @@ export default function App() {
           </div>
 
           <div className="sidebar-footer">
+            {/* ── User identity row (Claude-Desktop style) ─────────────
+                Trigger for UserMenu + inline theme toggle. Shown even
+                without a session (renders as "Convidado"); the menu
+                offers a sign-in entry point in that state. */}
+            <div className="sidebar-user">
+              <button
+                ref={userMenuAnchorRef}
+                className="sidebar-user-trigger"
+                onClick={() => setShowUserMenu(v => !v)}
+                aria-haspopup="menu"
+                aria-expanded={showUserMenu}
+                title={settings.language === 'en' ? 'Profile & preferences' : 'Perfil e preferências'}
+              >
+                <span className="sidebar-user-avatar">
+                  {(settings.profileName || 'OC')[0]?.toUpperCase()}
+                </span>
+                <span className="sidebar-user-name">
+                  {settings.profileName || (settings.language === 'en' ? 'OpenClaude' : 'OpenClaude')}
+                </span>
+              </button>
+              <button
+                className="sidebar-user-theme"
+                onClick={cycleTheme}
+                title={themeLabel}
+                aria-label={themeLabel}
+              >
+                {themeIcon}
+              </button>
+              {showUserMenu && (
+                <UserMenu
+                  open={showUserMenu}
+                  onClose={() => setShowUserMenu(false)}
+                  anchorRef={userMenuAnchorRef}
+                  language={settings.language}
+                  onLanguageChange={(lang) => { setSettings(s => ({ ...s, language: lang })); }}
+                  profileName={settings.profileName || 'OpenClaude'}
+                  onProfileNameChange={(name) => setSettings(s => ({ ...s, profileName: name }))}
+                  onOpenSettings={() => setShowSettings(true)}
+                  onOpenDashboard={() => setShowAgentDashboard(true)}
+                  onOpenAccentPicker={() => setShowAccentPicker(true)}
+                  onCycleTheme={cycleTheme}
+                  themeLabel={themeLabel}
+                  appVersion="2.12.5"
+                />
+              )}
+            </div>
+
             <div className="model-selector">
               {settings.provider !== 'ollama' ? (
                 <button className="model-btn" onClick={() => setShowSettings(true)}>
@@ -933,8 +1267,33 @@ export default function App() {
                     <div className="message-footer">
                       <span className="message-timestamp">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       <div className="message-actions">
-                        {msg.content && <CopyButton text={msg.content} title="Copiar como Markdown" onCopied={() => showToast('Copiado como Markdown')} />}
-                        <button className="msg-action-btn" onClick={() => deleteMessage(msg.id)} title="Excluir mensagem"><Trash size={12} /></button>
+                        {msg.content && <CopyButton text={msg.content} title={settings.language === 'en' ? 'Copy as Markdown' : 'Copiar como Markdown'} onCopied={() => showToast(settings.language === 'en' ? 'Copied as Markdown' : 'Copiado como Markdown')} />}
+                        {msg.role === 'assistant' && (
+                          <button
+                            className="msg-action-btn msg-regen-btn"
+                            onClick={() => regenerateResponse()}
+                            title={settings.language === 'en' ? 'Regenerate this response' : 'Regenerar esta resposta'}
+                            aria-label="Regenerate"
+                          >
+                            <RefreshCw size={12} />
+                          </button>
+                        )}
+                        {activeConv && (
+                          <button
+                            className="msg-action-btn msg-branch-btn"
+                            onClick={() => {
+                              const idx = activeConv.messages.findIndex(m => m.id === msg.id)
+                              if (idx < 0) return
+                              forkFrom(activeConv.id, idx)
+                              showToast(settings.language === 'en' ? 'Conversation branched' : 'Conversa bifurcada')
+                            }}
+                            title={settings.language === 'en' ? 'Branch from here' : 'Bifurcar a partir daqui'}
+                            aria-label="Branch"
+                          >
+                            <GitBranch size={12} />
+                          </button>
+                        )}
+                        <button className="msg-action-btn" onClick={() => deleteMessage(msg.id)} title={settings.language === 'en' ? 'Delete message' : 'Excluir mensagem'}><Trash size={12} /></button>
                       </div>
                     </div>
                   </div>
@@ -1029,6 +1388,7 @@ export default function App() {
 
           {/* Input area */}
           <div className="input-area" onClick={() => showFeatureMenu && setShowFeatureMenu(false)}>
+            <AmbientOrb visible={isActiveConvLoading} />
             <div className="input-wrapper">
               <input type="file" id="image-upload" accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
                 const file = e.target.files?.[0]
@@ -1039,18 +1399,32 @@ export default function App() {
                 e.target.value = ''
               }} />
 
-              {/* Status pills */}
-              {(isAgentMode || settings.permissionLevel === 'ignore' || activePersona || ragEnabled || isActiveConvLoading || profiles.activeProfile) && (
-                <div className="input-status-bar">
-                  {isAgentMode && <span className="status-pill agent"><Zap size={9} />Agente{isActiveConvLoading ? ` · Passo ${chat.agentSteps}` : ''}</span>}
-                  {settings.permissionLevel === 'ignore' && <span className="status-pill danger"><AlertCircle size={9} />Bypass Mode</span>}
-                  {activePersona && <span className="status-pill persona"><UserCog size={9} />{activePersona.name}</span>}
-                  {ragEnabled && <span className="status-pill rag"><Database size={9} />RAG</span>}
-                  {profiles.activeProfile && <span className="status-pill profile">{profiles.activeProfile.icon} {profiles.activeProfile.name}</span>}
-                  {isActiveConvLoading && <button className="status-pill stop-pill" onClick={chat.stopAgent}><Square size={9} />Parar</button>}
-                </div>
-              )}
+              {/* Status row: permission mode pill SEMPRE visível (fica
+                  alinhado em cima do input-pill, como no Claude Desktop),
+                  + pills transientes (agente, persona, RAG, loading).
+                  A pill de permissão cobre o caso `ignore` com dot
+                  pulsante — então o status-pill "Bypass Mode" dedicado
+                  foi removido para evitar redundância. */}
+              <div className="input-status-bar">
+                <PermissionModeButton
+                  value={settings.permissionLevel || 'ask'}
+                  onChange={(level) => setSettings(s => ({ ...s, permissionLevel: level }))}
+                  language={settings.language}
+                />
+                {isAgentMode && <span className="status-pill agent"><Zap size={9} />Agente{isActiveConvLoading ? ` · Passo ${chat.agentSteps}` : ''}</span>}
+                {activePersona && <span className="status-pill persona"><UserCog size={9} />{activePersona.name}</span>}
+                {ragEnabled && <span className="status-pill rag"><Database size={9} />RAG</span>}
+                {profiles.activeProfile && <span className="status-pill profile">{profiles.activeProfile.icon} {profiles.activeProfile.name}</span>}
+                {isActiveConvLoading && <button className="status-pill stop-pill" onClick={chat.stopAgent}><Square size={9} />Parar</button>}
+              </div>
 
+              <SlashPopover
+                slash={slash}
+                selectedIdx={slashIdx}
+                onHover={setSlashIdx}
+                onExecute={executeSlash}
+                language={settings.language}
+              />
               <div className="input-pill" onClick={e => e.stopPropagation()}>
                 <div className="input-left-actions">
                   <button className="input-icon-btn" onClick={() => setShowCommandPalette(true)} title="Ferramentas e recursos (Ctrl+K)"><Plus size={18} /></button>
@@ -1079,9 +1453,22 @@ export default function App() {
                   {settings.provider !== 'ollama' && usageTracking.getTodayCost() > 0 && (
                     <span className="cost-counter">{usageTracking.formatCost(usageTracking.getTodayCost())} hoje</span>
                   )}
-                  <span className={`token-counter ${tokenInfo.critical ? 'critical' : tokenInfo.warning ? 'warning' : ''}`}>
+                  <button
+                    ref={contextPanelAnchorRef}
+                    type="button"
+                    className={`token-counter ${tokenInfo.critical ? 'critical' : tokenInfo.warning ? 'warning' : ''}`}
+                    onClick={() => setShowContextPanel(v => !v)}
+                    title={settings.language === 'en' ? 'Open context window panel' : 'Abrir painel da janela de contexto'}
+                  >
                     {formatTokenCount(tokenInfo.used)}/{formatTokenCount(tokenInfo.limit)} ({tokenInfo.percentage}%)
-                  </span>
+                  </button>
+                  <ContextWindowPanel
+                    open={showContextPanel}
+                    onClose={() => setShowContextPanel(false)}
+                    anchorRef={contextPanelAnchorRef}
+                    breakdown={ctxBreakdown}
+                    language={settings.language}
+                  />
                 </div>
               </div>
             </div>

@@ -24,7 +24,11 @@ export interface AgentMemory {
   episodic: EpisodicEntry[]
   pinned: { content: string; pinnedAt: number }[]
   version: number
+  /** @deprecated use lastLightDreamTime / lastDeepDreamTime. Kept for
+   *  backward-compat with stored memory files from pre-fix versions. */
   lastDreamTime?: number
+  lastLightDreamTime?: number
+  lastDeepDreamTime?: number
   consolidated?: ConsolidatedMemory[]
 }
 
@@ -89,6 +93,7 @@ export function lightDream(memory: AgentMemory): AgentMemory {
     ...memory,
     episodic: updatedEpisodic,
     consolidated: merged,
+    lastLightDreamTime: Date.now(),
     lastDreamTime: Date.now(),
   }
 }
@@ -130,6 +135,8 @@ export function deepDream(memory: AgentMemory): AgentMemory {
   return {
     ...updated,
     workingMemory: healthyEntries,
+    lastDeepDreamTime: Date.now(),
+    lastLightDreamTime: Date.now(),
     lastDreamTime: Date.now(),
   }
 }
@@ -175,9 +182,17 @@ function isSimilar(a: string, b: string): boolean {
 
 // ─── Dream Scheduler ────────────────────────────────────────────
 
-/** Check if it's time for a dream cycle */
+/** Check if it's time for a dream cycle.
+ *  Previously read the shared `lastDreamTime`, which light dreams
+ *  stamped every 2h — the deep-24h threshold was therefore never met
+ *  while light dreams ran, so deep cycles effectively never fired. Now
+ *  each cycle tracks its own timestamp. Falls back to the legacy
+ *  `lastDreamTime` field for memory files written before this fix. */
 export function shouldDream(memory: AgentMemory, type: 'light' | 'deep'): boolean {
-  const lastDream = memory.lastDreamTime || 0
+  const legacy = memory.lastDreamTime || 0
+  const lastDream = type === 'light'
+    ? (memory.lastLightDreamTime ?? legacy)
+    : (memory.lastDeepDreamTime ?? legacy)
   const timeSince = Date.now() - lastDream
   const hours = timeSince / (60 * 60 * 1000)
 

@@ -21,7 +21,16 @@ export function formatMarkdown(text: string): string {
 }
 
 export function generateId(): string {
-  return Math.random().toString(36).substring(2, 9)
+  // Prefer crypto.randomUUID when available — 122 bits of entropy, no collision
+  // concern even across millions of ids. Fall back to a longer Math.random +
+  // timestamp combo for exotic runtimes (old jsdom, etc.). The previous
+  // 7-char base36 id had only ~36 bits, which hit birthday collisions around
+  // ~9k ids — realistic for long-running conversation histories.
+  const g = (typeof crypto !== 'undefined' && crypto && typeof crypto.randomUUID === 'function')
+    ? crypto.randomUUID()
+    : null
+  if (g) return g
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
 }
 
 export function isSmallModel(modelName: string): boolean {

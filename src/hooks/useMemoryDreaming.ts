@@ -34,7 +34,14 @@ export function useMemoryDreaming({ enabled, onToast }: UseMemoryDreamingOptions
         return
       }
 
-      const dreamed = type === 'deep' ? deepDream(memory) : lightDream(memory)
+      // Light dreams also refresh health scores so the UI reflects decay
+      // between deep cycles (deep already calls updateHealthScores via its
+      // own pipeline). Previously `updateHealthScores` was imported but
+      // never invoked, so scores stayed frozen at their last deep-dream
+      // value for up to 24h.
+      const dreamed = type === 'deep'
+        ? deepDream(memory)
+        : updateHealthScores(lightDream(memory))
 
       await window.electron.saveAgentMemory(dreamed)
 

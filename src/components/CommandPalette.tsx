@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { X, Search, BookMarked, UserCog, Swords, FolderOpen, Camera, Database, GitBranch, Scale, Monitor, Image, Zap, BarChart3, Wrench, Code, ListChecks, AlertCircle, Sun, Moon, Mic, Volume2, Shield, Brain, Clock } from 'lucide-react'
+import { X, Search, BookMarked, UserCog, Swords, FolderOpen, Camera, Database, GitBranch, Scale, Monitor, Image, Zap, BarChart3, Wrench, Code, ListChecks, AlertCircle, Sun, Moon, Mic, Volume2, Shield, Brain, Clock, Plus, Download, Trash2, Activity, Settings as SettingsIcon, HelpCircle } from 'lucide-react'
 import type { AppSettings } from '../Settings'
 import type { PermissionLevel } from '../Settings'
 import type { Persona } from '../PersonaEngine'
@@ -9,11 +9,13 @@ export interface CommandItem {
   label: string
   description: string
   icon: any
-  category: 'ai' | 'knowledge' | 'automation' | 'system'
+  category: 'actions' | 'ai' | 'knowledge' | 'automation' | 'system'
   action: () => void
   active?: boolean
   shortcut?: string
   special?: boolean
+  /** v2.12.0: "actions" category is tinted to stand apart from feature toggles */
+  isAction?: boolean
 }
 
 interface CommandPaletteProps {
@@ -55,9 +57,17 @@ interface CommandPaletteProps {
   scheduledTaskCount?: number
   // Security
   onSecurityAudit?: () => void
+  // v2.12.0: real actions (not just feature toggles)
+  onNewChat?: () => void
+  onExportConversation?: () => void
+  onClearConversation?: () => void
+  onOpenSettings?: () => void
+  onOpenAgentDashboard?: () => void
+  onOpenShortcuts?: () => void
 }
 
 const CATEGORY_LABELS = {
+  actions: { pt: 'Ações', en: 'Actions' },
   ai: { pt: 'Inteligência Artificial', en: 'Artificial Intelligence' },
   knowledge: { pt: 'Conhecimento', en: 'Knowledge' },
   automation: { pt: 'Automação', en: 'Automation' },
@@ -72,6 +82,13 @@ export default function CommandPalette(props: CommandPaletteProps) {
   const resultsRef = useRef<HTMLDivElement>(null)
 
   const items: CommandItem[] = [
+    // ── v2.12.0: real actions (top of list, tinted) ────────────────
+    ...(props.onNewChat ? [{ id: 'new-chat', label: language === 'pt' ? 'Nova conversa' : 'New conversation', description: language === 'pt' ? 'Limpar e começar do zero' : 'Clear and start fresh', icon: Plus, category: 'actions' as const, action: props.onNewChat, shortcut: 'Ctrl+N', isAction: true }] : []),
+    ...(props.onOpenAgentDashboard ? [{ id: 'dashboard', label: language === 'pt' ? 'Painel do Agente' : 'Agent Dashboard', description: language === 'pt' ? 'Visão unificada das operações' : 'Unified ops view', icon: Activity, category: 'actions' as const, action: props.onOpenAgentDashboard, shortcut: 'Ctrl+Shift+D', isAction: true }] : []),
+    ...(props.onExportConversation ? [{ id: 'export', label: language === 'pt' ? 'Exportar conversa' : 'Export conversation', description: language === 'pt' ? 'Baixar em JSON/Markdown' : 'Download as JSON/Markdown', icon: Download, category: 'actions' as const, action: props.onExportConversation, isAction: true }] : []),
+    ...(props.onClearConversation ? [{ id: 'clear', label: language === 'pt' ? 'Limpar conversa atual' : 'Clear current chat', description: language === 'pt' ? 'Remover todas as mensagens' : 'Remove all messages', icon: Trash2, category: 'actions' as const, action: props.onClearConversation, isAction: true }] : []),
+    ...(props.onOpenSettings ? [{ id: 'open-settings', label: language === 'pt' ? 'Abrir configurações' : 'Open settings', description: language === 'pt' ? 'Provedores, API keys, tema' : 'Providers, API keys, theme', icon: SettingsIcon, category: 'actions' as const, action: props.onOpenSettings, shortcut: 'Ctrl+,', isAction: true }] : []),
+    ...(props.onOpenShortcuts ? [{ id: 'shortcuts', label: language === 'pt' ? 'Atalhos do teclado' : 'Keyboard shortcuts', description: language === 'pt' ? 'Ver lista completa' : 'View full list', icon: HelpCircle, category: 'actions' as const, action: props.onOpenShortcuts, shortcut: '?', isAction: true }] : []),
     // AI
     { id: 'persona', label: props.activePersona?.name || (language === 'pt' ? 'Persona Engine' : 'Persona Engine'), description: language === 'pt' ? 'Personalidades de IA customizadas' : 'Custom AI personalities', icon: UserCog, category: 'ai', action: props.onOpenPersona, active: !!props.activePersona },
     { id: 'arena', label: 'Model Arena', description: language === 'pt' ? 'Compare modelos lado a lado' : 'Compare models side by side', icon: Swords, category: 'ai', action: props.onOpenArena },
@@ -129,7 +146,7 @@ export default function CommandPalette(props: CommandPaletteProps) {
     : enabledItems
 
   // Group by category
-  const grouped = (['ai', 'knowledge', 'automation', 'system'] as const).map(cat => ({
+  const grouped = (['actions', 'ai', 'knowledge', 'automation', 'system'] as const).map(cat => ({
     category: cat,
     label: CATEGORY_LABELS[cat][language],
     items: filtered.filter(i => i.category === cat)
@@ -228,7 +245,7 @@ export default function CommandPalette(props: CommandPaletteProps) {
                     key={item.id}
                     id={`cmd-item-${item.id}`}
                     data-cmd-idx={idx}
-                    className={`cmd-item ${isSelected ? 'selected' : ''} ${item.active ? 'active' : ''} ${item.special ? 'special' : ''}`}
+                    className={`cmd-item ${isSelected ? 'selected' : ''} ${item.active ? 'active' : ''} ${item.special ? 'special' : ''} ${item.isAction ? 'cmd-action' : ''}`}
                     onClick={() => { item.action(); onClose() }}
                     onMouseEnter={() => setSelectedIdx(idx)}
                     role="option"

@@ -160,7 +160,14 @@ function createWindow() {
 }
 
 // ─── IPC: Context Compaction (summarize old messages via model) ──────
-ipcMain.handle('compact-context', async (event, { messages, model, language }) => {
+// Currently only routes through a local Ollama instance. For callers on
+// cloud providers (OpenAI/Anthropic/etc.) we short-circuit instead of
+// sending their prompt to an Ollama server that might not be running —
+// the caller falls back to plain truncation and no console noise.
+ipcMain.handle('compact-context', async (event, { messages, model, language, provider }) => {
+  if (provider && provider !== 'ollama') {
+    return { summary: '', error: null, skipped: true }
+  }
   return new Promise((resolve) => {
     const compactPrompt = language === 'pt'
       ? `Resuma a conversa abaixo em um parágrafo compacto preservando: (1) fatos-chave mencionados, (2) decisões tomadas, (3) arquivos/caminhos referenciados, (4) estado atual do trabalho. Seja denso e factual, sem floreios. Máximo 300 palavras.`
@@ -231,6 +238,7 @@ ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperatur
       let data = ''
       res.on('data', chunk => data += chunk)
       res.on('end', () => {
+        activeOllamaStream = null
         try {
           const parsed = JSON.parse(data)
           if (res.statusCode && res.statusCode >= 400) {
@@ -242,7 +250,8 @@ ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperatur
         catch (e) { resolve({ error: `Ollama response parse error: ${e.message}` }) }
       })
     })
-    req.on('error', reject)
+    req.on('error', (err) => { activeOllamaStream = null; reject(err) })
+    activeOllamaStream = req
     req.write(body)
     req.end()
   })
@@ -507,8 +516,10 @@ ipcMain.handle('web-search', async (event, query) => {
     }
     let data = ''
     const req = https.request(options, (res) => {
-      // Follow redirects
+      // Follow redirects — drain the original response body (res.resume())
+      // so the socket can be freed instead of lingering half-open.
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume()
         https.get(res.headers.location, { headers: options.headers }, (r2) => {
           let rd = ''
           r2.on('data', c => rd += c)
@@ -2421,6 +2432,40 @@ ipcMain.handle('oauth-google-start', async (_e, params) => {
   } catch (e) {
     return { error: e.message || String(e) }
   }
+})
+
+// ─── v2.12.0: Native Notifications ────────────────────────────────────────────
+// Renderer fires this when the window is blurred and a response completes.
+// Click brings the window forward — mirrors what Slack / Discord do so the
+// user can get back to the conversation without hunting taskbars.
+const { Notification } = require('electron')
+ipcMain.handle('show-notification', async (_e, opts = {}) => {
+  try {
+    if (!Notification.isSupported()) return { ok: false, error: 'not supported' }
+    const n = new Notification({
+      title: opts.title || 'OpenClaude',
+      body: opts.body || '',
+      silent: opts.silent === true,
+      // Icon is optional — electron-builder packages an ico, but Notification
+      // expects a platform-native path at runtime. Skipping keeps it simple;
+      // Windows shows the app tile icon automatically.
+    })
+    n.on('click', () => {
+      if (win && !win.isDestroyed()) {
+        if (win.isMinimized()) win.restore()
+        win.focus()
+      }
+    })
+    n.show()
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) }
+  }
+})
+
+ipcMain.handle('is-window-focused', async () => {
+  try { return { focused: !!(win && !win.isDestroyed() && win.isFocused()) } }
+  catch { return { focused: false } }
 })
 
 // ─── ORION: Computer Control Agent ────────────────────────────────────────────

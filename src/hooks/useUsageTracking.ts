@@ -53,7 +53,11 @@ export function useUsageTracking() {
       cost,
     }
     setEntries(prev => {
-      const updated = [...prev, entry]
+      // Trim in-memory too — otherwise the React state grows unbounded
+      // across long sessions while the on-disk copy is capped at
+      // MAX_ENTRIES, diverging after the 1001st entry and leaking
+      // memory into every getSummary iteration.
+      const updated = [...prev, entry].slice(-MAX_ENTRIES)
       saveUsage(updated)
       return updated
     })

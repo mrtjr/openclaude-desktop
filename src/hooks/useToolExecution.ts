@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
 import type { AppSettings, PendingApproval, TaskPlan, Conversation } from '../types'
-import { SAFE_TOOLS, DANGEROUS_TOOLS } from '../constants/tools'
+import { SAFE_TOOLS, DANGEROUS_TOOLS, TOOLS } from '../constants/tools'
+import { resolveToolSearch, formatToolSearchResult } from '../services/toolDeferral'
 import type { ModalKeyPool } from './useModalKeyPool'
 import type { ParallelChatResult, ParallelChatTask } from '../types/ipc'
 
@@ -22,6 +23,16 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
   const executeToolRaw = useCallback(async (name: string, args: Record<string, any>): Promise<string> => {
     const convId = activeConvIdRef.current
     try {
+      // ─── tool_search (v2.12.6): meta-tool that lets the model pull
+      // full schemas on demand for deferred tools. Accepts either a
+      // keyword query or "select:name1,name2" for exact selection.
+      if (name === 'tool_search' || name === 'ToolSearch') {
+        const query = String(args.query || '').trim()
+        const maxResults = Number(args.max_results) || 5
+        if (!query) return 'tool_search: missing "query" parameter'
+        const matches = resolveToolSearch(query, TOOLS as any).slice(0, maxResults)
+        return formatToolSearchResult(matches)
+      }
       if (name === 'execute_command') {
         const result = await window.electron.execCommand(args.command)
         return result.stdout || result.stderr || result.error || 'Comando executado'
@@ -171,7 +182,7 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         const buildTask = (st: any): ParallelChatTask => ({
           id: st.id,
           messages: [
-            ...(systemMsg ? [{ role: 'system', content: systemMsg + LANGUAGE_RULE[lang] }] : []),
+            ...(systemMsg ? [{ role: 'system', content: systemMsg + (LANGUAGE_RULE[lang] ?? LANGUAGE_RULE.pt) }] : []),
             { role: 'user', content: st.prompt }
           ]
         })
@@ -255,7 +266,16 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
 
   const requestApproval = useCallback((toolName: string, args: Record<string, any>): Promise<boolean> => {
     return new Promise((resolve) => {
-      setPendingApproval({ toolName, args, resolve })
+      // Wrap resolve so multiple clicks on allow/deny before React clears
+      // the banner can't fire conflicting outcomes. The first decision wins;
+      // subsequent clicks are no-ops.
+      let settled = false
+      const safeResolve = (v: boolean) => {
+        if (settled) return
+        settled = true
+        resolve(v)
+      }
+      setPendingApproval({ toolName, args, resolve: safeResolve })
     })
   }, [])
 

@@ -53,11 +53,20 @@ export function useAuth(): UseAuthResult {
         if (mounted) setLoading(false)
       }
     })()
+    let lastUserId: string | null = null
     const unsub = onAuthStateChange((s) => {
       if (!mounted) return
+      const newUserId = s?.user?.id ?? null
+      // Clear passphrase on sign-out OR identity change — it's tied to a
+      // specific account. Without the identity check, switching from
+      // account A to B (e.g., Google OAuth replaying with a different user)
+      // would keep A's passphrase in memory, and crypto ops on B's
+      // encrypted blobs would throw what looks like corruption errors.
+      if (!s || (lastUserId && newUserId && newUserId !== lastUserId)) {
+        setPassphrase(undefined)
+      }
+      lastUserId = newUserId
       setSession(s)
-      // Clear passphrase on sign-out — it's tied to the session.
-      if (!s) setPassphrase(undefined)
     })
     return () => { mounted = false; unsub() }
   }, [configured, setPassphrase])

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type { Conversation } from '../types'
 import { generateId } from '../utils/formatting'
 
@@ -18,7 +18,7 @@ export function useConversations() {
   const activeConv = conversations.find(c => c.id === activeConvId)
 
   // ─── Load conversations from disk ──────────────────────────────
-  const newConversation = useCallback(() => {
+  const newConversation = useCallback((): string => {
     const conv: Conversation = {
       id: generateId(),
       title: 'Nova conversa',
@@ -27,6 +27,7 @@ export function useConversations() {
     }
     setConversations(prev => [conv, ...prev])
     setActiveConvId(conv.id)
+    return conv.id
   }, [])
 
   useEffect(() => {
@@ -79,7 +80,7 @@ export function useConversations() {
   }, [searchQuery])
 
   // ─── Filtered & sorted conversations ───────────────────────────
-  const filteredConversations = (() => {
+  const filteredConversations = useMemo(() => {
     let list = conversations
     if (debouncedSearch.trim()) {
       const q = debouncedSearch.toLowerCase()
@@ -90,7 +91,7 @@ export function useConversations() {
       const bp = pinnedConvs.has(b.id) ? 1 : 0
       return bp - ap
     })
-  })()
+  }, [conversations, debouncedSearch, pinnedConvs])
 
   const deleteConversation = useCallback((id: string) => {
     setConversations(prev => {

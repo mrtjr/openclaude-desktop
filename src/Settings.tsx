@@ -51,6 +51,17 @@ export interface AppSettings {
   analyticsEnabled: boolean
   permissionLevel: PermissionLevel
   mcpServers: McpServer[]
+  /** v2.12.0 — fire a native OS notification when a response completes
+   *  while the window is not focused. Opt-out via Settings (default on). */
+  notifyOnComplete?: boolean
+  /** v2.12.3 — user-chosen display name shown in the sidebar profile
+   *  row and UserMenu header. Local-only, no cloud identity. */
+  profileName?: string
+  /** v2.12.6 — when true, non-hot-path tools are not injected with
+   *  their full JSONSchema; the model calls `tool_search` to fetch
+   *  schemas on demand. Saves ~80% of tool-schema tokens in exchange
+   *  for one extra round-trip when a deferred tool is first needed. */
+  toolDeferralEnabled?: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -83,6 +94,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   analyticsEnabled: true,
   permissionLevel: 'ask',
   mcpServers: [],
+  notifyOnComplete: true,
+  toolDeferralEnabled: false,
 }
 
 export function loadSettings(): AppSettings {
@@ -98,6 +111,18 @@ export function loadSettings(): AppSettings {
           label: 'Principal',
           enabled: true,
         }]
+      }
+      // Migration: pre-v2.11.5 installs defaulted modalModel to bogus Groq
+      // names (llama-3.1-70b / llama-3.1-8b / mixtral-8x7b) that don't
+      // exist on Modal Research — every request 404'd. Auto-upgrade to
+      // the real default so existing users don't have to manually fix it
+      // in Settings.
+      const STALE_MODAL_MODELS = new Set([
+        'llama-3.1-70b', 'llama-3.1-8b', 'mixtral-8x7b',
+        'llama-3.1-405b', 'llama-3-70b',
+      ])
+      if (STALE_MODAL_MODELS.has(merged.modalModel)) {
+        merged.modalModel = DEFAULT_SETTINGS.modalModel
       }
       return merged
     }
@@ -255,6 +280,26 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                     <div className="toggle-knob" />
                   </div>
                 </label>
+              </div>
+
+              {/* Tool deferral (v2.12.6) */}
+              <div className="settings-group">
+                <label className="settings-label">
+                  <span>
+                    {local.language === 'pt'
+                      ? 'Diferir schemas de ferramentas (economiza ~5k tokens)'
+                      : 'Defer tool schemas (saves ~5k tokens)'}
+                  </span>
+                  <div className={`toggle ${local.toolDeferralEnabled ? 'on' : ''}`}
+                    onClick={() => setLocal(s => ({ ...s, toolDeferralEnabled: !s.toolDeferralEnabled }))}>
+                    <div className="toggle-knob" />
+                  </div>
+                </label>
+                <p className="settings-hint">
+                  {local.language === 'pt'
+                    ? 'Lista tools raramente usadas como nome+descrição no system prompt; o modelo chama tool_search para carregar schemas sob demanda.'
+                    : 'Lists rarely-used tools by name+description in the system prompt; the model calls tool_search to load schemas on demand.'}
+                </p>
               </div>
 
               {/* Analytics */}

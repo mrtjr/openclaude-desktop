@@ -105,6 +105,12 @@ export function useModalKeyPool(settings: AppSettings): ModalKeyPool {
         slot.cooldownUntil = Date.now() + POOL_CONFIG.COOLDOWN_CONCURRENT_MS
       } else if (isRateLimit) {
         slot.cooldownUntil = Date.now() + POOL_CONFIG.COOLDOWN_429_MS
+      } else {
+        // Unknown/transient error (5xx, DNS failure, malformed response).
+        // Without a cooldown the pool would hammer a broken key in a tight
+        // acquire → fail → release → acquire loop. Use the short concurrent
+        // cooldown so the retry happens but paced.
+        slot.cooldownUntil = Date.now() + POOL_CONFIG.COOLDOWN_CONCURRENT_MS
       }
       slot.busy = false
     }

@@ -89,8 +89,24 @@ export class StreamingSanitizer {
     return this.flush()
   }
 
-  /** Flush buffer — call when stream ends */
+  /** Flush buffer — call when stream ends.
+   *  If we ended mid-reasoning-tag (model cut off before </think>), emit
+   *  the buffered content anyway: silently eating it was the root cause
+   *  of v2.12.x "chat interrupted after plan_tasks" — when a streaming
+   *  reply was entirely enclosed in an unclosed <think>, the user saw
+   *  a blank message. Leaking some reasoning text is strictly better
+   *  than an empty response with no recourse. The one-shot regex pass
+   *  in `sanitizeReasoningLeaks` still removes properly-closed blocks
+   *  post-flush, so this only changes behaviour for the degenerate
+   *  "never-closed" case. */
   flush(): string {
+    if (this.inTag) {
+      const out = this.buffer
+      this.buffer = ''
+      this.inTag = false
+      this.tagName = ''
+      return out
+    }
     const out = this.buffer
     this.buffer = ''
     return out

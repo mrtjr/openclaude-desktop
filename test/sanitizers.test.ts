@@ -65,17 +65,20 @@ describe('StreamingSanitizer', () => {
     expect(out2).toContain('<thirdpart>')
   })
 
-  it('handles stream interrupted inside reasoning block (known leak behavior)', () => {
+  it('emits buffered content when stream ends mid-reasoning-tag (v2.12.7)', () => {
     const s = new StreamingSanitizer()
     expect(s.process('before <think>')).toBe('before ')
     expect(s.process('unfinished thought')).toBe('')
-    // NOTE: If stream ends without </think>, flush() returns the raw buffer
-    // (including the opening tag). This is a known limitation — better to
-    // surface the leak than freeze on incomplete streams. Downstream callers
-    // should render this as plain text (which will visually show "<think>"
-    // and let the user see that reasoning was incomplete).
+    // Stream cut off before </think>. The v2.12.6 behaviour was to drop
+    // the buffer, but that caused silent "empty message" bubbles after
+    // a plan_tasks turn on models that wrap their whole reply in an
+    // unclosed <think>. We now emit the buffered text — leaking some
+    // reasoning is strictly better than the user seeing nothing.
     const flushed = s.flush()
+    expect(flushed).toContain('<think>')
     expect(flushed).toContain('unfinished thought')
+    // State is reset — a second flush on an empty buffer returns ''.
+    expect(s.flush()).toBe('')
   })
 
   it('flushes held-back partial tag chars on demand', () => {

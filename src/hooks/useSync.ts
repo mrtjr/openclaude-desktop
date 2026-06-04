@@ -125,7 +125,11 @@ export function useSync(opts: UseSyncOptions): UseSyncResult {
     const needsPp = prefs.syncKeys
     if (needsPp && !passphrase) return
     pulledForUser.current = session.user.id
-    void pullNow()
+    // If the pull fails (network, bad passphrase, server error) we must
+    // clear the flag so the next render can retry — otherwise the user
+    // is stuck until app reload. pullNow already swallows errors
+    // internally; we just need to uncommit our "already pulled" mark.
+    pullNow().catch(() => { pulledForUser.current = null })
   }, [session, prefs.enabled, prefs.syncKeys, passphrase, pullNow])
 
   // Cleanup debounce on unmount

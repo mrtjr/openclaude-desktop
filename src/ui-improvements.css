@@ -416,3 +416,181 @@ body {
   → a interface está errada.
   A interface deve se explicar sozinha.
 */
+
+/* ═══════════════════════════════════════════════════════════════
+   Agent Dashboard (v2.12.0) — Paperclip-inspired unified ops view
+   Reutiliza .analytics-overlay/.analytics-modal para consistência.
+   ═══════════════════════════════════════════════════════════════ */
+
+.ad-modal { width: 780px; max-height: 88vh; }
+.ad-header-title { display: flex; align-items: center; gap: 14px; }
+.ad-header-icon { color: var(--accent); flex-shrink: 0; }
+.ad-header-title h2 { margin: 0; font-size: 18px; font-weight: 600; color: var(--text-primary); }
+.ad-header-sub { margin: 2px 0 0; font-size: 12px; color: var(--text-muted); }
+
+.ad-body {
+  padding: 20px 22px 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.ad-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.ad-kpi {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  text-align: left;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.ad-kpi-action { cursor: pointer; color: inherit; font: inherit; }
+.ad-kpi-action:hover { border-color: var(--border-light); transform: translateY(-1px); }
+.ad-kpi-active { border-color: var(--accent-border); background: var(--accent-dim); }
+.ad-kpi-icon {
+  width: 34px; height: 34px;
+  border-radius: 10px;
+  display: grid; place-items: center;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.ad-kpi-body { min-width: 0; flex: 1; }
+.ad-kpi-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px;
+  color: var(--text-muted); font-weight: 600;
+}
+.ad-kpi-value { font-size: 20px; font-weight: 700; color: var(--text-primary); margin-top: 2px; line-height: 1.1; }
+.ad-kpi-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+.ad-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ad-card {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.ad-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.ad-card-title {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; font-weight: 600; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.ad-card-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: transparent; border: none; cursor: pointer;
+  color: var(--accent); font-size: 11px; padding: 4px 8px;
+  border-radius: 6px; transition: background 0.15s;
+}
+.ad-card-link:hover { background: var(--accent-dim); }
+
+.ad-persona-body { display: flex; gap: 12px; align-items: center; min-height: 54px; }
+.ad-persona-avatar {
+  width: 44px; height: 44px; border-radius: 12px;
+  background: var(--bg-primary); border: 1px solid var(--border);
+  display: grid; place-items: center; font-size: 22px; flex-shrink: 0;
+}
+.ad-persona-meta { min-width: 0; flex: 1; }
+.ad-persona-name { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.ad-persona-desc {
+  font-size: 12px; color: var(--text-muted); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+
+.ad-providers { display: flex; flex-direction: column; gap: 6px; }
+.ad-provider-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; }
+.ad-provider-name { flex: 1; text-transform: capitalize; color: var(--text-primary); font-weight: 500; }
+.ad-provider-status { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 500; }
+.ad-status-healthy { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+.ad-status-degraded { background: rgba(234, 179, 8, 0.15); color: #eab308; }
+.ad-status-down { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
+.ad-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.ad-dot-healthy { background: #22c55e; box-shadow: 0 0 6px rgba(34, 197, 94, 0.5); }
+.ad-dot-degraded { background: #eab308; box-shadow: 0 0 6px rgba(234, 179, 8, 0.5); }
+.ad-dot-down { background: #ef4444; box-shadow: 0 0 6px rgba(239, 68, 68, 0.5); }
+
+.ad-task-list { display: flex; flex-direction: column; gap: 6px; }
+.ad-task-row {
+  display: flex; gap: 10px; align-items: center;
+  padding: 8px 10px; border-radius: 8px;
+  background: var(--bg-primary); border: 1px solid var(--border);
+}
+.ad-task-row:hover { border-color: var(--border-light); }
+.ad-task-info { flex: 1; min-width: 0; }
+.ad-task-name {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 500; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ad-task-enabled { color: #22c55e; }
+.ad-task-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; padding-left: 18px; }
+.ad-task-actions { display: flex; gap: 4px; }
+.ad-task-btn {
+  background: transparent; border: 1px solid var(--border);
+  color: var(--text-secondary);
+  width: 28px; height: 28px; border-radius: 6px;
+  display: grid; place-items: center;
+  cursor: pointer; transition: all 0.15s;
+}
+.ad-task-btn:hover { background: var(--accent-dim); color: var(--accent); border-color: var(--accent-border); }
+
+.ad-empty {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 24px; color: var(--text-muted); font-size: 13px;
+  background: var(--bg-primary); border-radius: 8px; border: 1px dashed var(--border);
+}
+.ad-muted { color: var(--text-muted); }
+
+.ad-shortcuts { display: flex; gap: 10px; flex-wrap: wrap; }
+.ad-shortcut {
+  flex: 1; min-width: 160px; padding: 10px 14px;
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: 10px; color: var(--text-secondary);
+  font-size: 13px; font-weight: 500; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; transition: all 0.15s;
+}
+.ad-shortcut:hover { border-color: var(--accent-border); color: var(--accent); background: var(--accent-dim); }
+
+@media (max-width: 720px) {
+  .ad-modal { width: 95vw; }
+  .ad-kpi-row { grid-template-columns: repeat(2, 1fr); }
+  .ad-grid-2 { grid-template-columns: 1fr; }
+}
+
+/* ── Shortcut cheat sheet (?) ────────────────────────────────── */
+.shortcut-modal { width: 540px; }
+.shortcut-body { padding: 20px 22px 24px; overflow-y: auto; }
+.shortcut-group { margin-bottom: 18px; }
+.shortcut-group:last-child { margin-bottom: 0; }
+.shortcut-group-title {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px;
+  color: var(--text-muted); font-weight: 600;
+  margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border);
+}
+.shortcut-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; font-size: 13px; border-radius: 4px; }
+.shortcut-row:hover { background: var(--bg-tertiary); }
+.shortcut-label { color: var(--text-primary); }
+.shortcut-keys { display: flex; gap: 4px; align-items: center; }
+.shortcut-key {
+  background: var(--bg-primary); border: 1px solid var(--border);
+  border-radius: 4px; padding: 2px 7px;
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  color: var(--text-secondary); min-width: 20px; text-align: center;
+}
+
+.msg-action-btn.msg-regen-btn:hover { color: var(--accent); }
+.msg-action-btn.msg-branch-btn:hover { color: var(--accent-2); }
+
+/* ── Command palette: action category tint ────────────────────── */
+.cmd-item.cmd-action { background: linear-gradient(90deg, var(--accent-dim) 0%, transparent 80%); }
+.cmd-item.cmd-action .cmd-item-icon { color: var(--accent); }

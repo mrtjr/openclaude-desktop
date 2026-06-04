@@ -827,6 +827,34 @@ body .update-banner {
 [data-theme="light"] .hljs { background: #f4f4fc !important; }
 [data-theme="light"] .input-container { box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
 
+/* ── OLED Theme (v2.11) ──────────────────────────────────────────
+   True black for AMOLED/OLED displays (Raycast/Arc pattern). Reuses
+   default --accent palette from :root; only background layers are
+   driven toward pure black so pixels physically switch off. Borders
+   stay slightly visible to preserve layout. */
+[data-theme="oled"] {
+  --bg-primary: #000000;
+  --bg-secondary: #050509;
+  --bg-tertiary: #0a0a14;
+  --bg-elevated: #10101c;
+  --bg-input: #08080e;
+  --text-primary: #f4f4fa;
+  --text-secondary: #a0a0c0;
+  --text-muted: #5a5a7a;
+  --border: #1a1a2a;
+  --border-light: #242438;
+  --user-bg: rgba(224, 122, 95, 0.08);
+  --tool-bg: #060610;
+  --tool-border: #1a1a2a;
+  --scrollbar: #202034;
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.6);
+  --shadow-md: 0 8px 24px rgba(0,0,0,0.7);
+  --shadow-lg: 0 20px 60px rgba(0,0,0,0.8);
+}
+[data-theme="oled"] .titlebar { background: #000; }
+[data-theme="oled"] body { background: #000; }
+[data-theme="oled"] .input-container { box-shadow: 0 1px 2px rgba(0,0,0,0.4), 0 4px 24px rgba(0,0,0,0.6); }
+
 /* ── Sidebar closed transition ───────────────────────────────── */
 .sidebar.closed { width: 0; min-width: 0; padding: 0; overflow: hidden; border-right: none; }
 
@@ -3409,3 +3437,184 @@ button:focus-visible,
 .analytics-tab.active { color: var(--accent, #7c3aed); border-bottom-color: var(--accent, #7c3aed); background: rgba(124,58,237,0.08); }
 [data-theme="light"] .analytics-tab:hover { background: #f1f5f9; }
 [data-theme="light"] .analytics-tab.active { background: rgba(124,58,237,0.1); }
+
+/* ═══ Accent Picker (v2.11.0) ═══ */
+.accent-picker-modal {
+  width: 480px; max-width: calc(100vw - 48px);
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px); box-shadow: var(--shadow-lg);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.accent-picker-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+}
+.accent-picker-title { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; color: var(--text-primary); }
+.accent-picker-body { padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 10px; }
+.accent-picker-section-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-muted); font-weight: 600; margin-top: 4px;
+}
+.accent-preset-grid {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px;
+}
+.accent-preset-chip {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 10px 6px; background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px); cursor: pointer; color: var(--text-secondary);
+  font-size: 11px; transition: border-color var(--tr-fast, 120ms) ease, background var(--tr-fast, 120ms) ease, transform var(--tr-fast, 120ms) ease;
+}
+.accent-preset-chip:hover { border-color: var(--accent-border); background: var(--bg-input); transform: translateY(-1px); }
+.accent-preset-chip.active { border-color: var(--accent); background: var(--accent-dim); color: var(--text-primary); }
+.accent-preset-swatch {
+  width: 36px; height: 36px; border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.08);
+}
+.accent-preset-label { font-weight: 500; }
+.accent-preset-check {
+  position: absolute; top: 6px; right: 6px; color: var(--accent);
+  background: var(--bg-elevated); border-radius: 50%; padding: 2px;
+}
+.accent-custom-row { display: flex; align-items: center; gap: 8px; }
+.accent-custom-swatch {
+  width: 36px; height: 36px; border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border); flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+}
+.accent-custom-input {
+  flex: 1; padding: 9px 12px; background: var(--bg-input);
+  border: 1px solid var(--border); border-radius: var(--radius-md, 8px);
+  color: var(--text-primary); font-family: monospace; font-size: 13px;
+  transition: border-color var(--tr-fast, 120ms) ease;
+}
+.accent-custom-input:focus { outline: none; border-color: var(--accent); }
+.accent-custom-color {
+  width: 36px; height: 36px; padding: 0; border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px); background: transparent; cursor: pointer;
+}
+.accent-custom-color::-webkit-color-swatch { border: none; border-radius: 6px; }
+.accent-custom-color::-webkit-color-swatch-wrapper { padding: 2px; }
+.accent-custom-apply {
+  padding: 9px 14px; background: var(--accent); color: #fff;
+  border: 0; border-radius: var(--radius-md, 8px); font-weight: 600;
+  font-size: 12px; cursor: pointer; transition: background var(--tr-fast, 120ms) ease;
+}
+.accent-custom-apply:hover { background: var(--accent-hover); }
+.accent-picker-error { font-size: 12px; color: #ef4444; padding: 4px 2px; }
+.accent-reset-btn {
+  display: inline-flex; align-items: center; gap: 6px; align-self: flex-start;
+  margin-top: 6px; padding: 6px 10px; background: transparent;
+  border: 1px solid var(--border); border-radius: var(--radius-md, 8px);
+  color: var(--text-secondary); font-size: 12px; cursor: pointer;
+  transition: border-color var(--tr-fast, 120ms) ease, color var(--tr-fast, 120ms) ease;
+}
+.accent-reset-btn:hover { border-color: var(--accent-border); color: var(--text-primary); }
+
+/* ═══ Slash-command popover (v2.11.0) ═══ */
+.slash-popover {
+  margin: 0 0 6px; padding: 6px;
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px); box-shadow: var(--shadow-md);
+  max-height: 280px; overflow-y: auto;
+  animation: slashPopIn 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes slashPopIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.slash-popover-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 10px 8px; font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-muted); font-weight: 600;
+  border-bottom: 1px solid var(--border); margin-bottom: 4px;
+}
+.slash-popover-hint { text-transform: none; letter-spacing: 0; font-weight: 500; opacity: 0.8; }
+.slash-popover-item {
+  display: grid; grid-template-columns: auto auto 1fr; align-items: center;
+  gap: 10px; width: 100%; padding: 8px 10px; background: transparent;
+  border: 0; border-radius: var(--radius-md, 8px); cursor: pointer;
+  text-align: left; color: var(--text-secondary); font-size: 13px;
+  transition: background var(--tr-fast, 120ms) ease, color var(--tr-fast, 120ms) ease;
+}
+.slash-popover-item:hover, .slash-popover-item.active {
+  background: var(--accent-dim); color: var(--text-primary);
+}
+.slash-popover-name { font-family: monospace; font-weight: 600; color: var(--accent); }
+.slash-popover-arg { font-family: monospace; font-size: 11px; color: var(--text-muted); }
+.slash-popover-desc { font-size: 12px; color: var(--text-secondary); justify-self: end; text-align: right; }
+.slash-popover-item.active .slash-popover-desc { color: var(--text-primary); }
+
+/* ═══ Regenerate split-button menu (v2.11.0) ═══ */
+.regen-split { position: relative; display: inline-flex; align-items: stretch; }
+.regen-split .regen-main { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: 6px; }
+.regen-split .regen-chevron {
+  border-top-left-radius: 0; border-bottom-left-radius: 0;
+  border-left: 1px solid var(--border); padding-left: 4px; padding-right: 4px;
+  margin-left: -1px;
+}
+.regen-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: var(--z-dropdown, 1000);
+  min-width: 260px; max-width: 360px; max-height: 340px; overflow-y: auto;
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px); box-shadow: var(--shadow-md);
+  padding: 6px;
+  animation: slashPopIn 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.regen-menu-header {
+  padding: 6px 10px 8px; font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-muted); font-weight: 600;
+  border-bottom: 1px solid var(--border); margin-bottom: 4px;
+}
+.regen-menu-empty { padding: 10px; color: var(--text-muted); font-size: 12px; text-align: center; }
+.regen-menu-item {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; width: 100%; padding: 8px 10px; background: transparent;
+  border: 0; border-radius: var(--radius-md, 8px); cursor: pointer;
+  text-align: left; color: var(--text-secondary); font-size: 13px;
+  transition: background var(--tr-fast, 120ms) ease, color var(--tr-fast, 120ms) ease;
+}
+.regen-menu-item:hover { background: var(--accent-dim); color: var(--text-primary); }
+.regen-menu-item.current { color: var(--accent); }
+.regen-menu-name { font-family: monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.regen-menu-current-tag {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-muted); padding: 2px 6px; border: 1px solid var(--border);
+  border-radius: 999px; font-family: system-ui, sans-serif;
+}
+
+/* ═══ Ambient orb (v2.11.0) ═══
+   Two-layer blurred gradient blob that drifts behind the composer while
+   the model is generating. Not a progress indicator — just a subtle
+   "something's happening" visual, like the shimmer on Arc's sidebar or
+   the Siri orb. Kept CSS-only: no JS animation cost during streaming. */
+.input-area { position: relative; }
+.ambient-orb {
+  position: absolute; inset: auto 0 0 0; height: 180px;
+  pointer-events: none; overflow: hidden;
+  z-index: 0;
+}
+.ambient-orb-core, .ambient-orb-halo {
+  position: absolute; left: 50%; bottom: -40px;
+  border-radius: 50%; filter: blur(48px); opacity: 0.65;
+  transform: translateX(-50%);
+  background: radial-gradient(circle at 50% 50%, var(--accent) 0%, var(--accent-2) 60%, transparent 100%);
+}
+.ambient-orb-core  { width: 280px; height: 280px; animation: orbPulse 3.2s ease-in-out infinite; }
+.ambient-orb-halo  { width: 420px; height: 420px; opacity: 0.25; filter: blur(72px); animation: orbDrift 7s ease-in-out infinite; }
+@keyframes orbPulse {
+  0%, 100% { transform: translateX(-50%) scale(0.92); opacity: 0.55; }
+  50%      { transform: translateX(-50%) scale(1.08); opacity: 0.78; }
+}
+@keyframes orbDrift {
+  0%, 100% { transform: translateX(calc(-50% - 40px)) scale(1); }
+  50%      { transform: translateX(calc(-50% + 40px)) scale(1.05); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ambient-orb-core, .ambient-orb-halo { animation: none; opacity: 0.45; }
+}
+/* Make sure composer floats above the orb */
+.input-wrapper { position: relative; z-index: 1; }
+/* Tone the orb down on light mode so it doesn't look blown-out */
+[data-theme="light"] .ambient-orb-core { opacity: 0.35; }
+[data-theme="light"] .ambient-orb-halo { opacity: 0.18; }
+/* OLED: richer orb against pure black */
+[data-theme="oled"] .ambient-orb-core { opacity: 0.75; }
+[data-theme="oled"] .ambient-orb-halo { opacity: 0.32; }
+

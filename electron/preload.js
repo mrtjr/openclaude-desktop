@@ -175,4 +175,11 @@ contextBridge.exposeInMainWorld('electron', {
 
   // OAuth (Supabase Google PKCE loopback)
   oauthGoogleStart: (params) => ipcRenderer.invoke('oauth-google-start', params),
+
+  // ─── v2.12.0 ────────────────────────────────────────────────────────────
+  // Native OS notification (no permission prompt — Electron bypasses the
+  // web Notification permission flow). Optional `focus: true` brings the
+  // window forward when the user clicks the notification.
+  showNotification: (opts) => ipcRenderer.invoke('show-notification', opts),
+  isWindowFocused: () => ipcRenderer.invoke('is-window-focused'),
 })

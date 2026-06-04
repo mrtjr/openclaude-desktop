@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import type { Language } from '../types'
 
 interface UseVoiceOptions {
@@ -60,6 +60,13 @@ export function useVoice({ language, onToast }: UseVoiceOptions) {
       if (prev) speechSynthesis.cancel()
       return !prev
     })
+  }, [])
+
+  // Cleanup on unmount: stop any active recognition and cancel pending TTS
+  // so they don't keep running / holding the mic after the component goes away.
+  useEffect(() => () => {
+    try { recognitionRef.current?.stop() } catch { /* noop */ }
+    try { speechSynthesis.cancel() } catch { /* noop */ }
   }, [])
 
   return { isListening, ttsEnabled, toggleListening, speakText, toggleTTS }

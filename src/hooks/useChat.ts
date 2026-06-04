@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import type { Message, ToolResult, Conversation, AppSettings } from '../types'
 import { TOOLS, AGENT_SAFETY_LIMIT, NORMAL_SAFETY_LIMIT, IDLE_STEP_THRESHOLD } from '../constants/tools'
 import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIMING, LANGUAGE_REMINDER } from '../constants/prompts'
+import { partitionTools, renderDeferredManifest } from '../services/toolDeferral'
 import { generateId, isSmallModel } from '../utils/formatting'
 import { sanitizeReasoningLeaks, StreamingSanitizer } from '../utils/sanitizers'
 import { createContextEngine, getModelContextLimit } from '../services/contextEngine'
@@ -57,6 +58,29 @@ export function useChat({
   const stopRequestedRef = useRef(false)
   const streamCleanupRef = useRef<(() => void) | null>(null)
   const sendingRef = useRef(false)
+  // Models we've learned (this session) don't support tool use. When a
+  // request fails with the specific "no endpoints support tool use" error
+  // from OpenRouter (or equivalent), we remember the model+provider pair
+  // and omit `tools` from the next request for it. Persisted in
+  // localStorage so the flag survives reloads — the user can clear it
+  // from Settings if they switch to a tool-capable endpoint.
+  const noToolsModelsRef = useRef<Set<string>>(
+    (() => {
+      try {
+        const raw = localStorage.getItem('openclaude-no-tools-models')
+        return new Set(raw ? JSON.parse(raw) : [])
+      } catch { return new Set<string>() }
+    })()
+  )
+  const markNoTools = (provider: string, model: string) => {
+    const key = `${provider}:${model}`
+    noToolsModelsRef.current.add(key)
+    try {
+      localStorage.setItem('openclaude-no-tools-models', JSON.stringify([...noToolsModelsRef.current]))
+    } catch { /* quota */ }
+  }
+  const hasNoTools = (provider: string, model: string) =>
+    noToolsModelsRef.current.has(`${provider}:${model}`)
 
   // Cleanup stream listener on unmount
   useEffect(() => {
@@ -81,9 +105,13 @@ export function useChat({
     showToast('Agente interrompido pelo usuário.')
   }, [showToast])
 
-  const sendMessage = useCallback(async (inputText: string) => {
-    // Use ref for activeConvId to always have the latest value
-    const convId = activeConvIdRef.current
+  const sendMessage = useCallback(async (inputText: string, overrideConvId?: string) => {
+    // Prefer an explicit conversation id when provided (e.g. scheduled
+    // tasks firing in batch, where several `newConversation()` calls
+    // landed before the React state flushed — without an override the
+    // ref only has the last id, so every task's prompt would land in
+    // the same conversation). Fall back to the ref otherwise.
+    const convId = overrideConvId ?? activeConvIdRef.current
     console.log('[useChat] sendMessage called:', { inputText: inputText.substring(0, 50), isLoading, convId })
     if (!inputText.trim() || isLoading || !convId) {
       console.log('[useChat] EARLY RETURN:', { emptyInput: !inputText.trim(), isLoading, noActiveConv: !convId })
@@ -160,6 +188,16 @@ export function useChat({
       }
       systemPrompt += LANGUAGE_RULE[lang]
 
+      // Tool deferral (v2.12.6): when enabled, move rarely-used tools out
+      // of the request schema list and into a compact name/desc manifest
+      // in the system prompt. The model calls `tool_search` to pull full
+      // schemas on demand. Saves 3-8k tokens in the default config.
+      const deferralEnabled = settings.toolDeferralEnabled === true
+      const toolPartition = partitionTools(TOOLS as any, deferralEnabled)
+      if (deferralEnabled && toolPartition.deferredNames.length > 0) {
+        systemPrompt += '\n\n' + renderDeferredManifest(toolPartition.deferredNames, lang)
+      }
+
       const systemMessages: any[] = systemPrompt ? [{ role: 'system', content: systemPrompt }] : []
 
       // Rebuild history in API format
@@ -220,7 +258,8 @@ export function useChat({
           const compactResult = await window.electron.compactContext({
             messages: oldMessages,
             model: finalModel,
-            language: lang
+            language: lang,
+            provider: settings.provider,
           })
           if (compactResult.summary) {
             contextSummary = (contextSummary ? contextSummary + '\n\n' : '') + compactResult.summary
@@ -274,6 +313,35 @@ export function useChat({
       const recentToolCalls: string[] = []
       let activeMemory = conv?.workingMemory || null
       const safetyLimit = isAgentMode ? AGENT_SAFETY_LIMIT : NORMAL_SAFETY_LIMIT
+      // Per-turn flag for the tools-unsupported auto-retry. Starts from the
+      // persisted record, so a model we already know can't take tools never
+      // gets tools sent again.
+      let toolsDisabledForThisTurn = hasNoTools(finalProvider, finalModel)
+      // v2.12.8: after `plan_tasks` runs, weaker models (free OpenRouter tier,
+      // small Ollama) frequently return an empty assistant turn — they
+      // treat "I wrote the plan" as completion. Track the flag so the
+      // next iteration injects a one-shot nudge telling the model to
+      // execute step 1. Cleared after it fires.
+      let nudgeExecutePlan = false
+      // Count of empty-response retries already spent this send. Capped
+      // at 1 to avoid infinite "please continue" loops on a truly dead
+      // provider. Reset per sendMessage.
+      let emptyRetriesUsed = 0
+      const MAX_EMPTY_RETRIES = 1
+      const isToolsUnsupportedError = (msg: string | undefined): boolean => {
+        if (!msg) return false
+        const m = msg.toLowerCase()
+        // OpenRouter explicit message + common alternatives from OpenAI-compat
+        // backends that proxy models without tool-calling. Kept as a short,
+        // concrete list instead of a loose regex to avoid false positives
+        // on generic "error" or "not supported" text.
+        return m.includes('no endpoints found that support tool use')
+          || m.includes("doesn't support tools")
+          || m.includes('does not support tools')
+          || m.includes('does not support tool use')
+          || m.includes('tool use is not supported')
+          || m.includes('tool_use is not supported')
+      }
 
       console.log('[useChat] Starting chat loop:', { provider: finalProvider, model: finalModel, useStreaming, messageCount: allMessages.length })
 
@@ -294,6 +362,19 @@ export function useChat({
 
         if (settings.permissionLevel === 'planning') {
           requestMessages.push({ role: 'system', content: PLANNING_MODE_PROMPT[lang] })
+        }
+
+        // One-shot nudge after plan_tasks so the model actually executes
+        // the plan instead of "planning is done, I'm finished". Injected
+        // only for the turn right after plan_tasks; clears on emit.
+        if (nudgeExecutePlan) {
+          requestMessages.push({
+            role: 'system',
+            content: lang === 'en'
+              ? '[CONTINUE] You just created a task plan. NOW execute step 1 by calling the appropriate tool (e.g. web_search, read_file, execute_command). Do NOT stop and wait for the user — the user expects the plan to be carried out in this same turn. If a step produces results worth reporting, call update_task_status and move to the next one.'
+              : '[CONTINUAR] Você acabou de criar um plano de tarefas. AGORA execute o passo 1 chamando a ferramenta apropriada (ex: web_search, read_file, execute_command). NÃO pare esperando o usuário — o usuário espera que o plano seja executado nesta mesma rodada. Se um passo produzir resultado relevante, chame update_task_status e avance para o próximo.',
+          })
+          nudgeExecutePlan = false
         }
 
         if (isAgentMode && isSmallModel(finalModel)) {
@@ -319,6 +400,7 @@ export function useChat({
           setIsStreaming(true)
           setStreamingText('')
 
+          try {
           await new Promise<void>((resolve, reject) => {
             const cleanup = window.electron.onStreamChunk((chunk: any) => {
               // Handle done event — check for error inside done chunk
@@ -364,27 +446,69 @@ export function useChat({
             })
             streamCleanupRef.current = cleanup
 
+            const toolsForRequest = toolsDisabledForThisTurn ? [] : (deferralEnabled ? [...toolPartition.eager, toolPartition.metaTool] as any[] : TOOLS)
             const streamCall = isNotOllama
               ? window.electron.providerChatStream({
                   provider: finalProvider, apiKey: finalApiKey, model: finalModel,
-                  messages: requestMessages, tools: TOOLS,
+                  messages: requestMessages, tools: toolsForRequest,
                   temperature: settings.temperature, max_tokens: settings.maxTokens,
                   modalHostname, customBaseUrl
                 })
               : window.electron.ollamaChatStream({
-                  model: finalModel, messages: requestMessages, tools: TOOLS,
+                  model: finalModel, messages: requestMessages, tools: toolsForRequest,
                   temperature: settings.temperature, max_tokens: settings.maxTokens
                 })
             streamCall.catch((err: any) => { cleanup(); streamCleanupRef.current = null; reject(err) })
           })
+          } catch (err: any) {
+            // Tools-unsupported auto-recovery. Some providers (OpenRouter
+            // especially) only expose a tool-capable endpoint for some
+            // models; if the selected model has no such endpoint the whole
+            // request 404s before a single chunk arrives. Catch that, mark
+            // the model as no-tools (persist), rewind one step, and let
+            // the loop re-send without `tools` so the user at least gets
+            // a plain chat response.
+            if (!toolsDisabledForThisTurn && isToolsUnsupportedError(err?.message)) {
+              markNoTools(finalProvider, finalModel)
+              toolsDisabledForThisTurn = true
+              setIsStreaming(false)
+              setStreamingText('')
+              showToast(lang === 'en'
+                ? `"${finalModel}" doesn't support tool use — retrying without tools.`
+                : `"${finalModel}" não suporta tool use — refazendo sem ferramentas.`)
+              steps-- // don't count the failed attempt
+              continue
+            }
+            throw err
+          }
 
           setIsStreaming(false)
           setStreamingText('')
 
-          // Flush sanitizer and sanitize final accumulated text
+          // If the user pressed Stop during the stream, bail out before we
+          // dispatch any of the partial tool calls that accumulated. Without
+          // this check the loop would still run `processToolCalls` on
+          // `toolCallsData`, which can include destructive tools (write_file,
+          // exec_command) the user explicitly asked to cancel.
+          if (stopRequestedRef.current) {
+            continueLoop = false
+            break
+          }
+
+          // Flush sanitizer and sanitize final accumulated text.
+          // Safety net (v2.12.7): if the sanitizer would wipe the entire
+          // reply (model wrapped everything in <think>… or stream ended
+          // mid-thinking-tag), prefer the raw text over an empty message.
+          // A response with visible reasoning is still better than the
+          // silent "chat interrupted" symptom the user was seeing when a
+          // plan_tasks turn was followed by an all-reasoning reply.
           const remaining = sanitizer.flush()
           if (remaining) displayText += remaining
-          accumulated = sanitizeReasoningLeaks(accumulated)
+          const rawAccumulated = accumulated
+          const sanitizedAccumulated = sanitizeReasoningLeaks(accumulated)
+          accumulated = sanitizedAccumulated.trim().length > 0
+            ? sanitizedAccumulated
+            : (rawAccumulated.trim().length > 0 ? rawAccumulated : sanitizedAccumulated)
           console.log('[useChat] Stream completed:', { accumulatedLen: accumulated.length, toolCalls: toolCallsData.length, finishReason })
           onProviderSuccessRef.current?.()
 
@@ -421,11 +545,21 @@ export function useChat({
               })),
               recentToolCalls, activeMemory, idleSteps, sessionTracker
             )
-            if (thinkingMsg.toolResults?.some(tr => tr.name === 'update_working_memory')) {
-              const wmResult = thinkingMsg.toolResults.find(tr => tr.name === 'update_working_memory')
-              if (wmResult) {
-                try { activeMemory = JSON.parse(wmResult.result.replace('[SYSTEM]: Working memory updated successfully.', '')) } catch (e) { console.warn('[useChat] working memory parse:', e) }
-              }
+            // Pick up any working-memory update so subsequent agent loops
+            // see the new state. Earlier versions tried to parse
+            // `wmResult.result` as JSON, but that field is a constant
+            // confirmation string ("[SYSTEM]: Working memory updated…"),
+            // so the parse always threw and activeMemory never refreshed
+            // during a streaming turn. Read the arguments straight from
+            // the tool call instead — those ARE JSON.
+            const wmCall = toolCallsData.find(tc => tc?.function?.name === 'update_working_memory')
+            if (wmCall?.function?.arguments) {
+              try { activeMemory = JSON.parse(wmCall.function.arguments) } catch (e) { console.warn('[useChat] working memory parse:', e) }
+            }
+            // v2.12.8: arm the "now execute" nudge whenever plan_tasks was
+            // just written. Fires once on the next iteration.
+            if (toolCallsData.some(tc => tc?.function?.name === 'plan_tasks')) {
+              nudgeExecutePlan = true
             }
             idleSteps = shouldContinue.idleSteps
             if (!shouldContinue.continue) continueLoop = false
@@ -442,8 +576,18 @@ export function useChat({
               }))
             ]
           } else {
+            // Final fallback: if BOTH raw and sanitized are empty, the
+            // model actually returned nothing (max_tokens=0, network
+            // truncation, provider glitch). Surface a human-readable
+            // note instead of a blank bubble so the user sees the
+            // session ended rather than "something broke silently".
+            const safeContent = accumulated.trim().length > 0
+              ? accumulated
+              : (lang === 'en'
+                  ? '_(empty response from model — try again, lower max_tokens, or switch model)_'
+                  : '_(resposta vazia do modelo — tente novamente, reduza max_tokens ou troque o modelo)_')
             const finalMsg: Message = {
-              id: generateId(), role: 'assistant', content: accumulated, timestamp: new Date()
+              id: generateId(), role: 'assistant', content: safeContent, timestamp: new Date()
             }
             setConversations(prev => prev.map(c =>
               c.id !== convId ? c : { ...c, messages: [...c.messages, finalMsg] }
@@ -460,31 +604,57 @@ export function useChat({
 
         } else {
           // ─── Non-streaming path ────────────────────────────
+          const toolsForRequest = toolsDisabledForThisTurn ? [] : (deferralEnabled ? [...toolPartition.eager, toolPartition.metaTool] as any[] : TOOLS)
           let response: any
           if (isNotOllama) {
             response = await window.electron.providerChat({
               provider: finalProvider, apiKey: finalApiKey, model: finalModel,
-              messages: requestMessages, tools: TOOLS,
+              messages: requestMessages, tools: toolsForRequest,
               temperature: settings.temperature, max_tokens: settings.maxTokens,
               modalHostname, customBaseUrl
             })
           } else {
             response = await window.electron.ollamaChat({
-              model: finalModel, messages: requestMessages, tools: TOOLS,
+              model: finalModel, messages: requestMessages, tools: toolsForRequest,
               temperature: settings.temperature, max_tokens: settings.maxTokens
             })
           }
 
-          if (response.error) throw new Error(response.error)
+          if (response.error) {
+            // Mirror the streaming path's auto-retry for tools-unsupported
+            // errors (see detailed comment above).
+            if (!toolsDisabledForThisTurn && isToolsUnsupportedError(response.error)) {
+              markNoTools(finalProvider, finalModel)
+              toolsDisabledForThisTurn = true
+              showToast(lang === 'en'
+                ? `"${finalModel}" doesn't support tool use — retrying without tools.`
+                : `"${finalModel}" não suporta tool use — refazendo sem ferramentas.`)
+              steps--
+              continue
+            }
+            throw new Error(response.error)
+          }
           onProviderSuccessRef.current?.()
+
+          // Same guard as the streaming branch — if the user pressed Stop
+          // while the non-streaming request was in flight, don't dispatch
+          // any tool calls the model returned.
+          if (stopRequestedRef.current) { continueLoop = false; break }
 
           const choice = response.choices?.[0]
           if (!choice) break
 
           const assistantMsg = choice.message
-          // Sanitize reasoning leaks from non-streaming response
+          // Sanitize reasoning leaks from non-streaming response. Mirror
+          // the streaming safety net: if sanitizing would empty the reply
+          // (all-reasoning output), keep the raw text so we never save
+          // a blank message after a tool-call turn.
           if (assistantMsg.content) {
-            assistantMsg.content = sanitizeReasoningLeaks(assistantMsg.content)
+            const raw = assistantMsg.content
+            const sanitized = sanitizeReasoningLeaks(raw)
+            assistantMsg.content = sanitized.trim().length > 0
+              ? sanitized
+              : (raw.trim().length > 0 ? raw : sanitized)
           }
           const toolCalls = assistantMsg.tool_calls
 
@@ -518,9 +688,15 @@ export function useChat({
               }))
             ]
           } else {
+            const raw = (assistantMsg.content || '').trim()
+            const safeContent = raw.length > 0
+              ? assistantMsg.content
+              : (lang === 'en'
+                  ? '_(empty response from model — try again, lower max_tokens, or switch model)_'
+                  : '_(resposta vazia do modelo — tente novamente, reduza max_tokens ou troque o modelo)_')
             const finalMsg: Message = {
               id: generateId(), role: 'assistant',
-              content: assistantMsg.content || '', timestamp: new Date()
+              content: safeContent, timestamp: new Date()
             }
             setConversations(prev => prev.map(c =>
               c.id !== convId ? c : { ...c, messages: [...c.messages, finalMsg] }

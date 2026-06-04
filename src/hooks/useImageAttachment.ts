@@ -18,10 +18,21 @@ export interface ImageAttachment {
   name:     string
 }
 
+interface UseImageAttachmentOptions {
+  /** Optional toast surface — without it, failures go to console only. */
+  onToast?: (message: string) => void
+}
+
 const el = (window as any).electron
 
-export function useImageAttachment() {
+export function useImageAttachment(opts: UseImageAttachmentOptions = {}) {
   const [attachedImage, setAttachedImage] = useState<ImageAttachment | null>(null)
+  const { onToast } = opts
+
+  const warn = (msg: string) => {
+    console.warn('[imageAttachment]', msg)
+    onToast?.(msg)
+  }
 
   /** Abre o file dialog do Electron e carrega a imagem selecionada */
   const attachFile = useCallback(async () => {
@@ -30,12 +41,15 @@ export function useImageAttachment() {
       title: 'Selecionar imagem',
       filters: [{ name: 'Images', extensions: ['png','jpg','jpeg','gif','webp','bmp'] }],
     })
-    if (!filePath || error) return
+    // User cancelled the dialog — silent.
+    if (!filePath && !error) return
+    if (error) { warn(`Não foi possível abrir: ${error}`); return }
 
     const { base64, mimeType, name, isImage, error: readErr } = await el.readDocument(filePath)
-    if (readErr || !isImage) return
+    if (readErr) { warn(`Falha ao ler arquivo: ${readErr}`); return }
+    if (!isImage) { warn('O arquivo selecionado não é uma imagem válida.'); return }
     setAttachedImage({ base64, mimeType, name })
-  }, [])
+  }, [onToast])
 
   /** Vincula imagem já em base64 (ex: drag-and-drop, paste) */
   const attachFromBase64 = useCallback((base64: string, mimeType: string, name: string) => {

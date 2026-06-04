@@ -76,8 +76,14 @@ export function createContextEngine(): ContextEngine {
 }
 
 // ─── Model context limits (approximate) ──────────────────────────
+// Updated v2.12.6 with late-2025/early-2026 models. Claude 4.x family
+// and gpt-4.1 enter the list; Sonnet/Opus remain at 200k default
+// (1M beta via header opt-in, tracked separately by the caller).
 export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   // OpenAI
+  'gpt-4.1': 1_000_000,
+  'gpt-4.1-mini': 1_000_000,
+  'gpt-4.1-nano': 1_000_000,
   'gpt-4o': 128_000,
   'gpt-4o-mini': 128_000,
   'gpt-4-turbo': 128_000,
@@ -89,10 +95,19 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   'o3-mini': 200_000,
   'o4-mini': 200_000,
   // Anthropic
+  'claude-sonnet-4-5': 200_000,
+  'claude-sonnet-4': 200_000,
+  'claude-opus-4-1': 200_000,
+  'claude-opus-4': 200_000,
+  'claude-haiku-4-5': 200_000,
+  'claude-haiku-4': 200_000,
   'claude-sonnet-4-20250514': 200_000,
   'claude-opus-4-20250514': 200_000,
   'claude-3-5-sonnet-20241022': 200_000,
   'claude-3-5-haiku-20241022': 200_000,
+  'claude-3-5-sonnet': 200_000,
+  'claude-3-5-haiku': 200_000,
+  'claude-3-opus': 200_000,
   // Gemini
   'gemini-2.0-flash': 1_000_000,
   'gemini-2.5-pro': 1_000_000,
@@ -102,15 +117,67 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   'llama3': 8_192,
   'llama3.1': 128_000,
   'llama3.2': 128_000,
+  'llama3.3': 128_000,
   'mistral': 32_000,
   'mixtral': 32_000,
   'codestral': 32_000,
   'qwen2.5': 32_000,
+  'qwen3': 128_000,
+  'qwen35': 128_000,
   'deepseek-r1': 128_000,
   'deepseek-coder-v2': 128_000,
   'phi3': 128_000,
+  'phi4': 128_000,
   'gemma2': 8_192,
+  'gemma3': 128_000,
   'command-r': 128_000,
+}
+
+// ─── Autocompact thresholds ──────────────────────────────────────
+// Matches Claude Code defaults: reserve ~15% for the compaction call
+// itself to have working room, trigger autocompact at ≥85% used.
+export const AUTOCOMPACT_BUFFER_RATIO = 0.15
+export const AUTOCOMPACT_TRIGGER_RATIO = 0.85
+
+// ─── Context breakdown (Claude-style /context panel) ─────────────
+// Per-category token accounting. Sum of the "consumed" fields
+// (messages + systemPrompt + memory + systemTools + mcpTools + skills)
+// is the actual used; free = limit − used − autocompactBuffer.
+// Deferred counts are BUDGET ACCOUNTING — they're the *potential*
+// weight if the model pulled every deferred schema in at once. They
+// don't add to `used` because they aren't injected upfront.
+export interface ContextBreakdown {
+  messages: number
+  systemPrompt: number
+  memory: number
+  systemTools: number
+  systemToolsDeferred: number
+  mcpTools: number
+  mcpToolsDeferred: number
+  skills: number
+  autocompactBuffer: number
+  free: number
+  used: number               // messages+systemPrompt+memory+systemTools+mcpTools+skills
+  total: number              // used + autocompactBuffer
+  limit: number
+  percentage: number         // round(used / limit * 100)
+  warning: boolean
+  critical: boolean
+  shouldAutocompact: boolean // used >= limit * AUTOCOMPACT_TRIGGER_RATIO
+}
+
+/** Count tokens for an array of OpenAI-style tool schemas. */
+export function countToolSchemas(tools: unknown[] | null | undefined): number {
+  if (!tools || tools.length === 0) return 0
+  // JSON roundtrip approximates what the provider will serialize into
+  // the system prompt. Good enough for budget accounting.
+  return estimateTokens(JSON.stringify(tools))
+}
+
+/** Export the heuristic so other modules can reuse it without
+ *  constructing a full engine. Used by useContextBreakdown.  */
+export function countTextTokens(text: string): number {
+  return estimateTokens(text)
 }
 
 /** Get approximate context limit for a model. Returns 8192 as safe default. */

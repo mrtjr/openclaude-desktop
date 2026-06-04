@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useModalKeyPool } from '../src/hooks/useModalKeyPool'
+import { POOL_CONFIG } from '../src/constants/pool'
 import { DEFAULT_SETTINGS } from '../src/Settings'
 import type { AppSettings } from '../src/Settings'
 
@@ -148,7 +149,12 @@ describe('useModalKeyPool', () => {
     vi.useRealTimers()
   })
 
-  it('markError without 429 does NOT apply cooldown', () => {
+  it('markError on unknown error applies the short (concurrent) cooldown', () => {
+    // Generic errors (5xx, DNS, malformed response) used to release the
+    // slot immediately, which let acquire/fail/release hammer a broken
+    // key in a tight loop. Now they get the short COOLDOWN_CONCURRENT_MS
+    // so retries are paced.
+    vi.useFakeTimers()
     const { result } = renderHook(() =>
       useModalKeyPool(makeSettings([{ key: K1, enabled: true }]))
     )
@@ -157,10 +163,18 @@ describe('useModalKeyPool', () => {
     act(() => { s = result.current.acquire() })
     act(() => { result.current.markError(s!.key, 'Generic network error') })
 
-    // Should be available immediately (no cooldown)
-    let s2: ReturnType<typeof result.current.acquire> = null
-    act(() => { s2 = result.current.acquire() })
-    expect(s2).not.toBeNull()
+    // Immediately after: still cooling down
+    let sImmediate: ReturnType<typeof result.current.acquire> = null
+    act(() => { sImmediate = result.current.acquire() })
+    expect(sImmediate).toBeNull()
+
+    // After the short cooldown elapses, it should become available again.
+    act(() => { vi.advanceTimersByTime(POOL_CONFIG.COOLDOWN_CONCURRENT_MS + 10) })
+    let sLater: ReturnType<typeof result.current.acquire> = null
+    act(() => { sLater = result.current.acquire() })
+    expect(sLater).not.toBeNull()
+
+    vi.useRealTimers()
   })
 
   it('acquireOrWait resolves immediately if slot is free', async () => {

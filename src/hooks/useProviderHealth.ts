@@ -32,10 +32,20 @@ export function useProviderHealth(settings: AppSettings) {
   // Report a successful request
   const reportSuccess = useCallback((provider?: string) => {
     const p = provider || currentProvider
-    setHealthMap(prev => ({
-      ...prev,
-      [p]: { status: 'healthy', consecutiveErrors: 0 }
-    }))
+    setHealthMap(prev => {
+      const current = prev[p]
+      // Preserve a still-active rateLimitUntil. One successful chunk after
+      // a 429 doesn't mean the quota reset — wiping the timestamp here let
+      // isRateLimited() return false and further requests hit the same 429.
+      // The periodic recovery interval clears it once actually expired.
+      const rateLimitUntil = current?.rateLimitUntil && current.rateLimitUntil > Date.now()
+        ? current.rateLimitUntil
+        : undefined
+      return {
+        ...prev,
+        [p]: { status: 'healthy', consecutiveErrors: 0, ...(rateLimitUntil ? { rateLimitUntil } : {}) }
+      }
+    })
   }, [currentProvider])
 
   // Report a failed request

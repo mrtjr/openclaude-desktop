@@ -7,6 +7,674 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.7] — 2026-04-19
+
+### Fixed — "Chat interrompido depois do plan_tasks"
+
+Usuário reportou que o modelo criava um `plan_tasks` e o chat
+aparentemente parava sem executar nem entregar nada — acontecia em
+todos os provedores/modelos, o que descartava bug específico de um
+backend. Investigação localizou três defeitos cooperantes no pipeline
+de sanitização de reasoning:
+
+- **`sanitizeReasoningLeaks` podia zerar a resposta inteira** — quando
+  o modelo (Qwen3 / DeepSeek-R1 / afins) envolvia TODA a resposta
+  final em `<think>…</think>`, o regex removia o bloco e o `accumulated`
+  virava `''`. A mensagem salva ficava com `content: ''` e o usuário
+  via uma bolha em branco logo depois do card de plan. Fix: se o
+  resultado saneado for vazio mas o texto cru tiver conteúdo,
+  preservamos o cru. Leaked reasoning > silêncio.
+- **`StreamingSanitizer.flush()` descartava o buffer quando o stream
+  cortava antes do `</think>`** — outro caminho pra ficar com
+  `accumulated = ''` em streaming real. Agora o `flush` emite o que
+  estava no buffer em vez de jogar fora.
+- **Mensagem final com `content: ''` era gravada sem aviso** — mesmo
+  depois dos dois fixes acima, qualquer outra causa de resposta vazia
+  (max_tokens=0, glitch de provider) acabaria exibindo bolha em
+  branco. Agora caímos num placeholder claro: _"(resposta vazia do
+  modelo — tente novamente, reduza max_tokens ou troque o modelo)"_.
+
+Aplicado aos dois caminhos (streaming e não-streaming). Teste
+`sanitizers.test.ts` atualizado para o novo comportamento de `flush()`.
+
+## [2.12.6] — 2026-04-19
+
+### Added — Fase 13: Janela de contexto estilo Claude Code
+
+Pesquisa revelou que o contador `0/8.2k (0%)` no rodapé era apenas um
+mostrador escalar — não refletia o modelo do Claude Code, que quebra o
+contexto em categorias (mensagens / system prompt / memória / tools /
+MCP / skills / buffer de autocompact / espaço livre) e oferece
+`tool_search` para diferir schemas raramente usados. Fase 13 implementa
+o mesmo modelo mental no OpenClaude Desktop.
+
+- **`ContextWindowPanel.tsx`** (novo, ~130 linhas) — popover ancorado no
+  contador de tokens, exibe barra empilhada colorida por categoria e
+  lista com swatches + ícones. Fecha com Escape ou clique fora. Alerta
+  "Compactar agora" aparece quando `usedRatio ≥ 0.85`.
+- **`useContextBreakdown.ts`** (novo) — hook superset de
+  `useTokenCounter` que retorna `ContextBreakdown` completo com todas
+  as categorias + flags `warning` / `critical` / `shouldAutocompact`.
+- **`contextEngine.ts`** — expandida tabela `MODEL_CONTEXT_LIMITS`
+  (Claude 4.x, gpt-4.1, qwen3, phi4, gemma3, llama3.3), novos
+  `AUTOCOMPACT_BUFFER_RATIO = 0.15` e `AUTOCOMPACT_TRIGGER_RATIO = 0.85`,
+  funções `countToolSchemas` / `countTextTokens` e interface
+  `ContextBreakdown` exportada.
+- **`toolDeferral.ts`** (novo) — infraestrutura de diferimento:
+  `ALWAYS_EAGER_TOOLS` (hot-path: `update_working_memory`,
+  `plan_tasks`, `update_task_status`), `partitionTools`,
+  `renderDeferredManifest`, `resolveToolSearch`,
+  `formatToolSearchResult` e a meta-tool `TOOL_SEARCH_TOOL`.
+- **`useChat.ts`** — quando `settings.toolDeferralEnabled`, a request
+  usa apenas `toolPartition.eager + metaTool` em vez de todas as 20+
+  tools; o manifesto das diferidas é renderizado no system prompt.
+- **`useToolExecution.ts`** — lida com `tool_search`: aceita
+  `select:name1,name2` (seleção direta) ou keyword query, retorna
+  schemas no formato `<functions>...</functions>`.
+- **Slash commands** — `/context` abre o painel, `/compact [instruções]`
+  força compactação manual do histórico via `compactContext` IPC.
+- **Settings** — novo toggle "Diferir schemas de ferramentas" com hint
+  explicando a economia de ~5k tokens. Default `false` (seguro).
+- **Contador clicável** — `span.token-counter` virou `button` ancorado
+  para o popover, preservando a aparência anterior.
+- **CSS** — `.ctx-panel*` em `tech-panels.css` com tones dedicados
+  (messages/system/memory/tools/toolsDeferred/mcp/mcpDeferred/skills/buffer)
+  e listras diagonais para categorias diferidas.
+
+### Why
+
+Na configuração atual, o system prompt + esquemas de 20+ tools consome
+~7-8k tokens **antes de qualquer mensagem do usuário**. Em modelos de
+128k isso é irrelevante, mas em Ollama 8k (llama3 default) sobra pouco.
+Diferimento corta ~3-5k do custo-fixo; o painel torna visível o que
+estava escondido — usuário vê onde o orçamento está indo e decide se
+compacta ou troca de modelo.
+
+## [2.12.5] — 2026-04-18
+
+### Fixed — Alinhamento do pill de permissão (pedido do usuário)
+
+Usuário mostrou dois prints: (1) 2.12.4 com "Ignorar permissões" no
+rodapé abaixo do input, parecendo desalinhado/órfão; (2) referência
+com "BYPASS MODE" logo acima do botão `+` do input, compacto.
+Pedido: "ajustado igual exemplo da imagem 2".
+
+- **Pill de permissão migrou do `.input-footer` para
+  `.input-status-bar`** — agora fica **acima** do `.input-pill`,
+  alinhado com os demais status pills transientes (Agente, Persona,
+  RAG, Loading). Ocupa a primeira posição da linha (esquerda).
+- **`.input-status-bar` agora é sempre renderizada** (antes só
+  aparecia quando havia algum status ativo). O pill de permissão é
+  permanente, justifica a presença constante da linha.
+- **Status pill `"Bypass Mode"` removida** — era redundante com o
+  pill de permissão no modo `ignore` (mesma informação duplicada no
+  mesmo lugar).
+- **`.input-footer`** voltou ao layout original: hint completo
+  (`Enter para enviar · Shift+Enter nova linha · Ctrl+N nova
+  conversa · Ctrl+, config`) à esquerda, token/custo à direita. Sem
+  mais `.input-footer-left`.
+
+### Notas
+
+- Typecheck limpo, 156 testes continuam passando.
+- `PermissionModeButton` em si não mudou — só o ponto de montagem.
+- Atalhos continuam: `Ctrl+Shift+M` abre popover, `1-4` seleciona,
+  `Escape` fecha.
+
+## [2.12.4] — 2026-04-18
+
+### Added — Seletor de modo de permissão no input (estilo Claude Anthropic)
+
+Usuário: "nível de permissão está hoje em configuração e gostei muito.
+porem quero adicionar ele igual ao do chat da Claude Anthropic segue
+imagem." — print mostra pill "Ignorar permissões" no rodapé esquerdo
+do input e popover com 4 modos numerados (1-4).
+
+- **`src/components/PermissionModeButton.tsx`** (novo, ~130 linhas):
+  pill no `input-footer-left` exibindo o modo atual, com dot
+  color-coded pela tonalidade (cinza / accent / azul / vermelho).
+  Clique abre popover para cima com 4 opções:
+  1. **Solicitar permissões** (`ask`) — default seguro
+  2. **Aceitar edições** (`auto_edits`) — pilar da accent color
+  3. **Modo de planejamento** (`planning`) — azul info
+  4. **Ignorar permissões** (`ignore`) — vermelho + dot pulsante
+- Atalhos:
+  - `Ctrl+Shift+M` (global) abre/fecha o popover de qualquer lugar.
+  - Com popover aberto, `1`-`4` seleciona e fecha.
+  - `Escape` fecha sem alterar.
+- **Source of truth é `settings.permissionLevel`** — o componente é
+  puramente apresentacional + dispatch via `onChange`. Settings.tsx
+  continua sendo a tela canônica de edição; o pill é um atalho
+  visual no fluxo de chat.
+- **Pulse animation** no dot do modo `ignore` (bypass) — lembra que o
+  modo perigoso está ativo mesmo quando o usuário não olha os status
+  pills acima do input.
+
+### Changed
+
+- `.input-footer` agora tem layout grid com `.input-footer-left`
+  contendo o pill de permissão + hint reduzido ("Enter · Shift+Enter
+  · Ctrl+N · Ctrl+,") — o hint anterior era longo demais para
+  coexistir com o pill.
+- Hint ficou em monospace uppercase-leve com opacidade reduzida —
+  mais discreto, para o pill ser o protagonista visual.
+
+### Notas
+
+- Typecheck limpo, 156 testes continuam passando.
+- Compatível com `permissionLevel` existente — nada muda em
+  `useToolExecution.ts`, `useChat.ts`, `securityAudit.ts`,
+  `ProfilesPanel.tsx` — todos já consomem `settings.permissionLevel`.
+  O pill apenas oferece um ponto de edição mais rápido.
+
+## [2.12.3] — 2026-04-18
+
+### Changed — Desduplicação titlebar ↔ UserMenu (pedido do usuário)
+
+Usuário: "tire a parte duplicada, AccountPanel do Supabase perdeu
+sentido e ficou duplicado algumas coisas que está no UserMenu. O
+painel do agente deve vir para o UserMenu e deixar na parte superior
+tudo que for relacionado Analytics & Insights, restante deve vir
+para o UserMenu."
+
+- **Titlebar enxugada.** Removidos os seguintes botões (todos agora
+  exclusivamente no UserMenu ou na linha `.sidebar-user`):
+  - Agent Dashboard (ícone Activity) → UserMenu
+  - Tema (Sun/Moon/Contrast) → inline ao lado do avatar + entrada no
+    UserMenu
+  - Accent color (Palette) → UserMenu
+  - Conta (User) → deletado inteiramente
+  - Configurações (Settings icon) → UserMenu
+
+  Restam na titlebar: toggle da sidebar, Regen/Export (específicos da
+  conversa atual) e **Analytics & Insights** — o único item de
+  "visão geral" que pertence ao topo.
+
+- **AccountPanel removido.** O modal Supabase-based com formulário de
+  sign-in, frase-senha E2EE e toggles de sync não tinha mais sentido
+  aqui — OpenClaude Desktop é app **local**, não tem conta para
+  fazer login. Removido:
+  - `lazy(() => import('./AccountPanel'))` em `App.tsx`
+  - import `isSupabaseConfigured`
+  - state `showAccount` + todas as suas referências (handler de
+    escape, lista de dependências do useEffect)
+  - bloco JSX `{showAccount && <Suspense><AccountPanel.../></Suspense>}`
+  - Hooks `useAuth` e `useSync` continuam sendo chamados para manter
+    background sync se alguém tiver Supabase configurado via
+    localStorage — não há mais UI para isso, mas também não quebra
+    nada. O arquivo `AccountPanel.tsx` permanece no repo (código morto
+    a limpar futuramente).
+
+- **UserMenu reescrito.** Sem mais conceito de email/sessão:
+  - Header agora é um **nome de perfil local editável** (`profileName`
+    em `AppSettings`, default "OpenClaude"). Clica, edita inline com
+    input estilizado, Enter salva, Escape cancela. Abaixo, subtítulo
+    "Modo local · sem conta" em monospace uppercase.
+  - Itens: Configurações, Idioma (PT/EN), **Tema**, **Cor de
+    destaque**, **Dashboard do agente**, Receber ajuda, Obter apps,
+    Saiba mais (submenu), versão.
+  - Removidos: "Entrar ou criar conta", "Fazer upgrade do plano",
+    "Sair" — não fazem sentido sem auth.
+
+- **`.sidebar-user-avatar`** agora mostra a inicial do `profileName`
+  (em vez da inicial do email).
+
+### Added
+
+- **`settings.profileName?: string`** em `AppSettings` — string livre
+  local, editável via UserMenu. Funciona sem configuração (default
+  "OpenClaude").
+- CSS `.user-menu-name-display` / `.user-menu-name-input` /
+  `.user-menu-subhead` / `.user-menu-hint` — edição inline do nome
+  com hover revelando ícone de lápis, foco com ring accent.
+
+### Notas
+
+- Typecheck limpo, 156 testes continuam passando.
+- Migração: usuários em 2.12.2 abrem 2.12.3 e veem "OpenClaude" no
+  avatar até renomearem — sem perda de dados.
+
+## [2.12.2] — 2026-04-18
+
+### Added — UserMenu estilo Claude Desktop
+
+Usuário compartilhou dois prints: (1) o AccountPanel atual mostrando
+estatísticas de modelos/provedores — não é o que ele quer; (2) o menu
+de perfil do Claude Desktop (avatar "martim" no canto inferior, menu
+com Configurações, Idioma, Receber ajuda, Upgrade, Apps, Presentear,
+Saiba mais, Sair). Pedido: "sistema de login e perfil igual ao do
+Claude".
+
+- **`src/components/UserMenu.tsx`** (novo, ~200 linhas) — popover que
+  abre para cima ancorado na linha de identidade da sidebar:
+  - Header com email (quando logado) ou botão "Entrar ou criar conta"
+    que abre o AccountPanel existente.
+  - **Configurações** (atalho `Ctrl+,`) → abre Settings.
+  - **Idioma** (submenu accordion inline) → PT / EN com check na
+    seleção atual; troca `settings.language` em tempo real.
+  - **Receber ajuda** → abre README no GitHub via `openTarget`.
+  - **Fazer upgrade do plano** → abre AccountPanel (onde fica a
+    sincronização Supabase, equivalente de "plano" neste app local).
+  - **Obter apps e extensões** → abre página de releases no GitHub.
+  - **Dashboard do agente** (`Ctrl+⇧D`) — substituição tech para
+    "Presentear com Claude" (não faz sentido em OpenClaude).
+  - **Saiba mais** (submenu) → GitHub, Changelog, badge de versão em
+    monospace.
+  - **Sair** (destacado em vermelho suave no hover) — só aparece
+    quando há sessão; sem sessão, mostra hint "Sem conta — tudo local".
+  - Fecha em `Escape`, clique fora, ou após qualquer ação executada.
+
+- **`src/App.tsx`** — nova linha `.sidebar-user` abaixo do model-selector
+  no `.sidebar-footer`:
+  - Avatar circular com gradiente `accent → accent-2` exibindo a
+    inicial do email (ou "U" sem sessão).
+  - Nome: parte do email antes do `@` (ou "Convidado" / "Guest").
+  - Botão de tema (sol/lua/contraste) à direita, redundante com o da
+    titlebar mas no local que o usuário espera pelo print de
+    referência.
+  - Clique no trigger abre o `UserMenu`.
+
+- **`src/tech-panels.css`** — ~200 linhas de CSS novo:
+  - `.sidebar-user`, `.sidebar-user-trigger`, `.sidebar-user-avatar`
+    (gradiente accent + glow sutil), `.sidebar-user-name`,
+    `.sidebar-user-theme`.
+  - `.user-menu` com glassmorphism (`backdrop-filter: blur(14px)
+    saturate(140%)`), borda accent, sombra multicamada com destaque
+    interno superior, animação de entrada `translateY(4px) → 0`.
+  - `.user-menu-item` com hover accent, `.user-menu-kbd` para atalhos
+    em monospace, `.user-menu-submenu` como accordion com borda
+    esquerda accent, `.user-menu-danger` para o botão Sair.
+
+### Notas
+
+- O `AccountPanel` existente (com a tela de estatísticas
+  modelos/provedores que o usuário não queria assim) permanece como
+  tela de gerenciamento de sincronização — agora acessado através
+  do item "Upgrade do plano" do UserMenu. A visibilidade dele caiu:
+  só aparece quando o usuário pede explicitamente. A linha de
+  identidade na sidebar é o novo ponto focal do perfil.
+- 156 testes continuam passando. Typecheck limpo.
+
+## [2.12.1] — 2026-04-18
+
+### Fixed — Agent Dashboard renderizava sem estilo (regressão crítica do 2.12.0)
+
+- **`src/main.tsx` não importava `ui-improvements.css`.** Todo o CSS das
+  classes `.ad-*` (Agent Dashboard), `.cmd-*` (Command Palette novas
+  ações), `.shortcuts-*` (Cheat Sheet) e vários refinamentos da v2.12.0
+  foram enviados como **dead code** — o arquivo existia no bundle mas
+  nunca era carregado. Resultado nas capturas do usuário: dashboard em
+  pilha vertical sem grid, KPIs sem borda, dots de saúde sem animação,
+  tabs de Settings coladas ("GeralProvedorMCP"), barras do Analytics
+  empilhadas, botão de submit do Account em roxo cru fora do tema.
+- Correção: `main.tsx` agora importa `./index.css`, `./ui-improvements.css`
+  e `./tech-panels.css` nessa ordem.
+
+### Added — `tech-panels.css` (~600 linhas) / visual mais tecnológico
+
+Seguindo pedido do usuário ("pegue referências de painel e melhore os
+painéis do desktop para algo mais tecnológico"), um stylesheet novo
+dedicado ao polimento tech:
+
+- **Tokens tech** no topo: `--tech-mono` (JetBrains Mono / Fira Code /
+  Consolas), `--tech-glow` (halo com accent), `--tech-panel-bg`
+  (gradient sutil via `color-mix`).
+- **Agent Dashboard**: `.ad-kpi-row` com `grid-template-columns: repeat(4, minmax(0, 1fr))` forçado (evita colapso), cada `.ad-kpi`
+  ganha borda superior em gradient `accent → accent-2` de 2px, valores
+  em `font-variant-numeric: tabular-nums` + monospace para sensação de
+  telemetria. Dots de saúde pulsam via `@keyframes`.
+- **Settings tabs**: layout flex com padding lateral, tipografia
+  uppercase em mono, underline accent na tab ativa e halo radial sutil
+  abaixo — resolve a colagem "GeralProvedorMCP" vista no print.
+- **Analytics "Custos"**: `.analytics-bar-row` agora é grid
+  `180px / 1fr / 90px` com track arredondada e fill em gradient accent,
+  valores alinhados à direita em tabular-nums. Cards do Analytics
+  recebem a mesma borda superior em gradient.
+- **Account**: submit button passa de roxo cru para
+  `linear-gradient(135deg, var(--accent), var(--accent-2))`, coerente
+  com o resto do tema.
+- **Model dropdown**: glassmorphism com `backdrop-filter: blur()`, IDs
+  de modelo em monospace, hover com halo accent.
+- **Shortcut keys do cheat sheet**: aparência 3D pressionada
+  (inset shadow + border top clara) — visual de tecla física.
+- **Command palette**: `.cmd-item.cmd-action` com borda esquerda accent
+  de 2px destacando ações executáveis.
+
+### Notas
+
+- Mudança é CSS-only (zero impacto em tipos / lógica). Nenhum teste
+  precisou ser ajustado, nenhum componente React foi alterado nesta
+  versão além dos imports em `main.tsx`.
+- Migração do Modal Research (v2.11.6) e `AgentDashboard` (v2.12.0)
+  permanecem como vieram.
+
+## [2.12.0] — 2026-04-18
+
+### Added — "Command Center + Ops" (inspirado em Paperclip + Claude Desktop)
+
+Sessão de melhorias de alto impacto, focada em **visibilidade** (saber o
+que o app está fazendo) e **controle** (agir rápido sem navegar por
+menus). Referências cruzadas: `paperclipai/paperclip` (visão unificada
+de frota de agentes) e Claude Desktop (polimento de interações).
+
+- **Agent Dashboard** (`AgentDashboard.tsx`, `Ctrl+Shift+D` ou novo botão
+  na titlebar com ícone de atividade). Painel único que responde às
+  perguntas que antes exigiam abrir 4 modais:
+  - Quanto gastei hoje? E nos últimos 30 dias?
+  - Quantas tarefas agendadas estão ativas? Qual a próxima?
+  - Qual persona está selecionada?
+  - Meus provedores estão saudáveis?
+  - Modo Agente está ligado?
+
+  Cada card é interativo — "Run now" dispara uma scheduled task sem sair
+  do painel; botões de "abrir ..." levam ao CRUD especializado quando
+  precisa editar. Atualiza os contadores relativos ("em 5min") a cada
+  30s enquanto aberto.
+
+- **Notificações nativas do sistema operacional** quando uma resposta
+  termina **com a janela desfocada**. Zero spam: só dispara na borda
+  loading→done, só se `isWindowFocused() === false`. Clique na
+  notificação traz a janela para o primeiro plano (padrão Slack/Discord).
+  Opt-out via `settings.notifyOnComplete` (default on). Implementado no
+  main process com `electron.Notification`.
+
+- **Cheat sheet de atalhos do teclado** — pressione `?` em qualquer lugar
+  fora de um campo de texto. Modal lista todos os atalhos agrupados
+  (Navegação / Recursos / Chat) com `<kbd>` estilizados. Novo atalho
+  `Ctrl+Shift+D` para o Agent Dashboard também entrou aqui.
+
+- **Per-message regenerate + branch** — cada mensagem do assistente agora
+  tem três ações no hover: copiar, regenerar (ícone refresh) e bifurcar
+  (ícone GitBranch). O fork reusa o `useConversationFork` existente que
+  não estava conectado ao main chat. Bifurcar cria nova conversa no topo
+  da sidebar preservando o histórico até aquela mensagem.
+
+- **Command Palette com ações reais**, não só toggles de feature. Nova
+  categoria **Ações** no topo (tintada com accent):
+  - Nova conversa (`Ctrl+N`)
+  - Painel do Agente (`Ctrl+Shift+D`)
+  - Exportar conversa
+  - Limpar conversa atual
+  - Abrir configurações (`Ctrl+,`)
+  - Atalhos do teclado (`?`)
+
+### Changed
+
+- IPC API expandida: `showNotification`, `isWindowFocused`,
+  `oauthGoogleStart` agora tipados em `vite-env.d.ts`.
+- `AppSettings.notifyOnComplete?: boolean` (default `true`).
+
+## [2.11.6] — 2026-04-18
+
+### Fixed — Migração de `modalModel` legacy persistido
+
+A v2.11.5 corrigiu apenas o **default** de `modalModel` e as shortlists,
+mas usuários que já tinham o app instalado continuavam com o valor
+antigo (`llama-3.1-70b`, etc.) salvo em `localStorage`. Como
+`loadSettings()` faz `{ ...DEFAULT_SETTINGS, ...stored }`, o valor
+persistido sobrescrevia o novo default, e toda request Modal ainda
+retornava `Unknown model: llama-3.1-70b`.
+
+- **Settings.loadSettings:** agora detecta valores stale de
+  `modalModel` (`llama-3.1-70b`, `llama-3.1-8b`, `mixtral-8x7b`,
+  `llama-3.1-405b`, `llama-3-70b`) e os substitui automaticamente por
+  `DEFAULT_SETTINGS.modalModel` (`zai-org/GLM-5.1-FP8`) ao carregar.
+  Usuários existentes recebem o fix sem precisar mexer em Settings.
+
+## [2.11.5] — 2026-04-18
+
+### Fixed — Modal Research: model shortlist correto
+
+A shortlist exibida no menu "regenerar com" e o default em
+`PersonaEngine.getDefaultModel('modal')` usavam nomes estilo Groq
+(`llama-3.1-70b`, `llama-3.1-8b`, `mixtral-8x7b`) que não existem no
+endpoint Modal Research — toda tentativa de regen ou persona com Modal
+retornava 404 no `/v1/chat/completions`. Substituídos pelos IDs reais
+do catálogo Modal:
+
+- `zai-org/GLM-5.1-FP8`
+- `Qwen/Qwen2.5-Coder-32B-Instruct`
+- `deepseek-ai/DeepSeek-V3`
+
+## [2.11.4] — 2026-04-18
+
+### Fixed — Auto-retry para modelos sem tool use (OpenRouter etc.)
+
+- **useChat:** quando o provider rejeita a request com
+  _"No endpoints found that support tool use"_ (OpenRouter em modelos
+  sem endpoint tool-capable) ou variações (`"doesn't support tools"`,
+  `"tool use is not supported"`), o hook:
+  1. detecta o erro específico via `isToolsUnsupportedError()`,
+  2. marca o par `provider:model` em `openclaude-no-tools-models`
+     (localStorage, persistente),
+  3. mostra toast explicando a situação no idioma do usuário,
+  4. desconta o step e re-executa a mesma iteração do loop sem
+     `tools`, então o usuário recebe pelo menos uma resposta de
+     chat simples em vez de um erro.
+  Funciona nos dois caminhos (streaming + non-streaming). Requests
+  futuros para o mesmo modelo pulam `tools` automaticamente até o
+  usuário limpar a flag (futuro: botão em Settings).
+
+## [2.11.3] — 2026-04-18
+
+### Fixed — Segunda rodada de varredura
+
+Segunda passada de bug-hunt em áreas não cobertas pela 2.11.2 (streaming
+avançado, memory dreaming, pool de chaves, auth). 8 correções, typecheck
++ 156 testes + build limpos.
+
+- **StreamingSanitizer.flush:** se o stream terminasse dentro de
+  `<thinking>` sem fechar a tag, `flush()` devolvia o buffer cru —
+  vazando exatamente o reasoning que o sanitizer existe para esconder.
+  Agora descarta o buffer e reseta estado quando `inTag === true`.
+- **useChat + electron/main.js (compact-context):** o IPC handler
+  ignorava o `provider` do caller e sempre batia em `localhost:11434`.
+  Para usuários 100% cloud (sem Ollama instalado), toda conversa longa
+  logava "compaction failed" e perdia o summary. Agora o caller passa
+  `settings.provider` e o handler faz short-circuit quando não é ollama
+  (fallback para truncação simples, silencioso).
+- **useChat (stopAgent):** pressionar Stop durante um stream com tool
+  calls acumuladas ainda disparava `processToolCalls` no fluxo pós-stream,
+  executando `write_file`/`exec_command` que o usuário pediu para
+  cancelar. Adicionado guard `stopRequestedRef.current` após a Promise
+  do stream (e no ramo non-streaming).
+- **services/memoryDreaming:** `lastDreamTime` era compartilhado entre
+  ciclos light (2h) e deep (24h) — cada light stamp empurrava o deep
+  indefinidamente, então deep dreams nunca disparavam enquanto o app
+  rodasse regularmente. Split em `lastLightDreamTime` / `lastDeepDreamTime`,
+  com fallback para o campo legado nos arquivos existentes.
+- **useUsageTracking:** o state React crescia sem limite (retornava
+  `updated` não-truncado do `setEntries`), enquanto o disco era capado em
+  1000 entries — divergência observável após a entrada 1001 e vazamento
+  de memória em sessões longas. Agora trimado também na memória.
+- **useModalKeyPool:** erros desconhecidos (5xx, DNS, resposta malformada)
+  não aplicavam cooldown, resultando em loop apertado
+  `acquire → fail → markError → drainWaiter → acquire` martelando uma
+  key quebrada. Agora recebem o cooldown curto (COOLDOWN_CONCURRENT_MS).
+- **useProviderHealth.reportSuccess:** o spread `{ status: 'healthy',
+  consecutiveErrors: 0 }` dropava `rateLimitUntil`. Um chunk bem-sucedido
+  após 429 limpava a flag, deixando `isRateLimited()` retornar false e
+  novos requests caindo no mesmo 429. Agora preserva `rateLimitUntil`
+  enquanto ainda for futuro.
+- **useAuth:** `passphrase` só era limpo em sign-out, nunca em troca de
+  identidade (account A → B via OAuth callback). Operações de cripto em
+  blobs da conta B decriptavam com a passphrase de A, lançando erros que
+  pareciam "dados corrompidos". Agora `onAuthStateChange` compara
+  `user.id` e limpa em mudança.
+
+- **useMemoryDreaming (health stale):** `updateHealthScores` estava
+  importado mas nunca chamado no light dream, então scores ficavam
+  congelados no valor do último deep (até 24h). Agora o light dream
+  também refresca os scores antes de salvar.
+- **useImageAttachment (silent failure):** ambos os ramos de erro
+  (`openFileDialog` e `readDocument`) retornavam sem nenhum sinal ao
+  usuário — clique em "Anexar", nada acontece, sem ideia do motivo
+  (arquivo >5MB rejeitado, não-imagem, erro de leitura). Hook agora
+  aceita `onToast?` opcional e loga/notifica cada falha distintamente;
+  cancelamento do dialog permanece silencioso.
+
+### Testes
+- Atualizado `test/sanitizers.test.ts` para refletir o novo comportamento
+  do `flush()` mid-tag (não vaza).
+- Atualizado `test/useModalKeyPool.test.ts` — a asserção "sem cooldown em
+  erro genérico" virou "aplica cooldown curto em erro desconhecido".
+
+## [2.11.2] — 2026-04-18
+
+### Fixed — Bug sweep em todo o projeto
+
+Varredura completa procurando bugs reais de alta confiança. 12 correções
+aplicadas, nenhuma regressão visível para o usuário. Todos os 156 testes
+seguem passando (typecheck + vitest + build limpos).
+
+- **useChat:** working memory nunca atualizava — o pipeline tentava
+  `JSON.parse` do texto de confirmação do tool (literal, não JSON).
+  Agora lê direto de `toolCallsData.arguments` da chamada
+  `update_working_memory`.
+- **App.tsx (drag overlay):** o overlay piscava ao atravessar elementos
+  filhos porque `dragleave` dispara a cada borda. Substituído por
+  contador de profundidade (`dragenter`++ / `dragleave`--), só esconde
+  em zero.
+- **App.tsx + useConversations:** lote de tarefas agendadas colidia na
+  mesma conversa — `newConversation()` não devolvia o id, então a ref
+  só via a última. `newConversation()` agora retorna `string` e
+  `sendMessage` aceita `overrideConvId?` opcional.
+- **useSync:** após primeira falha de `pullNow` (rede, passphrase
+  errada, erro de servidor), a flag `pulledForUser` ficava travada e o
+  usuário precisava reabrir o app. Agora `pullNow().catch(() => flag = null)`.
+- **electron/main.js (ollama-chat):** requisição não-streaming não era
+  registrada em `activeOllamaStream`, então `abort-stream` não
+  destruía. Registrada e zerada em end/error.
+- **useConversations:** `filteredConversations` era um IIFE
+  recalculado a cada render (incluindo cada toque de tecla). Agora em
+  `useMemo([conversations, debouncedSearch, pinnedConvs])`.
+- **useVoice:** `SpeechRecognition` e `speechSynthesis` não tinham
+  cleanup no unmount, deixando o microfone ativo se o componente
+  sumisse com gravação em andamento. Adicionado `useEffect(return
+  stop+cancel)`.
+- **utils/formatting (generateId):** id de 7 chars base36 (~36 bits)
+  tem aniversário em ~9k ids — real para históricos longos. Migrado
+  para `crypto.randomUUID()` com fallback mais entrópico.
+- **useToolExecution (LANGUAGE_RULE):** `LANGUAGE_RULE[lang]` retornava
+  `undefined` para idiomas fora do dicionário, concatenando a string
+  "undefined" no system prompt dos subtasks. Adicionado `?? LANGUAGE_RULE.pt`.
+- **App.tsx (regenerateResponse):** o updater de `setConversations`
+  usava `msgs`/`lastUserIdx` capturados antes do setState, então cliques
+  rápidos em regen ou mensagens chegando durante o stream poderiam
+  cortar mensagens vivas. Agora o índice é recalculado dentro do
+  updater contra o `c.messages` fresco.
+- **electron/main.js (web-search):** resposta original de redirect não
+  era drenada antes de seguir o `Location`, deixando o socket semi-aberto.
+  Adicionado `res.resume()`.
+- **useToolExecution (pendingApproval):** clique duplo em Permitir/Negar
+  antes do rerender poderia disparar `resolve()` em sequência — agora
+  `resolve` é embrulhado com flag `settled` que garante primeira
+  decisão vence.
+
+
+
+### Changed — Internal refactor (sem mudança de comportamento)
+
+Decomposição de App.tsx em componentes folha, consolidando JSX repetido
+da v2.11.0. App.tsx: 1325 → 1254 linhas (-71, -5%). Nenhuma mudança
+visível para o usuário; todos os 133 testes seguem passando.
+
+- **Novo:** `src/components/RegenSplit.tsx` — split-button de regen
+  (main + chevron + menu por provider). Anteriormente ~50 linhas de
+  JSX inline no titlebar com IIFE de filtragem. Suporta modo
+  controlado (via `open` + `onOpenChange`) para integração com a
+  Esc-overlay stack, ou autônomo.
+- **Novo:** `src/components/AmbientOrb.tsx` — envolvedor do blob
+  gradiente de streaming. Apenas 1 prop (`visible`); a estilização
+  continua 100% em CSS.
+- **Novo:** `src/components/SlashPopover.tsx` — popover do parser de
+  slash commands. Mouse interactions (hover + click) internas ao
+  componente; navegação por teclado segue no App.tsx porque precisa
+  coexistir com o key-flow do textarea.
+- **Verificado:** `ProviderList`/`ProviderDetail`/`config/providers.ts`
+  já existem (DRY de 5 blocos de provider em Settings feito em release
+  anterior). `config/features.ts` já existe (Feature Registry).
+  Fases 3.4 e 4.1 do plano original estão concluídas — plano atualizado
+  por este release para refletir a realidade.
+
+## [2.11.0] — 2026-04-18
+
+### Added — Polish pass P3 (differenciais visuais & produtividade)
+
+Fecha o roadmap de polimento aberto após o audit cruzado com apps
+desktop modernos. P0/P1/P2 foram liberados em 2.10.0; P3 reúne os
+itens de **identidade visual** (tema OLED, cor de destaque customizável,
+ambient orb) e **produtividade avançada** (slash commands, regenerate
+com modelo alternativo) que dependiam da base de design tokens
+estabelecida pela P1.
+
+#### Identidade visual
+
+- **Tema OLED como terceira opção.** O toggle de tema no titlebar agora
+  cicla entre `dark → light → oled → dark`, com ícone adaptativo
+  (Sun / Moon / Contrast). OLED usa preto puro `#000` como `--bg-primary`
+  e tokens agressivamente escuros para AMOLED — nunca é selecionado
+  automaticamente (apenas `light` cai em `prefers-color-scheme`); é
+  uma preferência explícita de hardware, não um default sensato.
+  Persistido em `openclaude-theme` e sincronizado via Supabase snapshot.
+- **Cor de destaque customizável.** Novo botão Palette no titlebar abre
+  `AccentPicker` com 8 presets (Terracota, Azul, Roxo, Verde, Rosa,
+  Âmbar, Vermelho, Ciano) e campo hex livre (texto ou color input
+  nativo). O hook `useAccentColor` escreve `--accent / --accent-2 /
+  --accent-hover / --accent-dim / --accent-border` em `:root` — como a
+  v2.10.0 já havia centralizado esses tokens, todas as superfícies
+  (gradientes, borders, cursor de streaming, links) retingem sem
+  alteração de componente. Persistido em `openclaude-accent`.
+- **Ambient orb durante streaming.** Blob gradiente difuso (dois layers
+  blurados com `backdrop-filter` não é usado; apenas `filter: blur`
+  para manter barato) posicionado atrás do composer, animado com
+  pulse + drift suaves. Aparece apenas enquanto `isActiveConvLoading`
+  é true. Usa `--accent` + `--accent-2` — acompanha a cor de destaque.
+  Respeita `prefers-reduced-motion` (congela sem animação) e ajusta
+  opacidade para light / OLED. `aria-hidden` porque o indicador textual
+  de streaming já atende acessibilidade.
+
+#### Produtividade
+
+- **Slash commands no composer.** Quando o input começa com `/`, um
+  popover lista comandos matching pelo prefixo. Navegação: `↑↓` muda
+  seleção, `Tab` completa o nome (adiciona espaço para args), `Enter`
+  executa, `Esc` limpa. Comandos disponíveis:
+  - `/clear` — inicia nova conversa (equivalente a Ctrl+N).
+  - `/model [nome]` — troca para o modelo informado (match exato ou
+    substring nos modelos Ollama carregados) ou abre o dropdown se
+    ausente / não encontrado.
+  - `/system <prompt>` — define system prompt da sessão (salva em
+    settings). Sem argumento, abre o painel Settings.
+  - `/regen` — regenera a última resposta.
+  - `/theme [dark|light|oled]` — aplica tema ou cicla se sem arg.
+  - `//` como prefixo envia texto literal iniciado por `/`.
+- **Regenerate com modelo alternativo.** O botão de regenerar no
+  titlebar agora é um split-button: clique principal regenera com o
+  modelo atual (comportamento anterior preservado); chevron à direita
+  abre um menu com shortlist por provider (`PROVIDER_MODEL_SUGGESTIONS`
+  para cloud; `models` do Ollama para local). Selecionar um modelo
+  aplica-o (permanentemente — é o padrão em ChatGPT/Claude.ai) e
+  dispara regen. O modelo atualmente ativo é marcado com chip "atual".
+  `Esc` fecha o menu (stack de overlays).
+
+### Technical
+
+- Novo hook: `src/hooks/useAccentColor.ts` (apply + persist accent).
+- Novo componente: `src/components/AccentPicker.tsx` (modal presets +
+  custom hex + color picker nativo).
+- Novo utilitário: `src/utils/slashCommands.ts` (parser + registry).
+- Novo constante: `src/constants/modelSuggestions.ts` (shortlist por
+  provider para regenerate menu).
+- `regenerateResponse` agora aceita `modelOverride?: string` e aplica
+  o modelo ao settings/selectedModel antes do send (80ms timeout para
+  flush de state antes que `useChat` leia o novo `providerConfig`).
+- Overlays adicionados à stack Esc: `showAccentPicker`, `showRegenMenu`.
+- Remote sync (`useSync` snapshot) aceita `'oled'` como valor válido
+  de `theme` — rollout multi-dispositivo preserva a preferência OLED.
+- Tema OLED e accent custom são independentes — usuário pode combinar
+  qualquer preset/hex com qualquer dos 3 temas.
+
 ## [2.10.0] — 2026-04-17
 
 ### Added / Changed — Polish pass (P0 + P1 + P2 from design audit)

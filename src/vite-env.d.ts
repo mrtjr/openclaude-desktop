@@ -2,7 +2,7 @@
 
 interface Window {
   electron: {
-    compactContext: (params: { messages: any[]; model: string; language: string }) => Promise<{ summary: string; error: string | null }>
+    compactContext: (params: { messages: any[]; model: string; language: string; provider?: string }) => Promise<{ summary: string; error: string | null; skipped?: boolean }>
     ollamaChat: (params: any) => Promise<any>
     ollamaChatStream: (params: any) => Promise<any>
     onStreamChunk: (callback: (chunk: any) => void) => () => void
@@ -111,5 +111,10 @@ interface Window {
     // Workflow
     workflowLoad: () => Promise<{ workflows: any[] }>
     workflowSave: (workflows: any[]) => Promise<{ error: string | null }>
+    // v2.12.0: Native notifications
+    showNotification?: (opts: { title?: string; body?: string; silent?: boolean }) => Promise<{ ok: boolean; error?: string }>
+    isWindowFocused?: () => Promise<{ focused: boolean }>
+    // OAuth
+    oauthGoogleStart?: (params: any) => Promise<any>
   }
 }

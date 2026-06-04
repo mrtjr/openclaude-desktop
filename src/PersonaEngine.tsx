@@ -956,7 +956,7 @@ function defaultModelForProvider(provider: Provider, settings: AppSettings, olla
     case 'gemini':     return settings.geminiModel || 'gemini-1.5-pro'
     case 'anthropic':  return settings.anthropicModel || 'claude-3-5-sonnet-20241022'
     case 'openrouter': return settings.openrouterModel || 'meta-llama/llama-3.1-70b-instruct'
-    case 'modal':      return settings.modalModel || 'llama-3.1-70b'
+    case 'modal':      return settings.modalModel || 'zai-org/GLM-5.1-FP8'
     default:           return ''
   }
 }
