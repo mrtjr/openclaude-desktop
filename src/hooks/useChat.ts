@@ -4,7 +4,7 @@ import { TOOLS, AGENT_SAFETY_LIMIT, NORMAL_SAFETY_LIMIT, IDLE_STEP_THRESHOLD } f
 import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIMING, LANGUAGE_REMINDER } from '../constants/prompts'
 import { partitionTools, renderDeferredManifest } from '../services/toolDeferral'
 import { generateId, isSmallModel } from '../utils/formatting'
-import { sanitizeReasoningLeaks, StreamingSanitizer } from '../utils/sanitizers'
+import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice } from '../utils/sanitizers'
 import { createContextEngine, getModelContextLimit } from '../services/contextEngine'
 import type { ProviderConfig } from './useProviderConfig'
 
@@ -504,11 +504,8 @@ export function useChat({
           // plan_tasks turn was followed by an all-reasoning reply.
           const remaining = sanitizer.flush()
           if (remaining) displayText += remaining
-          const rawAccumulated = accumulated
-          const sanitizedAccumulated = sanitizeReasoningLeaks(accumulated)
-          accumulated = sanitizedAccumulated.trim().length > 0
-            ? sanitizedAccumulated
-            : (rawAccumulated.trim().length > 0 ? rawAccumulated : sanitizedAccumulated)
+          // Encapsulated "never blank" invariant (see sanitizeReasoningLeaksSafe).
+          accumulated = sanitizeReasoningLeaksSafe(accumulated)
           console.log('[useChat] Stream completed:', { accumulatedLen: accumulated.length, toolCalls: toolCallsData.length, finishReason })
           onProviderSuccessRef.current?.()
 
@@ -583,9 +580,7 @@ export function useChat({
             // session ended rather than "something broke silently".
             const safeContent = accumulated.trim().length > 0
               ? accumulated
-              : (lang === 'en'
-                  ? '_(empty response from model — try again, lower max_tokens, or switch model)_'
-                  : '_(resposta vazia do modelo — tente novamente, reduza max_tokens ou troque o modelo)_')
+              : emptyReplyNotice(lang)
             const finalMsg: Message = {
               id: generateId(), role: 'assistant', content: safeContent, timestamp: new Date()
             }
@@ -650,11 +645,7 @@ export function useChat({
           // (all-reasoning output), keep the raw text so we never save
           // a blank message after a tool-call turn.
           if (assistantMsg.content) {
-            const raw = assistantMsg.content
-            const sanitized = sanitizeReasoningLeaks(raw)
-            assistantMsg.content = sanitized.trim().length > 0
-              ? sanitized
-              : (raw.trim().length > 0 ? raw : sanitized)
+            assistantMsg.content = sanitizeReasoningLeaksSafe(assistantMsg.content)
           }
           const toolCalls = assistantMsg.tool_calls
 
@@ -691,9 +682,7 @@ export function useChat({
             const raw = (assistantMsg.content || '').trim()
             const safeContent = raw.length > 0
               ? assistantMsg.content
-              : (lang === 'en'
-                  ? '_(empty response from model — try again, lower max_tokens, or switch model)_'
-                  : '_(resposta vazia do modelo — tente novamente, reduza max_tokens ou troque o modelo)_')
+              : emptyReplyNotice(lang)
             const finalMsg: Message = {
               id: generateId(), role: 'assistant',
               content: safeContent, timestamp: new Date()

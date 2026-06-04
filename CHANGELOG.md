@@ -7,6 +7,54 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.8] — 2026-06-04
+
+### Changed — Núcleo de sanitização de reasoning: fonte-única-de-verdade
+
+Endurecimento do hot-path de chat/streaming (toda resposta, de qualquer
+feature e provedor, passa por aqui). A correção da v2.12.7 foi reativa;
+esta torna o pipeline estruturalmente sólido, fechando a *classe* de
+bugs "reasoning piscando / bolha em branco" em vez de sintomas isolados.
+
+- **Registro único `REASONING_TAGS`** em `sanitizers.ts` — cada formato de
+  tag (`<think>`, `<thinking>`, `<reasoning>`, `<inner_monologue>`,
+  `[thinking]`, `[reasoning]`, marcadores DeepSeek) é declarado **uma vez**.
+  Tanto o passe one-shot (`sanitizeReasoningLeaks`) quanto o
+  `StreamingSanitizer` derivam dessa lista. Antes as duas divergiam: o
+  one-shot cobria 8 formatos, o streaming só 5 (apenas XML). Resultado:
+  blocos bracket-style `[thinking]…[/thinking]` **vazavam ao vivo durante o
+  streaming** e só sumiam quando o passe final rodava na mensagem salva
+  (efeito "pisca e some"). Agora ambos removem o mesmo conjunto.
+
+- **`sanitizeReasoningLeaksSafe()`** — o invariante "nunca-em-branco" da
+  v2.12.7 (preferir texto cru a uma bolha vazia quando a sanitização
+  zeraria a resposta inteira) estava **duplicado em 4 lugares** no
+  `useChat.ts` como ternários inline. Agora vive numa função única que os 4
+  call-sites consomem. Mudar a regra passa a ser um único ponto de edição.
+
+- **`emptyReplyNotice(lang)`** — o placeholder de resposta vazia
+  (`_(resposta vazia do modelo…)_`), antes duplicado 2× literal em PT/EN no
+  `useChat.ts`, virou helper único. Streaming e não-streaming não podem
+  mais divergir no texto.
+
+- **`StreamingSanitizer.process()` agora drena o buffer por completo a cada
+  chunk** — um loop trata múltiplas transições abre/fecha numa só passada.
+  Antes, ao fechar um bloco dava `flush()` e despejava o resto do buffer
+  cru; um segundo bloco (ou texto após o fechamento) no mesmo chunk vazava.
+  Também passa a abrir o tag de **posição mais cedo** no buffer quando dois
+  formatos coexistem, em vez de seguir a ordem do registro.
+
+### Notas
+
+- `useChat.ts`: import + 4 call-sites simplificados; comportamento
+  preservado (verificado por testes).
+- Testes: **178 passando** (eram 156). +22 casos: bracket-style no
+  streaming, abertura por posição, invariante seguro (incl. all-reasoning e
+  whitespace), placeholder PT/EN, e um teste de **consistência do registro**
+  que cobre automaticamente qualquer tag novo em `REASONING_TAGS`.
+- Typecheck limpo. Mudança interna — nenhuma API pública alterada
+  (`sanitizeReasoningLeaks` e `StreamingSanitizer` mantêm assinatura).
+
 ## [2.12.7] — 2026-04-19
 
 ### Fixed — "Chat interrompido depois do plan_tasks"
