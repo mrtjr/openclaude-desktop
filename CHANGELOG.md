@@ -7,6 +7,36 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.9] — 2026-06-04
+
+### Changed — Boot ~778 KB mais leve: highlight.js slim + chunks limpos
+
+Ciclo de performance guiado por evidência do próprio build (o Vite avisava
+`markdown` chunk = 976 KB, acima do limite de 800 KB).
+
+- **`highlight.js` completo → `highlight.js/lib/common`** em
+  `formatting.ts`. O bundle completo trazia ~190 linguagens (~900 KB)
+  carregadas no boot, mesmo no caminho eager de render do chat. O build
+  slim cobre as ~37 linguagens comuns (js, ts, python, bash, json, sql,
+  rust, go, xml, yaml, …) e cai em **plaintext** para o resto — fallback
+  já tratado pelo guard `getLanguage(lang) ? lang : 'plaintext'`.
+  - Chunk `markdown`: **976 KB → 197 KB** (−778 KB / −80 %; gzip 322 → 64 KB).
+- **`vite.config.ts` — `manualChunks` enxuto.** Removidas duas entradas
+  mortas: `katex` (o pacote não é importado em lugar nenhum) e
+  `docs`/`mammoth` (mammoth/pdf-parse são `require()` do processo Electron,
+  nunca entram no bundle do renderer — a entrada só gerava um chunk vazio
+  + warning de build).
+
+### Notas
+
+- 178 testes seguem passando; typecheck limpo; build sem warning de chunk.
+- Trade-off conhecido: linguagens fora do set comum (ex.: elixir, haskell,
+  dockerfile, toml) renderizam sem realce (plaintext), mas continuam
+  legíveis. Reversível trocando o import de volta para `highlight.js`.
+- Achado p/ ciclo futuro (não alterado agora): `katex` +
+  `marked-katex-extension` são dependências mortas — decidir entre
+  **remover** ou **ativar renderização de matemática** (lazy) no chat.
+
 ## [2.12.8] — 2026-06-04
 
 ### Changed — Núcleo de sanitização de reasoning: fonte-única-de-verdade

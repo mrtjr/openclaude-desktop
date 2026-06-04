@@ -2,7 +2,10 @@
 // Extracted from App.tsx
 
 import { marked } from 'marked'
-import hljs from 'highlight.js'
+// Slim build: ~37 common languages (~120KB) instead of the full ~190-language
+// bundle (~900KB). Languages outside the common set fall back to plaintext via
+// the getLanguage() guard below — a worthwhile trade for a ~800KB lighter boot.
+import hljs from 'highlight.js/lib/common'
 import DOMPurify from 'dompurify'
 
 // Configure marked

@@ -13,12 +13,13 @@ export default defineConfig({
         // Split heavy 3rd-party deps into their own chunks so they cache
         // independently and don't invalidate on every app update.
         manualChunks: {
-          // Markdown + syntax highlighting (~400KB combined)
+          // Markdown + slim syntax highlighting (highlight.js/lib/common,
+          // ~37 languages). The full highlight.js (~190 langs) made this
+          // chunk ~976KB; the slim build cuts it to ~150KB.
           'markdown': ['marked', 'highlight.js'],
-          // Math rendering (~200KB)
-          'katex': ['katex'],
-          // Document parsing (~150KB)
-          'docs': ['mammoth'],
+          // (mammoth/pdf-parse are main-process require()s, never in the
+          // renderer bundle, so they need no manualChunk — a 'docs' entry
+          // here only produced an empty chunk + build warning.)
           // React core stays in main chunk (hot path)
         },
       },
