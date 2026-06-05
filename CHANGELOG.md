@@ -7,6 +7,36 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.20] — 2026-06-04
+
+### Changed — Boot mais leve: modal de Settings agora é lazy + carga de settings testada
+
+`App` importava `SettingsModal` de forma **estática** (só para pegar
+`loadSettings` no boot), arrastando o modal pesado — ícones lucide + painéis de
+provider (`ProviderList`/`ProviderDetail`) — para o bundle inicial, mesmo o
+modal só aparecendo quando o usuário abre Configurações.
+
+- **`settingsConfig.ts` (novo)** — extrai a parte *leve* de boot: tipos
+  (`AppSettings`, `Provider`, …), `DEFAULT_SETTINGS`, `loadSettings` e
+  `saveSettings`. Sem React/lucide. `Settings.tsx` importa daqui e
+  **re-exporta tudo**, então os ~6 arquivos que faziam `… from './Settings'`
+  seguem funcionando sem mudança.
+- **`App.tsx`** — `loadSettings` vem do módulo leve (eager); o `SettingsModal`
+  virou `lazy(() => import('./Settings'))` e só é **montado quando aberto**
+  (`{showSettings && <Suspense>…}`) — então o chunk carrega sob demanda, não no
+  boot. Mesmo padrão dos 14 painéis já lazy.
+
+### Notas
+
+- **Boot:** chunk de entrada **382 → 362 KB (−20 KB)**; o modal foi para um
+  chunk próprio (`Settings-*.js`, ~23 KB) carregado no primeiro clique em
+  Configurações.
+- 249 testes passando (eram 242). +7 casos (`settingsConfig.test.ts`) cobrindo a
+  **carga de settings, que não tinha teste algum**: defaults, merge, migração do
+  `modalApiKey` legado, upgrade de `modalModel` 404, modo de deferral explícito
+  vs default, JSON corrompido → defaults, e round-trip do `saveSettings`.
+  Typecheck limpo.
+
 ## [2.12.19] — 2026-06-04
 
 ### Fixed — Usage/custo: provedores não-streaming deixavam de ser contabilizados

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react'
 import 'highlight.js/styles/github-dark.css'
 import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Trash, Mic, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, GitBranch } from 'lucide-react'
-import SettingsModal, { loadSettings, type AppSettings } from './Settings'
+import { loadSettings, type AppSettings } from './settingsConfig'
 import type { Persona } from './PersonaEngine'
 // Small / hot-path components — eager
 import CommandPalette from './components/CommandPalette'
@@ -25,6 +25,9 @@ const ProfilesPanel = lazy(() => import('./ProfilesPanel'))
 const ScheduledTasksPanel = lazy(() => import('./ScheduledTasksPanel'))
 const AgentDashboard = lazy(() => import('./AgentDashboard'))
 const ShortcutCheatSheet = lazy(() => import('./components/ShortcutCheatSheet'))
+// Settings is a heavy modal (provider panes) shown on demand — lazy so it
+// stays out of the boot bundle. loadSettings comes from settingsConfig (light).
+const SettingsModal = lazy(() => import('./Settings'))
 
 // ─── Extracted modules ──────────────────────────────────────────────
 import type { Message } from './types'
@@ -842,13 +845,17 @@ export default function App() {
         </div>
       )}
 
-      {/* Settings modal */}
-      <SettingsModal
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-        settings={settings}
-        onSave={(s) => { setSettings(s); showToast('Configuracoes salvas!') }}
-      />
+      {/* Settings modal — lazy; only mounted when open so its chunk loads on demand */}
+      {showSettings && (
+        <Suspense fallback={null}>
+          <SettingsModal
+            isOpen={showSettings}
+            onClose={() => setShowSettings(false)}
+            settings={settings}
+            onSave={(s) => { setSettings(s); showToast('Configuracoes salvas!') }}
+          />
+        </Suspense>
+      )}
 
       {/* Command Palette (Ctrl+K) */}
       <AccentPicker
