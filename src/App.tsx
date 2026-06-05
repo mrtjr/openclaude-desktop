@@ -52,6 +52,7 @@ import PermissionModeButton from './components/PermissionModeButton'
 import ContextWindowPanel from './components/ContextWindowPanel'
 import { useContextBreakdown } from './hooks/useContextBreakdown'
 import { useMathReady } from './hooks/useMathReady'
+import { useTokenizerReady } from './hooks/useTokenizerReady'
 import { partitionTools, decideDeferral } from './services/toolDeferral'
 import { TOOLS } from './constants/tools'
 import { getModelContextLimit, countToolSchemas } from './services/contextEngine'
@@ -69,6 +70,9 @@ import { useSync } from './hooks/useSync'
 export default function App() {
   // Upgrade raw `$…$` to typeset math once KaTeX finishes lazy-loading.
   useMathReady()
+  // Lazy-load the real BPE tokenizer after first paint; token counts and
+  // the context-assembly budget sharpen from char/4 to exact once ready.
+  useTokenizerReady()
   const [input, setInput] = useState('')
   const [models, setModels] = useState<string[]>([])
   const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('openclaude-model') || 'qwen35-uncensored')

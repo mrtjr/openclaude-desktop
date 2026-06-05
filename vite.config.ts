@@ -6,7 +6,12 @@ export default defineConfig({
   base: './',
   build: {
     outDir: 'dist',
-    // Suppress 500KB warning — the main chunk is right-sized for a desktop app
+    // Kept at 800 so a bloated *boot* chunk still trips the warning (this is
+    // how Ciclo 2 caught the 976KB markdown chunk). The one expected offender
+    // is `o200k_base` (~2.3MB) — the lazy js-tiktoken rank table, pulled only
+    // on demand via dynamic import (see services/tokenizer.ts), never in the
+    // boot path. It's named explicitly in the warning, so it doesn't mask a
+    // real regression: a newly-bloated app chunk shows up as a second line.
     chunkSizeWarningLimit: 800,
     rollupOptions: {
       output: {

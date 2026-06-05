@@ -19,6 +19,7 @@ import {
   AUTOCOMPACT_TRIGGER_RATIO,
   type ContextBreakdown,
 } from '../services/contextEngine'
+import { useTokenizerReady } from './useTokenizerReady'
 import type { Conversation } from '../types'
 
 const engine = createContextEngine()
@@ -41,6 +42,8 @@ export function useContextBreakdown(i: ContextBreakdownInputs): ContextBreakdown
     eagerTools, deferredToolNames, deferredToolSchemas, skillHeaders = '',
   } = i
 
+  // Sharpen every category from char/4 to real BPE counts once loaded.
+  const tokenizerReady = useTokenizerReady()
   return useMemo(() => {
     const limit = getModelContextLimit(model)
 
@@ -118,5 +121,6 @@ export function useContextBreakdown(i: ContextBreakdownInputs): ContextBreakdown
   }, [
     activeConv?.messages, model, inputText, systemPrompt, memoryText,
     eagerTools, deferredToolNames, deferredToolSchemas, skillHeaders,
+    tokenizerReady,
   ])
 }

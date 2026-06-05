@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { createContextEngine, getModelContextLimit } from '../services/contextEngine'
+import { useTokenizerReady } from './useTokenizerReady'
 import type { Conversation } from '../types'
 
 const engine = createContextEngine()
@@ -17,6 +18,9 @@ export function useTokenCounter(
   model: string,
   inputText: string
 ): TokenInfo {
+  // Re-render + recompute once the real tokenizer finishes loading so the
+  // counter sharpens from the char/4 heuristic to real BPE counts.
+  const tokenizerReady = useTokenizerReady()
   return useMemo(() => {
     const limit = getModelContextLimit(model)
     let used = 0
@@ -39,7 +43,7 @@ export function useTokenCounter(
       warning: percentage > 80,
       critical: percentage > 95,
     }
-  }, [activeConv?.messages, model, inputText])
+  }, [activeConv?.messages, model, inputText, tokenizerReady])
 }
 
 /** Format token count for display: "1.2k" / "128k" */

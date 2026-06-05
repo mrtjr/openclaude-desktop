@@ -114,7 +114,7 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 
 ### v1.9.0 — Quality of Life
 - **LaTeX Math Rendering** — inline (`$...$`) and block (`$$...$$`) formulas rendered via KaTeX directly in the chat; enabled by `marked-katex-extension` integrated with the existing `marked` pipeline
-- **Accurate Token Counting** — real-time token counter in the chat footer using `tiktoken` (OpenAI cl100k / o200k) and `@anthropic-ai/tokenizer` (Claude); adapts automatically to the active provider
+- **Accurate Token Counting** — real-time token counter in the chat footer backed by a real BPE tokenizer (`js-tiktoken`, `o200k_base`) that is **lazy-loaded on demand**, so it costs nothing at boot; exact for OpenAI families and a close approximation for Claude / Gemini / local models (which publish no exact tokenizer), with a char/4 fallback until it loads. The same real counts drive the `/context` panel and the chat loop's context-truncation budget
 - **MCP Settings UI** — dedicated **MCP** tab in Settings with a visual list of connected servers; add/remove server entries (name + command) via IPC without editing JSON manually
 
 ### v1.8.0 — Tier 1: Productivity Powerhouse
@@ -433,7 +433,7 @@ This is essential for local models (7B-14B) that tend to ignore system prompt in
 | Voice | Web Speech API (STT + TTS) |
 | Markdown | marked + highlight.js |
 | Math rendering | KaTeX 0.16 + marked-katex-extension |
-| Token counting | tiktoken (OpenAI) + @anthropic-ai/tokenizer |
+| Token counting | js-tiktoken (`o200k_base`), lazy-loaded; char/4 fallback |
 | Document parsing | pdf-parse (PDF) + mammoth (DOCX) |
 | Security | DOMPurify |
 | Installer | electron-builder (NSIS) |
@@ -540,7 +540,7 @@ openclaude-desktop/
 ### v1.9.0 — Quality of Life (April 2026)
 **3 polish features shipped:**
 - **LaTeX Math Rendering** — `$...$` (inline) and `$$...$$` (block) formulas now render as beautiful math via KaTeX. Powered by `marked-katex-extension` hooked into the existing `marked` pipeline in `App.tsx`. KaTeX CSS auto-loaded. Works in all messages including agent output.
-- **Accurate Token Counting** — A live token counter now appears in the chat footer. Uses `tiktoken` (`cl100k_base` / `o200k_base`) for OpenAI-family models and `@anthropic-ai/tokenizer` for Claude. Automatically switches tokenizer when you change provider.
+- **Accurate Token Counting** — A live token counter appears in the chat footer. It uses a real BPE tokenizer (`js-tiktoken`, `o200k_base`) — exact for OpenAI-family models and a close approximation for Claude / Gemini / local models — lazy-loaded on first use so it adds nothing to the boot bundle, with a char/4 fallback until it loads.
 - **MCP Settings UI** — A new **MCP** tab in `Settings.tsx` lists all configured servers with their name and command. Add a new server by typing its name and command; remove any server with one click. Changes are persisted via IPC and take effect on next connection.
 
 ### v1.8.0 — Tier 1 + 2 + 3 Features (2025)

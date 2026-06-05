@@ -7,6 +7,63 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.12] — 2026-06-04
+
+### Changed — Tokenização real (lazy): fim da heurística `char/4` no núcleo de contexto
+
+Toda a contagem de tokens do app era uma heurística `char/4` — incluindo a
+decisão de **truncar/compactar contexto** em `useChat` (`contextEngine.assemble`).
+Pior: `tiktoken` e `@anthropic-ai/tokenizer` eram **dependências de produção
+mortas** (importadas em zero lugares), e o README/ROADMAP *anunciavam*
+"Accurate Token Counting using tiktoken" — uma afirmação falsa, com o próprio
+rodapé do painel `/context` admitindo "~4 chars/token".
+
+O problema não é cosmético. `char/4` **subestima** justamente o conteúdo denso
+que domina turnos de agente, e subestimar é a direção perigosa — deixa o loop
+manter mais histórico do que cabe, estourando a janela real do modelo (erro de
+API) em vez de compactar a tempo. Medido contra o tokenizer real:
+
+| Conteúdo | Real (o200k) | `char/4` | Erro |
+|----------|:---:|:---:|:---:|
+| `{"a":1,"b":[2,3]}` (resultado de tool é JSON) | 11 | 5 | **−54 %** |
+| `文文文文文` (CJK) | 5 | 2 | **−60 %** |
+| código JS | 9 | 8 | −11 % |
+
+- **`tokenizer.ts` (novo)** — carrega o tokenizer BPE real (`js-tiktoken`,
+  `o200k_base`, **pure-JS, sem WASM**) **uma vez, lazy, após o primeiro paint**.
+  A tabela de ranks (~2,3 MB) fica num **chunk dinâmico separado** — mesmo
+  padrão custo-zero-no-boot do KaTeX lazy (Ciclo 3). Máquina de estados
+  idle→loading→ready single-flight + assinatura `onTokenizerReady` + memo
+  limitado por conteúdo (o rodapé re-soma a conversa a cada tecla). `realTokenCount`
+  nunca lança (degrada a `null` → heurística) e ignora marcadores `<|…|>`.
+- **`contextEngine.ts`** — `estimateTokens` usa o count real quando pronto,
+  caindo na heurística `char/4` enquanto carrega (e em contextos não-UI como
+  os testes). A mesma função alimenta o contador do rodapé, o painel `/context`
+  **e** o orçamento de truncamento — os três passam a ser exatos juntos.
+- **`useTokenizerReady.ts` (novo)** — dispara o load após o primeiro paint e
+  re-renderiza quando pronto, espelhando `useMathReady`. `useTokenCounter` e
+  `useContextBreakdown` incluem o flag `ready` nas deps do `useMemo`, então a
+  contagem "afia" de `char/4` para BPE real assim que a lib chega.
+- **`o200k_base` para todo modelo** — exato para as famílias OpenAI modernas
+  (gpt-4o, gpt-4.1, o1/o3/o4) e aproximação próxima para Claude/Gemini/local
+  (que não publicam tokenizer exato) — em qualquer caso, muito melhor que `char/4`.
+- **Limpeza de deps** — removidos `tiktoken` (WASM) e `@anthropic-ai/tokenizer`
+  (era Claude 2, aproximação fraca p/ Claude 3/4), ambos mortos. README/ROADMAP
+  e o rodapé do `/context` agora descrevem a implementação real.
+
+### Notas
+
+- **Boot inalterado:** o chunk de entrada foi de 578,08 → 578,62 KB (+~0,5 KB,
+  só o código leve do `tokenizer.ts`); o rank de 2,3 MB e o `lite` (6,9 KB)
+  ficam em chunks lazy — zero custo para quem não tem o counter à vista.
+- 200 testes passando (eram 193). +7 casos: estado idle/fallback, count exato,
+  densidade JSON/CJK > `char/4`, single-flight, memo, imunidade a `<|endoftext|>`,
+  e a prova de fiação `contextEngine.countTokens === realTokenCount`. Typecheck limpo.
+- Trade-off conhecido: o build agora emite **um** aviso de chunk > 800 KB — o
+  rank `o200k_base` lazy. Mantido o limite em 800 (que pegou o chunk markdown no
+  Ciclo 2); como o aviso nomeia o chunk, uma regressão real de boot apareceria
+  como uma segunda linha, então o sinal é preservado.
+
 ## [2.12.11] — 2026-06-04
 
 ### Changed — Tool Deferral inteligente (auto por pressão de contexto)

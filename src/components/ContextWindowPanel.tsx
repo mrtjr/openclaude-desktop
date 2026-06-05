@@ -148,8 +148,8 @@ export default function ContextWindowPanel({ open, onClose, anchorRef, breakdown
 
       <div className="ctx-panel-foot">
         {t(language,
-          'Contagens são estimativas (~4 chars/token). Deferred = disponível sob demanda via tool_search.',
-          'Counts are heuristic (~4 chars/token). Deferred = on-demand via tool_search.')}
+          'Contagem por tokenizer real (o200k_base) — exata p/ OpenAI, aproximada p/ os demais. Deferred = sob demanda via tool_search.',
+          'Real tokenizer counts (o200k_base) — exact for OpenAI, approximate for others. Deferred = on-demand via tool_search.')}
       </div>
     </div>
   )

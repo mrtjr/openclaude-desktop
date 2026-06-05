@@ -11,7 +11,7 @@
 | Item | Implementação |
 |------|---------------|
 | **Renderização LaTeX** | `marked-katex-extension` integrado ao pipeline `marked` em `App.tsx`; detecta `$...$` (inline) e `$$...$$` (bloco) |
-| **Contagem precisa de tokens** | `tiktoken` (OpenAI) + `@anthropic-ai/tokenizer`; contador ao vivo no rodapé do chat; troca automática por provider |
+| **Contagem precisa de tokens** | tokenizer BPE real (`js-tiktoken`, `o200k_base`) carregado lazy sob demanda (custo zero no boot), com fallback char/4; contador ao vivo no rodapé + painel `/context` + orçamento de truncamento do chat |
 | **Interface MCP no Settings** | Aba MCP em `Settings.tsx`; adicionar/remover servidores via IPC sem editar JSON |
 
 ### 🟡 Médio (Tier 2)

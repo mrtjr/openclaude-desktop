@@ -3,6 +3,7 @@
 // Replaces ad-hoc context management in the chat loop.
 
 import type { Message } from '../types'
+import { realTokenCount } from './tokenizer'
 
 export interface ContextEngine {
   /** Assemble messages within a token budget. Returns trimmed array. */
@@ -14,13 +15,19 @@ export interface ContextEngine {
 }
 
 // ─── Token estimation ────────────────────────────────────────────
-// Rough heuristic: ~4 chars per token for English, ~3 for CJK/mixed.
-// This avoids loading tiktoken on the main thread (heavy WASM).
-// For accurate counts, use tiktoken in a worker.
+// Prefer the real BPE tokenizer (js-tiktoken o200k_base) once it has
+// lazily loaded — exact for OpenAI families, a close approximation
+// elsewhere, and crucially it counts JSON/code/CJK at their true (much
+// higher) weight instead of under-counting them. Until the tokenizer is
+// ready (first paint, or any non-UI caller like unit tests that never
+// trigger the load) we fall back to the char/4 heuristic below. See
+// services/tokenizer.ts.
 
 function estimateTokens(text: string): number {
   if (!text) return 0
-  // Count CJK characters for mixed-language estimation
+  const real = realTokenCount(text)
+  if (real !== null) return real
+  // Heuristic fallback. Count CJK characters for mixed-language estimation
   const cjkCount = (text.match(/[\u3000-\u9fff\uac00-\ud7af]/g) || []).length
   const otherCount = text.length - cjkCount
   return Math.ceil(otherCount / 4 + cjkCount / 1.5)
