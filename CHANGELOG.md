@@ -7,6 +7,35 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.19] — 2026-06-04
+
+### Fixed — Usage/custo: provedores não-streaming deixavam de ser contabilizados
+
+O reporte de uso de tokens só existia no caminho **streaming** — o
+**não-streaming não reportava nada**, então provedores que rodam por ali
+(Gemini, Ollama não-stream, custom OpenAI-compat sem streaming) apareciam com
+**$0 no dashboard de custo/uso**. E o fallback do streaming ainda estimava por
+`char/4`, agora que há tokenizer real (Ciclo 5).
+
+- **`usage.ts` (novo)** — `resolveTurnUsage(providerUsage, requestMessages,
+  outputText)`: usa os números reais do provedor quando ambos input e output
+  vêm (`prompt_tokens/completion_tokens` ou `input_tokens/output_tokens`);
+  senão estima com o **tokenizer real** (que cai em char/4 só enquanto carrega).
+  Usage parcial (um campo faltando) é descartado e estimado — sem misturar.
+- **`useChat.ts`** — o caminho streaming passou a usar o helper (some o cálculo
+  `char/4` inline e o dança de narrowing do TS). O caminho **não-streaming ganhou
+  reporte de usage** (não tinha): após a resposta, reporta uso real do provedor
+  ou estimado. Junto com o fix de pricing (Ciclo 9), o custo fica correto para
+  **todos** os provedores.
+
+### Notas
+
+- 242 testes passando (eram 236). +6 casos (`usage.test.ts`): preferência pelo
+  usage do provedor (com aliases Anthropic), estimativa quando ausente, conteúdo
+  não-string via JSON, descarte de usage parcial, e output vazio. Typecheck limpo.
+- Modelos locais (Ollama) seguem custo $0 via `pricing.ts`; isto só corrige a
+  **contagem** que alimenta o dashboard.
+
 ## [2.12.18] — 2026-06-04
 
 ### Fixed — Flush no fechamento: a última mensagem não se perde mais ao sair

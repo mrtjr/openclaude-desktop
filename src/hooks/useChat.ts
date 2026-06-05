@@ -6,6 +6,7 @@ import { partitionTools, renderDeferredManifest, decideDeferral } from '../servi
 import { generateId, isSmallModel } from '../utils/formatting'
 import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice } from '../utils/sanitizers'
 import { classifyProviderError, humanizeProviderError } from '../utils/providerErrors'
+import { resolveTurnUsage } from '../utils/usage'
 import { createContextEngine, getModelContextLimit, countToolSchemas, computeMessageBudget } from '../services/contextEngine'
 import type { ProviderConfig } from './useProviderConfig'
 
@@ -555,20 +556,8 @@ export function useChat({
           try {
             const usageFn = onUsageRef.current
             if (usageFn) {
-              // Extract to a local const — TS flow analysis narrows
-              // `streamUsage` (a `let` reassigned inside a callback)
-              // back to `null` without this.
-              const u = streamUsage as { prompt_tokens: number; completion_tokens: number } | null
-              if (u) {
-                usageFn(u.prompt_tokens, u.completion_tokens)
-              } else {
-                const inputChars = requestMessages.reduce((s: number, m: any) => {
-                  const c = typeof m.content === 'string' ? m.content : JSON.stringify(m.content || '')
-                  return s + c.length
-                }, 0)
-                const outputChars = accumulated.length
-                usageFn(Math.ceil(inputChars / 4), Math.ceil(outputChars / 4))
-              }
+              const u = resolveTurnUsage(streamUsage, requestMessages, accumulated)
+              usageFn(u.inputTokens, u.outputTokens)
             }
           } catch (e) { console.warn('[useChat] usage report error:', e) }
 
@@ -694,6 +683,18 @@ export function useChat({
           if (assistantMsg.content) {
             assistantMsg.content = sanitizeReasoningLeaksSafe(assistantMsg.content)
           }
+
+          // Per-turn usage — the non-streaming path previously reported none,
+          // so the cost dashboard showed $0 for non-streaming providers. Prefer
+          // the provider's reported usage; else estimate via the real tokenizer.
+          try {
+            const usageFn = onUsageRef.current
+            if (usageFn) {
+              const u = resolveTurnUsage(response.usage, requestMessages, assistantMsg.content || '')
+              usageFn(u.inputTokens, u.outputTokens)
+            }
+          } catch (e) { console.warn('[useChat] usage report error (non-stream):', e) }
+
           const toolCalls = assistantMsg.tool_calls
 
           if (toolCalls && toolCalls.length > 0) {
