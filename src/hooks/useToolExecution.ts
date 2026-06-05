@@ -93,7 +93,15 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         return `Task "${args.task_id}" updated to ${args.status}${args.result ? ': ' + args.result : ''}`
       }
       if (name === 'browser_navigate') {
-        // Auto-launch browser if not yet started, then navigate
+        // Auto-launch browser if not yet started, then navigate.
+        // A resilient nav (electron/browser-nav.js) may return `partial: true`
+        // when it timed out / hit a redirect but still captured a usable page —
+        // surface that to the model so it knows the page may be incomplete
+        // instead of silently treating partial content as a full load.
+        const fmtNav = (r: any) =>
+          `Navigated to: ${r.title}\nURL: ${r.url}` +
+          (r.partial ? `\n⚠️ Partial load: ${r.note}` : '') +
+          `\n\nPage content:\n${r.text || '(empty)'}`
         try {
           const nav = await window.electron.browserNavigate(args.url)
           if (nav.error) {
@@ -102,9 +110,9 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
             if (launch.error) return `Browser launch error: ${launch.error}`
             const retry = await window.electron.browserNavigate(args.url)
             if (retry.error) return `Navigation error: ${retry.error}`
-            return `Navigated to: ${retry.title}\nURL: ${retry.url}\n\nPage content:\n${retry.text || '(empty)'}`
+            return fmtNav(retry)
           }
-          return `Navigated to: ${nav.title}\nURL: ${nav.url}\n\nPage content:\n${nav.text || '(empty)'}`
+          return fmtNav(nav)
         } catch (e: any) {
           return `Browser error: ${e.message}`
         }

@@ -7,6 +7,31 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.35] — 2026-06-05
+
+### Fixed — Navegação de browser resiliente (timeout/redirect não descartam a página)
+
+Pivô **guiado por dados** (Dev Insights): automação de browser é o uso real
+dominante (navigate 7×, screenshot 4×…), o **único erro** é `timeout` (4×) e a
+latência é altíssima (média ~6,5 min, p95 ~10,5 min/turno). Causa-raiz no handler
+`browser-navigate`: ele corria `loadURL` contra um `NAV_TIMEOUT` de 30s e, em
+**qualquer** timeout ou rejeição (inclusive `ERR_ABORTED` de redirect), **descartava
+a página inteira e retornava `{ error }`** — mesmo com conteúdo já renderizado. O
+renderer então tratava isso como "browser não lançado", **relançava e re-navegava
+do zero** (outro ciclo de 30s + round-trip do LLM = a latência desperdiçada do digest).
+
+- **Novo `electron/browser-nav.js`** (puro, testável): `isBenignNavError` detecta
+  cargas interrompidas benignas (`ERR_ABORTED`/`-3`, `ERR_BLOCKED_BY_CLIENT`);
+  `resolveNavOutcome` decide **ok / parcial / falha real** a partir de
+  erro+timeout+URL final+texto capturado.
+- **`browser-navigate` (main.js)** agora, em timeout, dá `webContents.stop()` e
+  **extrai o que já renderizou** (sucesso **parcial**) em vez de erro; redirect
+  benigno com página presente vira sucesso; só falha de verdade quando nada útil
+  carregou. Mata o único erro observado e elimina a rodada de retry.
+- **`useToolExecution.ts`** surfacia `⚠️ Partial load` ao modelo, para ele saber
+  que a página pode estar incompleta. Retry de relançamento fica só p/ erro real.
+- **+14 testes** (`test/browserNav.test.ts`) cobrindo benigno/timeout-parcial/falha.
+
 ## [2.12.34] — 2026-06-05
 
 ### Changed — Extended Thinking v2: caminho não-streaming + toggle de controle

@@ -9,6 +9,7 @@ const os = require('os')
 const { atomicWriteJSON, readJSONWithFallback } = require('./atomic-write')
 const { providerTimeoutMs } = require('./provider-timeouts')
 const { cachedSystem, withCachedTools } = require('./anthropic-cache')
+const { resolveNavOutcome } = require('./browser-nav')
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -1325,43 +1326,71 @@ ipcMain.handle('browser-launch', async (event, opts) => {
 })
 
 ipcMain.handle('browser-navigate', async (event, url) => {
+  let bw
   try {
-    const bw = getOrCreateTab(activeTabId || 'main', true)
+    bw = getOrCreateTab(activeTabId || 'main', true)
     activeTabId = activeTabId || 'main'
-
-    // Normalize URL
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      url = 'https://' + url
-    }
-
-    // Show the browser window so the user sees the navigation
-    if (!bw.isVisible()) bw.show()
-
-    // loadURL returns a Promise that resolves when the page finishes loading.
-    await Promise.race([
-      bw.loadURL(url),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Navigation timeout')), BROWSER_CONFIG.NAV_TIMEOUT)
-      ),
-    ])
-
-    // Small delay for JS-rendered content to settle
-    await settle(500)
-
-    const title = bw.webContents.getTitle()
-    const finalUrl = bw.webContents.getURL()
-
-    // Auto-extract text (truncated)
-    const text = await bw.webContents.executeJavaScript(`
-      (() => {
-        const sel = document.querySelector('article') || document.querySelector('main') || document.body;
-        return sel ? sel.innerText.substring(0, ${BROWSER_CONFIG.MAX_TEXT_LENGTH}) : '';
-      })()
-    `)
-
-    return { success: true, url: finalUrl, title, text }
   } catch (e) {
-    return { error: e.message }
+    return { error: `Browser launch error: ${e.message}` }
+  }
+
+  // Normalize URL
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = 'https://' + url
+  }
+
+  // Show the browser window so the user sees the navigation
+  if (!bw.isVisible()) bw.show()
+
+  // Race loadURL against NAV_TIMEOUT — but DON'T let a rejection abort the
+  // whole handler. A redirect (ERR_ABORTED) or a page with slow trackers often
+  // STILL rendered usable content; the old code threw it all away as an error,
+  // which made the renderer re-launch + re-navigate from scratch (the wasted
+  // retry latency the Dev Insights digest shows). Instead we capture the
+  // error/timeout, read whatever the page produced, and let resolveNavOutcome()
+  // decide success vs. partial vs. genuine failure (see browser-nav.js).
+  let navError = null
+  let timedOut = false
+  await new Promise((resolve) => {
+    let settled = false
+    const done = () => { if (!settled) { settled = true; resolve() } }
+    const timer = setTimeout(() => { timedOut = true; done() }, BROWSER_CONFIG.NAV_TIMEOUT)
+    bw.loadURL(url)
+      .then(() => { clearTimeout(timer); done() })
+      .catch((e) => { navError = (e && e.message) || String(e); clearTimeout(timer); done() })
+  })
+
+  // On timeout, stop pending sub-resources so the DOM we read is stable.
+  if (timedOut && bw && !bw.isDestroyed()) {
+    try { bw.webContents.stop() } catch { /* ignore */ }
+  }
+
+  // Let JS-rendered content settle (shorter when we already waited out a timeout).
+  await settle(timedOut ? 200 : 500)
+
+  // Read whatever rendered — guarded, since extraction can fail on a dead page.
+  let finalUrl = '', title = '', text = ''
+  try {
+    if (bw && !bw.isDestroyed()) {
+      finalUrl = bw.webContents.getURL()
+      title = bw.webContents.getTitle()
+      text = await bw.webContents.executeJavaScript(`
+        (() => {
+          const sel = document.querySelector('article') || document.querySelector('main') || document.body;
+          return sel ? sel.innerText.substring(0, ${BROWSER_CONFIG.MAX_TEXT_LENGTH}) : '';
+        })()
+      `)
+    }
+  } catch { /* keep whatever we already captured */ }
+
+  const outcome = resolveNavOutcome({ error: navError, timedOut, finalUrl, textLength: text.length })
+  if (!outcome.ok) return { error: outcome.note }
+  return {
+    success: true,
+    url: finalUrl,
+    title,
+    text,
+    ...(outcome.partial ? { partial: true, note: outcome.note } : {}),
   }
 })
 
