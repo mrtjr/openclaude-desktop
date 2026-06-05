@@ -7,6 +7,31 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.31] — 2026-06-05
+
+### Added — Prompt caching da Anthropic (porta a feature de cache da Anthropic)
+
+Item #2 do backlog "portar Anthropic". As requisições nativas à Anthropic
+(`/v1/messages`) agora marcam o **prefixo grande e estável** (schemas de tools +
+system prompt) com `cache_control: {type:'ephemeral'}`. Em turnos repetidos /
+loops de agente, os tokens em cache custam **~10%** e pulam o reprocessamento —
+corta custo e latência para quem usa Claude.
+
+- **`electron/anthropic-cache.js` (novo)** — `cachedSystem(text)` (system como
+  bloco de texto cacheado) e `withCachedTools(tools)` (cache_control na última
+  tool → cacheia todo o prefixo de schemas; não muta a entrada).
+- **`electron/main.js`** — aplicado nos dois builders Anthropic (stream +
+  non-stream). Aditivo e seguro: abaixo do mínimo (~1024 tokens) a Anthropic
+  ignora o breakpoint; nenhum outro provedor é afetado.
+
+### Notas
+
+- 285 testes (eram 280). +5 (`anthropicCache.test.ts`): wrap do system, last-tool
+  cache_control, imutabilidade da entrada, vazios. `node --check` no main;
+  typecheck limpo.
+- Próximos do backlog: Extended Thinking (exibir raciocínio), Artifacts (preview
+  ao vivo), editor de memória, web search + citações.
+
 ## [2.12.30] — 2026-06-05
 
 ### Changed — Modelos Claude 2026 (paridade com o catálogo da Anthropic)

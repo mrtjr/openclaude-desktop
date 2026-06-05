@@ -8,6 +8,7 @@ const https = require('https')
 const os = require('os')
 const { atomicWriteJSON, readJSONWithFallback } = require('./atomic-write')
 const { providerTimeoutMs } = require('./provider-timeouts')
+const { cachedSystem, withCachedTools } = require('./anthropic-cache')
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -874,9 +875,9 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
         model,
         max_tokens: max_tokens || 4096,
         messages: anthropicMsgs,
-        ...(systemMsg ? { system: systemMsg.content } : {}),
+        ...(systemMsg ? { system: cachedSystem(systemMsg.content) } : {}),
         temperature: temperature ?? 0.7,
-        ...(anthropicTools ? { tools: anthropicTools } : {})
+        ...(anthropicTools ? { tools: withCachedTools(anthropicTools) } : {})
       }
     } else if (provider === 'openrouter') {
       hostname = 'openrouter.ai'
@@ -1016,7 +1017,7 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
       }
       const anthropicTools = tools?.length ? tools.map(t => ({ name: t.function.name, description: t.function.description || '', input_schema: t.function.parameters || { type: 'object', properties: {} } })) : undefined
       headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }
-      bodyObj = { model, max_tokens: max_tokens || 4096, messages: anthropicMsgs, ...(systemMsg ? { system: systemMsg.content } : {}), temperature: temperature ?? 0.7, stream: true, ...(anthropicTools ? { tools: anthropicTools } : {}) }
+      bodyObj = { model, max_tokens: max_tokens || 4096, messages: anthropicMsgs, ...(systemMsg ? { system: cachedSystem(systemMsg.content) } : {}), temperature: temperature ?? 0.7, stream: true, ...(anthropicTools ? { tools: withCachedTools(anthropicTools) } : {}) }
     } else if (provider === 'custom') {
       const cfg = parseCustomBase(customBaseUrl)
       if (!cfg) return resolve({ error: 'Custom provider: invalid baseUrl' })
