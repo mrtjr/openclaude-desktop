@@ -67,6 +67,14 @@ describe('summarizeInsights', () => {
     expect(d.totalEvents).toBe(events.length)
   })
 
+  it('aggregates turn latency (avg/p95) from complete events', () => {
+    const events = [10, 20, 30, 40, 1000].map((ms) => ev('chat', 'complete', { ms }))
+    const d = summarizeInsights(events, 30, now)
+    expect(d.latency.count).toBe(5)
+    expect(d.latency.avgMs).toBe(220) // (10+20+30+40+1000)/5
+    expect(d.latency.p95Ms).toBe(40)  // index floor(0.95*4)=3 → sorted[3]
+  })
+
   it('excludes events outside the window', () => {
     const events = [ev('error', 'auth', undefined, 0), ev('error', 'network', undefined, 60)]
     expect(summarizeInsights(events, 30, now).errorsByKind).toEqual({ auth: 1 })
@@ -82,5 +90,6 @@ describe('summarizeInsights', () => {
     expect(d.totalEvents).toBe(0)
     expect(d.errorsByKind).toEqual({})
     expect(d.friction.circuitBreaks).toBe(0)
+    expect(d.latency).toEqual({ count: 0, avgMs: 0, p95Ms: 0 })
   })
 })

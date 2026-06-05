@@ -515,6 +515,7 @@ export function useChat({
             const cls = classifyProviderError(err?.message)
             if (cls.retryable && transientRetriesUsed < MAX_TRANSIENT_RETRIES && !accumulated) {
               transientRetriesUsed++
+              logInsight('chat', 'retry', { kind: cls.kind })
               setIsStreaming(false)
               setStreamingText('')
               showToast(humanizeProviderError(err?.message, lang) + (lang === 'en' ? ' (retrying…)' : ' (tentando de novo…)'))
@@ -662,6 +663,7 @@ export function useChat({
             const cls = classifyProviderError(response.error)
             if (cls.retryable && transientRetriesUsed < MAX_TRANSIENT_RETRIES) {
               transientRetriesUsed++
+              logInsight('chat', 'retry', { kind: cls.kind })
               showToast(humanizeProviderError(response.error, lang) + (lang === 'en' ? ' (retrying…)' : ' (tentando de novo…)'))
               await new Promise(r => setTimeout(r, 1500))
               steps--
@@ -775,6 +777,7 @@ export function useChat({
       setIsStreaming(false)
       setStreamingText('')
       setStreamingConvId(null)
+      logInsight('chat', 'complete', { ms: Date.now() - sessionTracker.startTime, steps: sessionTracker.agentSteps })
 
       // Save session analytics
       if (settings.analyticsEnabled !== false) {

@@ -37,6 +37,8 @@ export interface InsightsDigest {
     emptyReplies: number
     contextCompactions: number
   }
+  /** Turn latency over the window (ms), from 'chat'/'complete' events. */
+  latency: { count: number; avgMs: number; p95Ms: number }
   /** Auto-generated, human/AI-readable prioritisation hints. */
   notes: string[]
 }
@@ -106,6 +108,9 @@ function buildNotes(d: Omit<InsightsDigest, 'notes'>): string[] {
   if (d.friction.emptyReplies >= 3) {
     notes.push(`Respostas vazias frequentes (${d.friction.emptyReplies}) — modelo/provider problemático.`)
   }
+  if (d.latency.count >= 5 && d.latency.p95Ms >= 30000) {
+    notes.push(`Latência alta: p95 ${Math.round(d.latency.p95Ms / 1000)}s em ${d.latency.count} turnos.`)
+  }
   const usedFeatures = Object.keys(d.featureUsage).length
   if (usedFeatures > 0) {
     const top = Object.entries(d.featureUsage).sort((a, b) => b[1] - a[1])[0]
@@ -130,6 +135,7 @@ export function summarizeInsights(
   const providerMix: Record<string, number> = {}
   const modelMix: Record<string, number> = {}
   const friction = { circuitBreaks: 0, retries: 0, toolDenials: 0, emptyReplies: 0, contextCompactions: 0 }
+  const latencies: number[] = []
 
   for (const e of recent) {
     switch (e.c) {
@@ -145,6 +151,7 @@ export function summarizeInsights(
           bump(modelMix, String(e.m?.model ?? 'unknown'))
         } else if (e.a === 'retry') friction.retries++
         else if (e.a === 'empty_reply') friction.emptyReplies++
+        else if (e.a === 'complete' && typeof e.m?.ms === 'number') latencies.push(e.m.ms)
         break
       case 'tool':
         if (e.a === 'use') bump(toolUsage, String(e.m?.name ?? 'unknown'))
@@ -169,6 +176,15 @@ export function summarizeInsights(
     providerMix,
     modelMix,
     friction,
+    latency: computeLatency(latencies),
   }
   return { ...base, notes: buildNotes(base) }
+}
+
+function computeLatency(ms: number[]): InsightsDigest['latency'] {
+  if (ms.length === 0) return { count: 0, avgMs: 0, p95Ms: 0 }
+  const sorted = [...ms].sort((a, b) => a - b)
+  const avgMs = Math.round(sorted.reduce((a, b) => a + b, 0) / sorted.length)
+  const p95Ms = sorted[Math.floor(0.95 * (sorted.length - 1))]
+  return { count: sorted.length, avgMs, p95Ms }
 }

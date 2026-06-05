@@ -7,6 +7,28 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.25] — 2026-06-05
+
+### Added — Dev Insights: sinais de latência e retry (telemetria mais completa)
+
+Validado que a telemetria do v2.12.24 funciona ponta a ponta (o digest já
+capturou turnos reais). Este ciclo completa os sinais de maior valor que
+faltavam para priorização guiada por dados:
+
+- **Latência por turno** — `useChat` emite `chat/complete` com a duração total
+  (`ms`) e nº de passos no `finally`; `summarizeInsights` agrega
+  `latency: { count, avgMs, p95Ms }` e gera nota quando p95 ≥ 30 s (perf é
+  atrito real, ainda mais em provedores cloud lentos).
+- **Retries transitórios** — os dois auto-retries (rate-limit/overload/rede,
+  Ciclo 10) agora emitem `chat/retry` com a categoria, alimentando
+  `friction.retries` — mede quão frequentes são as falhas transitórias.
+
+### Notas
+
+- 273 testes (eram 272). +1 caso de agregação de latência (avg/p95) e asserção
+  de latência zerada no digest vazio. Typecheck limpo. Só eventos+metadados,
+  sem conteúdo (inalterado). Follow-up restante: `empty_reply` + painel in-app.
+
 ## [2.12.24] — 2026-06-05
 
 ### Added — Dev Insights: telemetria de uso (privada, local) para evolução guiada por dados
