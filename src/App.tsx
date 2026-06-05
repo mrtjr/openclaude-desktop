@@ -13,6 +13,7 @@ import CopyButton from './components/CopyButton'
 // Saves ~1MB from initial bundle; each chunk loads async when user opens the modal.
 const AnalyticsDashboard = lazy(() => import('./Analytics'))
 const DevInsightsPanel = lazy(() => import('./DevInsightsPanel'))
+const ArtifactPanel = lazy(() => import('./ArtifactPanel'))
 const ParliamentMode = lazy(() => import('./Parliament'))
 const PromptVault = lazy(() => import('./PromptVault'))
 const PersonaEngine = lazy(() => import('./PersonaEngine'))
@@ -71,6 +72,7 @@ import { useAuth } from './hooks/useAuth'
 import { useSync } from './hooks/useSync'
 import { useDevInsights } from './hooks/useDevInsights'
 import { logInsight } from './services/devInsights'
+import { extractArtifacts, type Artifact } from './utils/artifacts'
 
 // ─── App ─────────────────────────────────────────────────────────────
 export default function App() {
@@ -113,6 +115,7 @@ export default function App() {
   const [isAgentMode, setIsAgentMode] = useState(false)
   const [showAnalytics, setShowAnalytics] = useState(false)
   const [showDevInsights, setShowDevInsights] = useState(false)
+  const [openArtifact, setOpenArtifact] = useState<Artifact | null>(null)
   const [showParliament, setShowParliament] = useState(false)
   // ── Feature states ────────────────────────────────────────────────
   const [showVault, setShowVault] = useState(false)
@@ -945,6 +948,11 @@ export default function App() {
       <Suspense fallback={<div className="lazy-panel-fallback" role="status" aria-label="Carregando painel"><Loader2 size={20} className="spin" /></div>}>
         {showAnalytics && <AnalyticsDashboard isOpen={showAnalytics} onClose={() => setShowAnalytics(false)} language={settings.language} />}
         {showDevInsights && <DevInsightsPanel isOpen={showDevInsights} onClose={() => setShowDevInsights(false)} language={settings.language} />}
+        {openArtifact && (
+          <Suspense fallback={null}>
+            <ArtifactPanel artifact={openArtifact} onClose={() => setOpenArtifact(null)} language={settings.language} />
+          </Suspense>
+        )}
         {showParliament && (
           <ParliamentMode settings={settings} ollamaModels={models} onClose={() => setShowParliament(false)}
             onInsertToChat={(text) => { setInput(prev => (prev ? prev + '\n\n' : '') + text); setShowParliament(false) }} />
@@ -1287,6 +1295,15 @@ export default function App() {
                       </details>
                     )}
                     {msg.content && <div className="message-text" dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }} />}
+                    {msg.role === 'assistant' && msg.content && extractArtifacts(msg.content).length > 0 && (
+                      <button
+                        onClick={() => setOpenArtifact(extractArtifacts(msg.content)[0])}
+                        title={settings.language === 'pt' ? 'Renderizar o artefato em preview ao vivo' : 'Render the artifact in a live preview'}
+                        style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', border: '1px solid rgba(127,127,127,0.3)', background: 'transparent', color: 'inherit', opacity: 0.85 }}
+                      >
+                        🎨 {settings.language === 'pt' ? 'Visualizar artefato' : 'Open artifact'}
+                      </button>
+                    )}
                     {msg.toolCalls && msg.toolCalls.map((tc, i) => {
                       const toolKey = `${msg.id}-${i}`
                       const resultText = msg.toolResults?.[i]?.result || ''

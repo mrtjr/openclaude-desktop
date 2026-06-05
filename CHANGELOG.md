@@ -7,6 +7,31 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.33] — 2026-06-05
+
+### Added — Artifacts: preview ao vivo de HTML/SVG (porta os Artifacts da Claude)
+
+Item #4 do backlog. Inspirado nos **Artifacts** da Claude.ai: quando a resposta
+contém um bloco `html` ou `svg` autocontido, aparece um botão **🎨 Visualizar
+artefato** que renderiza o conteúdo **ao vivo** num iframe isolado.
+
+- **`utils/artifacts.ts` (novo)** — `extractArtifacts(content)` detecta fences
+  ```` ```html ```` / ```` ```svg ```` (pura); `artifactSrcDoc(a)` monta o
+  documento (SVG centralizado, HTML direto).
+- **`ArtifactPanel.tsx` (novo, lazy)** — modal com `<iframe sandbox="allow-scripts
+  allow-modals allow-popups">` (sem same-origin → o script roda mas não acessa o
+  app, cookies ou storage). Fecha no Esc/clique fora.
+- **`App.tsx`** — botão por mensagem do assistente quando há artefato; abre o
+  painel com o primeiro.
+
+### Notas
+
+- 293 testes (eram 289). +4 (`extractArtifacts`/`artifactSrcDoc`): detecção
+  html/svg, ignora js/vazios, e o wrapping do srcDoc. Typecheck limpo. Painel
+  lazy (fora do boot).
+- Segurança: sandbox sem `allow-same-origin` por design. Follow-up: react/charts,
+  edição inline, persistência.
+
 ## [2.12.32] — 2026-06-05
 
 ### Added — Extended Thinking: exibe o raciocínio do modelo (porta a feature da Anthropic)
