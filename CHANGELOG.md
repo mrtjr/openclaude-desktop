@@ -7,6 +7,34 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.30] — 2026-06-05
+
+### Changed — Modelos Claude 2026 (paridade com o catálogo da Anthropic)
+
+Primeiro ciclo do foco "comparar com a Anthropic e portar melhorias": o catálogo
+de modelos Claude estava preso em meados de 2025. Atualizado para a linha **2026**
+(fonte: docs oficiais da Anthropic).
+
+- **`pricing.ts`** — adicionados `claude-opus-4-8/4-7/4-6/4-5` (**$5/$25**, não os
+  antigos $15/$75!), `claude-sonnet-4-6/4-5` ($3/$15), `claude-haiku-4-5` ($1/$5),
+  `claude-opus-4-1` ($15/$75). Corrige superestimativa de ~3× no custo do Opus
+  moderno.
+- **`contextEngine.ts`** — **Opus 4.6–4.8 e Sonnet 4.6 = janela de 1M tokens**
+  (eram tratados como 200k pelo partial-match); 4.5 e Haiku 4.5 = 200k.
+- **`settingsConfig.ts`** — default Anthropic deixa de ser
+  `claude-sonnet-4-20250514` (**DEPRECATED**, aposenta 15/06/2026) e passa a
+  `claude-sonnet-4-6`.
+- **`modelSuggestions.ts`** — atalhos Anthropic agora `opus-4-8`/`sonnet-4-6`/
+  `haiku-4-5` (e OpenRouter `anthropic/claude-sonnet-4-6`).
+
+### Notas
+
+- 280 testes (eram 278). +2: preços 2026 (Opus 4.8 $5/$25, com variante datada
+  via longest-match) e janela de 1M dos modelos 2026. Typecheck limpo.
+- Candidatos a próximos ciclos (deste foco): prompt caching (Anthropic
+  `cache_control`), exibição de Extended Thinking, Artifacts (preview ao vivo),
+  visualizador/editor de memória, web-search tool com citações.
+
 ## [2.12.29] — 2026-06-05
 
 ### Changed — Dev Insights: latência por-passo (confiável) + nota da tool mais usada

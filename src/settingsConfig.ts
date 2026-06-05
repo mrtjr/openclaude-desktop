@@ -82,7 +82,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   geminiApiKey: '',
   geminiModel: 'gemini-2.0-flash',
   anthropicApiKey: '',
-  anthropicModel: 'claude-sonnet-4-20250514',
+  anthropicModel: 'claude-sonnet-4-6',
   openrouterApiKey: '',
   openrouterModel: 'google/gemini-2.5-pro',
   modalApiKey: '',

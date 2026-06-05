@@ -16,9 +16,9 @@ export const PROVIDER_MODEL_SUGGESTIONS: Record<string, string[]> = {
     'o1-mini',
   ],
   anthropic: [
-    'claude-3-5-sonnet-20241022',
-    'claude-3-5-haiku-20241022',
-    'claude-3-opus-20240229',
+    'claude-opus-4-8',
+    'claude-sonnet-4-6',
+    'claude-haiku-4-5',
   ],
   gemini: [
     'gemini-2.5-pro',
@@ -28,7 +28,7 @@ export const PROVIDER_MODEL_SUGGESTIONS: Record<string, string[]> = {
     'gemini-1.5-flash',
   ],
   openrouter: [
-    'anthropic/claude-3.5-sonnet',
+    'anthropic/claude-sonnet-4-6',
     'openai/gpt-4o',
     'openai/gpt-4o-mini',
     'google/gemini-2.5-pro',

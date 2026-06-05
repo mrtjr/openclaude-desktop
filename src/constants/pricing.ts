@@ -22,7 +22,16 @@ export const PRICING: Record<string, ModelPricing> = {
   'o3': { input: 10.00, output: 40.00 },
   'o3-mini': { input: 1.10, output: 4.40 },
   'o4-mini': { input: 1.10, output: 4.40 },
-  // Anthropic
+  // Anthropic — 2026 lineup. Opus 4.5–4.8 are $5/$25 (down from the old
+  // $15/$75); Sonnet 4.5/4.6 $3/$15; Haiku 4.5 $1/$5. (docs.anthropic.com)
+  'claude-opus-4-8': { input: 5.00, output: 25.00 },
+  'claude-opus-4-7': { input: 5.00, output: 25.00 },
+  'claude-opus-4-6': { input: 5.00, output: 25.00 },
+  'claude-opus-4-5': { input: 5.00, output: 25.00 },
+  'claude-sonnet-4-6': { input: 3.00, output: 15.00 },
+  'claude-sonnet-4-5': { input: 3.00, output: 15.00 },
+  'claude-haiku-4-5': { input: 1.00, output: 5.00 },
+  'claude-opus-4-1': { input: 15.00, output: 75.00 },
   'claude-sonnet-4-20250514': { input: 3.00, output: 15.00 },
   'claude-opus-4-20250514': { input: 15.00, output: 75.00 },
   'claude-3-5-sonnet-20241022': { input: 3.00, output: 15.00 },

@@ -49,6 +49,16 @@ describe('getModelPricing', () => {
     expect(getModelPricing('o3-mini-2025-01-31')).toEqual(PRICING['o3-mini'])
   })
 
+  it('prices the 2026 Claude lineup correctly (Opus 4.x is $5/$25, not the old $15/$75)', () => {
+    expect(getModelPricing('claude-opus-4-8')).toEqual({ input: 5, output: 25 })
+    expect(getModelPricing('claude-sonnet-4-6')).toEqual({ input: 3, output: 15 })
+    expect(getModelPricing('claude-haiku-4-5')).toEqual({ input: 1, output: 5 })
+    // dated snapshot variants resolve via longest-match
+    expect(getModelPricing('claude-opus-4-8-20260501')).toEqual({ input: 5, output: 25 })
+    // Opus 4.8 must be far cheaper than the legacy opus tier (4.1 = $15/$75)
+    expect(getModelPricing('claude-opus-4-8').input).toBeLessThan(getModelPricing('claude-opus-4-1').input)
+  })
+
   it('prices the gpt-4.1 family at its own (cheaper) tier, not legacy gpt-4', () => {
     expect(getModelPricing('gpt-4.1')).toEqual(PRICING['gpt-4.1'])
     expect(getModelPricing('gpt-4.1-mini')).toEqual(PRICING['gpt-4.1-mini'])

@@ -101,7 +101,15 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   'o3': 200_000,
   'o3-mini': 200_000,
   'o4-mini': 200_000,
-  // Anthropic
+  // Anthropic — 2026: Opus 4.6–4.8 + Sonnet 4.6 have a 1M-token window; the
+  // 4.5 generation and Haiku 4.5 stay at 200k. Specific 4.x IDs are listed
+  // before the generic 'claude-opus-4' so the partial-match fallback in
+  // getModelContextLimit resolves the larger window correctly.
+  'claude-opus-4-8': 1_000_000,
+  'claude-opus-4-7': 1_000_000,
+  'claude-opus-4-6': 1_000_000,
+  'claude-sonnet-4-6': 1_000_000,
+  'claude-opus-4-5': 200_000,
   'claude-sonnet-4-5': 200_000,
   'claude-sonnet-4': 200_000,
   'claude-opus-4-1': 200_000,

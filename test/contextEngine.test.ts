@@ -70,6 +70,12 @@ describe('getModelContextLimit', () => {
     expect(getModelContextLimit('gpt-4o-2024-08-06')).toBe(128_000)
   })
 
+  it('gives the 2026 1M-context Claude models their full window', () => {
+    expect(getModelContextLimit('claude-opus-4-8')).toBe(1_000_000)
+    expect(getModelContextLimit('claude-sonnet-4-6')).toBe(1_000_000)
+    expect(getModelContextLimit('claude-haiku-4-5')).toBe(200_000)
+  })
+
   it('returns safe default for unknown models', () => {
     expect(getModelContextLimit('some-random-local-model')).toBe(8_192)
   })
