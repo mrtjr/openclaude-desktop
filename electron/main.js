@@ -963,7 +963,10 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
       })
     })
     req.on('error', (e) => resolve({ error: e.message }))
-    const reqTimeoutMs = providerTimeoutMs(provider)
+    // 'connect' budget covers Modal's GPU cold start (first byte). Non-stream
+    // responses arrive in one shot, so there's no reliable intra-body cadence
+    // to tighten against — keep the generous budget for the whole request.
+    const reqTimeoutMs = providerTimeoutMs(provider, 'connect')
     req.setTimeout(reqTimeoutMs, () => { req.destroy(); resolve({ error: `Provider request timeout after ${reqTimeoutMs / 1000}s` }) })
     req.write(body)
     req.end()
@@ -1046,6 +1049,11 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
     }
 
     const req = transport.request(reqOptions, (res) => {
+      // Response headers arrived → past any cold start. Tighten the socket idle
+      // window so a mid-stream stall is caught sooner than the generous connect
+      // budget (token gaps in SSE are short; see provider-timeouts.js). The
+      // original 'timeout' listener stays attached, so this just lowers the value.
+      req.setTimeout(providerTimeoutMs(provider, 'stream'))
       // Check HTTP status
       if (res.statusCode && res.statusCode >= 400) {
         let errorBody = ''
@@ -1136,7 +1144,9 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
     })
 
     req.on('error', (err) => { sendDone(err.message); resolve({ ok: false, error: err.message }) })
-    const reqTimeoutMs = providerTimeoutMs(provider)
+    // Start on the generous 'connect' budget (Modal cold start); the res
+    // callback above tightens it to 'stream' once headers arrive.
+    const reqTimeoutMs = providerTimeoutMs(provider, 'connect')
     req.setTimeout(reqTimeoutMs, () => { req.destroy(); sendDone(`Provider request timeout after ${reqTimeoutMs / 1000}s`) })
     activeProviderStream = req
     req.write(body)

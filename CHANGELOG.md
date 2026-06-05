@@ -7,6 +7,31 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.37] — 2026-06-05
+
+### Fixed — Timeout de provider por fase (mata o `timeout` no cold-start do Modal)
+
+Segue o pivô guiado por dados. O **único erro** do digest é `timeout` (5×, sempre
+em `modal`, e **não-retryable** — o usuário perde o turno). Causa: o request usa o
+**idle timeout do socket** (`req.setTimeout`, 180s) para cobrir duas esperas muito
+diferentes com um número só — (1) o **primeiro byte**, que no cold-start de GPU do
+Modal (GLM-5.1-FP8) pode passar de 180s, e (2) os **gaps entre tokens** depois que
+o stream começa. Um valor único é um trade-off ruim: alto p/ cold-start = esperar
+esse tempão todo num stall no meio do stream.
+
+- **`electron/provider-timeouts.js`** agora é **por fase**: `providerTimeoutMs(provider, phase)`
+  - `connect` (primeiro byte / cold-start): **modal 300s**, outros 120s.
+  - `stream` (idle entre bytes, já fluindo): modal 150s, outros 90s.
+- **`main.js` streaming** começa no orçamento `connect` (cobre o cold-start) e, quando
+  os **headers chegam**, aperta o socket para `stream` — pega um stall no meio do
+  stream em 2,5 min em vez de esperar os 5 min. O listener de `timeout` original
+  permanece anexado; só o valor diminui.
+- **`main.js` não-streaming** usa `connect` no request inteiro (resposta vem de uma
+  vez; não há cadência intra-corpo confiável para apertar) — já estritamente mais
+  seguro que os 180s de antes.
+- Cold-start do modal nunca regride (≥180s garantido por teste). **+4 testes
+  líquidos** (`test/providerTimeouts.test.ts` reescrito p/ as duas fases); 319 no total.
+
 ## [2.12.36] — 2026-06-05
 
 ### Changed — `browser_screenshot` otimizado: JPEG comprimido + dimensões + resultado honesto
