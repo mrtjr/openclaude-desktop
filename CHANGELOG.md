@@ -7,6 +7,46 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.13] — 2026-06-04
+
+### Changed — Orçamento de contexto preciso: `limite − overhead real` no lugar do `0.60` cego
+
+O truncamento de histórico em `useChat` usava `tokenBudget = limite × 0,60` —
+um fator fixo que **ignorava o overhead real** da requisição. Errado nos dois
+sentidos, e o Ciclo 5 (contagem real) deixou o conserto à mão:
+
+- **Modelos pequenos (8k):** o system prompt (agente!) + schemas de tools +
+  memória **não eram subtraídos**, então prompt+resposta podiam ultrapassar a
+  janela real → erro "context length exceeded". O `0.60` deixava ~40 % de folga
+  que, somada ao overhead não-contado, não bastava.
+- **Modelos grandes (200k/1M):** reservava 40 % fixos **independente do uso** —
+  80k+ no Claude ficavam ociosos e o loop **compactava cedo demais** (chamada de
+  API extra de sumarização + perda de contexto) muito antes do necessário.
+
+- **`computeMessageBudget(limit, {systemTokens, toolTokens, memoryTokens, responseReserve})`
+  (novo, `contextEngine.ts`)** — orçamento = `limite − systemPrompt − schemas
+  eager − memória − reserva-de-resposta − BUDGET_SAFETY_SLACK (256)`, com clamp
+  em `[0, limite]`. As contagens vêm do **tokenizer real (v2.12.12)**, então o
+  orçamento é exato. O `slack` cobre o que não é modelado explicitamente
+  (priming de idioma, lembretes por turno, cauda da memória persistente).
+- **`useChat.ts`** passa o overhead concreto do turno: tokens reais do
+  `systemPrompt` (que já inclui o manifesto de tools diferidas), os
+  `eagerTokens` da partição (ou o set completo quando o deferral está off), o
+  resumo de contexto conhecido, e `settings.maxTokens` (piso 2k) como reserva
+  da resposta. `assemble()` segue garantindo a mensagem mais recente mesmo se o
+  overhead deixar o orçamento perto de zero — degradação correta num modelo
+  minúsculo com prompt gigante.
+
+### Notas
+
+- Efeito prático: **−estouros** em janelas pequenas e **−compactações
+  prematuras** em janelas grandes (ex.: num modelo de 128k, mensagens podem usar
+  ~122k em vez dos antigos ~77k). A decisão real de truncamento agora bate com a
+  contabilidade do painel `/context`.
+- 205 testes passando (eram 200). +5 casos: subtração exata, modelo grande
+  sobrando >190k, clamp em 0 quando o overhead estoura, campos ausentes, e a
+  conservadoria em 8k vs o `0.60`. Typecheck limpo.
+
 ## [2.12.12] — 2026-06-04
 
 ### Changed — Tokenização real (lazy): fim da heurística `char/4` no núcleo de contexto

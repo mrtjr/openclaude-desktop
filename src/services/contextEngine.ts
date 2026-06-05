@@ -200,3 +200,44 @@ export function getModelContextLimit(model: string): number {
   }
   return 8_192 // safe default
 }
+
+// ─── Message budget ──────────────────────────────────────────────
+// How many tokens the conversation history may occupy: the model limit
+// minus the *real* fixed overhead of the request (system prompt, eager
+// tool schemas, injected memory) and a reservation for the model's reply.
+//
+// Replaces the old blind `limit * 0.60`, which was wrong both ways:
+//   - small models (8k) — overhead was NOT subtracted, so system prompt +
+//     tools + memory could push the request past the real window (API
+//     "context length exceeded");
+//   - large models (200k/1M) — a flat 40% was reserved no matter what, so
+//     80k+ sat unused and the loop compacted far earlier than needed.
+// Pairs with the real tokenizer (v2.12.12): the counts feeding this are
+// now exact, so the budget is too. assemble() still guarantees the newest
+// message survives even when overhead leaves a near-zero budget.
+
+/** Small reserve for request bits not modeled explicitly: language priming
+ *  pair, per-turn system reminders (working memory, language, planning),
+ *  and the persistent-memory tail loaded after the budget is computed. */
+export const BUDGET_SAFETY_SLACK = 256
+
+export function computeMessageBudget(
+  limit: number,
+  overhead: {
+    systemTokens?: number
+    toolTokens?: number
+    memoryTokens?: number
+    responseReserve?: number
+  },
+): number {
+  const used =
+    (overhead.systemTokens || 0) +
+    (overhead.toolTokens || 0) +
+    (overhead.memoryTokens || 0) +
+    (overhead.responseReserve || 0) +
+    BUDGET_SAFETY_SLACK
+  // Clamp to [0, limit]. A near-zero budget is fine — assemble() always
+  // keeps the most recent message regardless, which is the correct
+  // degradation when overhead alone nearly fills a tiny window.
+  return Math.max(0, Math.min(limit - used, limit))
+}

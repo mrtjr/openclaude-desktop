@@ -5,7 +5,7 @@ import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIM
 import { partitionTools, renderDeferredManifest, decideDeferral } from '../services/toolDeferral'
 import { generateId, isSmallModel } from '../utils/formatting'
 import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice } from '../utils/sanitizers'
-import { createContextEngine, getModelContextLimit, countToolSchemas } from '../services/contextEngine'
+import { createContextEngine, getModelContextLimit, countToolSchemas, computeMessageBudget } from '../services/contextEngine'
 import type { ProviderConfig } from './useProviderConfig'
 
 // The engine is pure and stateless — create once at module load.
@@ -233,22 +233,32 @@ export function useChat({
 
       // ─── Context assembly via ContextEngine ─────────────────────
       // Strategy: prefer token-budget truncation over raw message count.
-      //   1. Compute budget = modelContextLimit * 0.60  (reserves headroom
-      //      for response + tools + system + memory injections).
+      //   1. Compute the message budget = model limit − the REAL request
+      //      overhead (system prompt + eager tool schemas + memory) − a
+      //      reservation for the reply. See computeMessageBudget; replaces
+      //      the old blind `limit * 0.60` that overflowed small models and
+      //      starved large ones. Exact now that token counts are real (v2.12.12).
       //   2. engine.assemble() walks back from newest keeping messages
-      //      until the budget is exhausted.
+      //      until the budget is exhausted (and always keeps the newest).
       //   3. If any messages were dropped, summarise the oldest chunk.
       //
       // This replaces the previous fixed 50-message cap, which was both
       // too aggressive on large-context models (Gemini 1M) and too loose
       // on small ones (gpt-4 8k).
-      // Use static import: the previous dynamic import was redundant
-      // (useTokenCounter already pulls it statically) and the rolldown
-      // warning "dynamic import will not move module into another chunk"
-      // was burying real warnings in the build output.
       const modelLimit = getModelContextLimit(finalModel)
-      const tokenBudget = Math.floor(modelLimit * 0.60)
       let contextSummary = conv?.contextSummary || ''
+      const tokenBudget = computeMessageBudget(modelLimit, {
+        systemTokens: contextEngine.countTokens(systemPrompt),
+        // Schemas actually sent this turn: the eager subset (+ tool_search)
+        // when deferral is on, otherwise the full tool set.
+        toolTokens: deferralEnabled ? toolPartition.eagerTokens : countToolSchemas(TOOLS as any),
+        // Known memory so far (the running summary). Persistent facts are
+        // loaded later and covered by BUDGET_SAFETY_SLACK + the reserve.
+        memoryTokens: contextEngine.countTokens(contextSummary),
+        // Reserve the reply allocation so the prompt+completion never exceed
+        // the window. Floor at 2k for providers that ignore max_tokens.
+        responseReserve: settings.maxTokens || 2048,
+      })
       const historyForEngine = history as any[]
       const assembled = contextEngine.assemble(historyForEngine, tokenBudget)
       let trimmedHistory = assembled
