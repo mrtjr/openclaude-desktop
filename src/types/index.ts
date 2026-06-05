@@ -9,6 +9,9 @@ export interface Message {
   content: string
   toolCalls?: ToolCall[]
   toolResults?: ToolResult[]
+  /** Captured reasoning/thinking blocks (Extended-Thinking display) when the
+   *  model emitted any. Shown collapsibly; never sent back to the provider. */
+  thinking?: string
   timestamp: Date
 }
 

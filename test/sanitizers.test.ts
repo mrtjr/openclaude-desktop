@@ -2,10 +2,35 @@ import { describe, it, expect } from 'vitest'
 import {
   sanitizeReasoningLeaks,
   sanitizeReasoningLeaksSafe,
+  extractThinking,
   emptyReplyNotice,
   StreamingSanitizer,
   REASONING_TAGS,
 } from '../src/utils/sanitizers'
+
+describe('extractThinking', () => {
+  it('separates a complete <think> block from the answer', () => {
+    const { thinking, answer } = extractThinking('<think>step 1\nstep 2</think>The answer is 42.')
+    expect(thinking).toBe('step 1\nstep 2')
+    expect(answer).toBe('The answer is 42.')
+  })
+
+  it('handles multiple blocks and other tag styles', () => {
+    const { thinking, answer } = extractThinking('[thinking]a[/thinking]Hi <reasoning>b</reasoning>there')
+    expect(thinking).toContain('a')
+    expect(thinking).toContain('b')
+    expect(answer).toBe('Hi there')
+  })
+
+  it('returns empty thinking when there is none', () => {
+    expect(extractThinking('just an answer')).toEqual({ thinking: '', answer: 'just an answer' })
+  })
+
+  it('the cleaned answer matches sanitizeReasoningLeaks', () => {
+    const raw = '<think>x</think>  hello'
+    expect(extractThinking(raw).answer).toBe(sanitizeReasoningLeaks(raw))
+  })
+})
 
 describe('sanitizeReasoningLeaks', () => {
   it('strips <think> blocks', () => {

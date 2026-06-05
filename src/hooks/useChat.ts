@@ -4,7 +4,7 @@ import { TOOLS, AGENT_SAFETY_LIMIT, NORMAL_SAFETY_LIMIT, IDLE_STEP_THRESHOLD } f
 import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIMING, LANGUAGE_REMINDER } from '../constants/prompts'
 import { partitionTools, renderDeferredManifest, decideDeferral } from '../services/toolDeferral'
 import { generateId, isSmallModel } from '../utils/formatting'
-import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice } from '../utils/sanitizers'
+import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice, extractThinking } from '../utils/sanitizers'
 import { classifyProviderError, humanizeProviderError } from '../utils/providerErrors'
 import { resolveTurnUsage } from '../utils/usage'
 import { countRecentRepeats, CIRCUIT_WINDOW } from '../utils/circuitBreaker'
@@ -548,6 +548,9 @@ export function useChat({
           // plan_tasks turn was followed by an all-reasoning reply.
           const remaining = sanitizer.flush()
           if (remaining) displayText += remaining
+          // Capture the model's reasoning (if any) BEFORE sanitizing it out, so
+          // the final message can show it as a collapsible thinking block.
+          const turnThinking = extractThinking(accumulated).thinking
           // Encapsulated "never blank" invariant (see sanitizeReasoningLeaksSafe).
           accumulated = sanitizeReasoningLeaksSafe(accumulated)
           console.log('[useChat] Stream completed:', { accumulatedLen: accumulated.length, toolCalls: toolCallsData.length, finishReason })
@@ -616,7 +619,9 @@ export function useChat({
               safeContent = emptyReplyNotice(lang)
             }
             const finalMsg: Message = {
-              id: generateId(), role: 'assistant', content: safeContent, timestamp: new Date()
+              id: generateId(), role: 'assistant', content: safeContent,
+              ...(turnThinking ? { thinking: turnThinking } : {}),
+              timestamp: new Date()
             }
             setConversations(prev => prev.map(c =>
               c.id !== convId ? c : { ...c, messages: [...c.messages, finalMsg] }

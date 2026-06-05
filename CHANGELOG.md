@@ -7,6 +7,33 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.32] — 2026-06-05
+
+### Added — Extended Thinking: exibe o raciocínio do modelo (porta a feature da Anthropic)
+
+Item #3 do backlog. Modelos de raciocínio (GLM, DeepSeek, Qwen…) emitem
+"pensamento" que o app **descartava**. Agora ele é **capturado e exibido** num
+bloco recolhível "💭 Raciocínio" acima da resposta — espelhando o Extended
+Thinking da Claude, e útil para entender os passos do agente.
+
+- **`sanitizers.ts`** — `extractThinking(raw)` (novo): contraparte *capturante*
+  do sanitizer. Usa o mesmo registro `REASONING_TAGS`, então separa exatamente o
+  que o sanitizer removeria — só que **mantém** o reasoning em vez de jogá-lo
+  fora. Só blocos completos; vazamentos parciais seguem sendo limpos.
+- **`useChat.ts`** — no streaming, captura o reasoning de `accumulated` **antes**
+  da sanitização e o anexa à mensagem final (`Message.thinking`, novo campo —
+  nunca reenviado ao provedor).
+- **`App.tsx`** — render `<details>` recolhível (colapsado por padrão) com o
+  raciocínio em markdown, acima da resposta.
+
+### Notas
+
+- 289 testes (eram 285). +4 (`extractThinking`): separa `<think>`, múltiplos
+  blocos/estilos, ausência de reasoning, e o answer limpo bate com
+  `sanitizeReasoningLeaks`. Typecheck limpo.
+- v1 cobre o caminho streaming (o usado por cloud/modal). Caminho não-streaming +
+  toggle nas Configurações ficam para follow-up.
+
 ## [2.12.31] — 2026-06-05
 
 ### Added — Prompt caching da Anthropic (porta a feature de cache da Anthropic)

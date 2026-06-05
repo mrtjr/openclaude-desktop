@@ -39,6 +39,13 @@ const REASONING_PATTERNS: RegExp[] = REASONING_TAGS.map(
   ({ start, end }) => new RegExp(`${escapeRegExp(start)}[\\s\\S]*?${escapeRegExp(end)}`, 'gi'),
 )
 
+// Capturing variant — same blocks, but exposes the inner reasoning text so
+// extractThinking can KEEP it (for an Extended-Thinking display) instead of
+// discarding it like the sanitizer does.
+const REASONING_CAPTURE: RegExp[] = REASONING_TAGS.map(
+  ({ start, end }) => new RegExp(`${escapeRegExp(start)}([\\s\\S]*?)${escapeRegExp(end)}`, 'gi'),
+)
+
 /**
  * Strip leaked reasoning/thinking blocks from model output.
  * Returns cleaned text. Safe to call on any string.
@@ -69,6 +76,27 @@ export function sanitizeReasoningLeaksSafe(raw: string): string {
   if (sanitized.trim().length > 0) return sanitized
   if (raw.trim().length > 0) return raw
   return sanitized
+}
+
+/**
+ * Split model output into its reasoning ("thinking") and the visible answer —
+ * the capturing counterpart to sanitizeReasoningLeaks. Only COMPLETE blocks
+ * are captured (using the same REASONING_TAGS registry); partial/malformed
+ * leaks are left for the sanitizer. Lets the UI show an Extended-Thinking-style
+ * collapsible block instead of throwing the reasoning away.
+ */
+export function extractThinking(raw: string): { thinking: string; answer: string } {
+  if (!raw) return { thinking: '', answer: '' }
+  const parts: string[] = []
+  let answer = raw
+  for (const pattern of REASONING_CAPTURE) {
+    answer = answer.replace(pattern, (_full, inner) => {
+      const t = String(inner).trim()
+      if (t) parts.push(t)
+      return ''
+    })
+  }
+  return { thinking: parts.join('\n\n').trim(), answer: answer.replace(/^\s+/, '') }
 }
 
 /**

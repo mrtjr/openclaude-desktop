@@ -1280,6 +1280,12 @@ export default function App() {
                     {msg.role === 'user' ? <User size={16} /> : <div className="oc-logo">OC</div>}
                   </div>
                   <div className="message-content">
+                    {msg.thinking && (
+                      <details className="thinking-block" style={{ margin: '0 0 8px' }}>
+                        <summary style={{ cursor: 'pointer', opacity: 0.65, fontSize: 12, userSelect: 'none' }}>💭 Raciocínio</summary>
+                        <div className="thinking-content" style={{ marginTop: 6, padding: '8px 12px', borderLeft: '2px solid rgba(127,127,127,0.3)', opacity: 0.8, fontSize: 13 }} dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.thinking) }} />
+                      </details>
+                    )}
                     {msg.content && <div className="message-text" dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }} />}
                     {msg.toolCalls && msg.toolCalls.map((tc, i) => {
                       const toolKey = `${msg.id}-${i}`
