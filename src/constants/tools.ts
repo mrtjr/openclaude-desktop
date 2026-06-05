@@ -236,7 +236,7 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'browser_screenshot',
-      description: 'Capture a screenshot of the current browser page. Returns base64-encoded PNG with viewport dimensions. Use this to see what the page looks like before deciding what to click. The screenshot shows the page exactly as the user sees it in the browser window.',
+      description: 'Capture a screenshot of the current browser page (shown in the app browser window) and return its viewport dimensions. Note: the image pixels are NOT sent back to you — to READ page content use browser_get_text or browser_get_forms; use the returned dimensions to target browser_click_at (x,y).',
       parameters: { type: 'object', properties: {} }
     }
   },

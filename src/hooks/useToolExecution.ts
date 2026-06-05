@@ -153,7 +153,12 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
       if (name === 'browser_screenshot') {
         const result = await window.electron.browserScreenshot()
         if (result.error) return `Screenshot error: ${result.error}`
-        return `Screenshot captured (${Math.round((result.size || 0) / 1024)}KB PNG). Base64 available for vision analysis.`
+        const kb = Math.round((result.size || 0) / 1024)
+        const dims = result.width && result.height ? `${result.width}×${result.height}` : 'viewport'
+        // Honest result: the image is shown in the app's browser window (for the
+        // human); the chat model does not receive the pixels here. Steer it to
+        // the text tools it CAN read, and give the viewport size click_at needs.
+        return `Screenshot captured: ${dims}, ${kb}KB JPEG (shown in the browser window). To read page content use browser_get_text or browser_get_forms; to interact by coordinates use browser_click_at (x,y) within ${dims}.`
       }
       // ─── Computer Use (vision-based coordinate interaction) ───────────────
       if (name === 'browser_click_at') {

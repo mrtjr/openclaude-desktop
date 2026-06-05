@@ -10,6 +10,7 @@ const { atomicWriteJSON, readJSONWithFallback } = require('./atomic-write')
 const { providerTimeoutMs } = require('./provider-timeouts')
 const { cachedSystem, withCachedTools } = require('./anthropic-cache')
 const { resolveNavOutcome } = require('./browser-nav')
+const { planScreenshot, SHOT_JPEG_QUALITY } = require('./screenshot-util')
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -1399,8 +1400,22 @@ ipcMain.handle('browser-screenshot', async () => {
   if (!bw) return { error: 'No active browser tab' }
   try {
     const image = await bw.webContents.capturePage()
-    const buf = image.toPNG()
-    return { success: true, base64: buf.toString('base64'), size: buf.length }
+    const src = image.getSize()
+    // Downscale wide viewports + encode JPEG (~10× smaller than the old full
+    // PNG). See electron/screenshot-util.js for why (hot-path waste).
+    const plan = planScreenshot({ width: src.width, height: src.height })
+    const out = plan.scaled
+      ? image.resize({ width: plan.width, height: plan.height, quality: 'good' })
+      : image
+    const buf = out.toJPEG(SHOT_JPEG_QUALITY)
+    return {
+      success: true,
+      base64: buf.toString('base64'),
+      mime: 'image/jpeg',
+      width: plan.width,
+      height: plan.height,
+      size: buf.length,
+    }
   } catch (e) { return { error: e.message } }
 })
 

@@ -7,6 +7,28 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.36] — 2026-06-05
+
+### Changed — `browser_screenshot` otimizado: JPEG comprimido + dimensões + resultado honesto
+
+Segue o pivô guiado por dados (browser automation domina o digest; `browser_screenshot`
+é 4× no hot path). O handler capturava um **PNG full-res do viewport 1280×800 (~1–3 MB)**,
+serializava o base64 pelo IPC **e o renderer descartava os bytes** (usava só o tamanho),
+devolvendo ao modelo um texto **enganoso** ("Base64 available for vision analysis" —
+falso) e **sem as dimensões** que o `browser_click_at` precisa. Puro desperdício +
+decisão pior do agente.
+
+- **Novo `electron/screenshot-util.js`** (puro/testável): `planScreenshot` reduz a
+  largura para ≤1024 preservando o aspect ratio.
+- **`browser-screenshot` (main.js)** agora faz downscale + `toJPEG(70)` (≈10× menor
+  que o PNG antigo) e retorna `mime`, `width`, `height`, `size`.
+- **`useToolExecution.ts`** devolve um resultado **honesto e útil**: dimensões do
+  viewport + orientação para usar `browser_get_text`/`browser_get_forms` (o que o
+  modelo de chat realmente consegue ler) e `browser_click_at (x,y)` dentro do viewport.
+- **Descrição do tool** (`tools.ts`) corrigida: deixa claro que os pixels NÃO voltam
+  para o modelo no loop de chat. Caminho Vision (ORION/`vision-chat`) intocado.
+- **+7 testes** (`test/screenshotUtil.test.ts`); 315 no total.
+
 ## [2.12.35] — 2026-06-05
 
 ### Fixed — Navegação de browser resiliente (timeout/redirect não descartam a página)

@@ -44,7 +44,7 @@ interface Window {
     // Browser automation (Electron BrowserWindow nativo)
     browserLaunch: (opts?: { visible?: boolean }) => Promise<{ success?: boolean; tabId?: string; error?: string }>
     browserNavigate: (url: string) => Promise<{ success?: boolean; url?: string; title?: string; text?: string; error?: string }>
-    browserScreenshot: () => Promise<{ success?: boolean; base64?: string; size?: number; error?: string }>
+    browserScreenshot: () => Promise<{ success?: boolean; base64?: string; mime?: string; width?: number; height?: number; size?: number; error?: string }>
     browserGetText: (opts?: { selector?: string; maxLength?: number }) => Promise<{ success?: boolean; text?: string; error?: string }>
     browserClick: (selector: string) => Promise<{ success?: boolean; tag?: string; text?: string; error?: string }>
     browserType: (params: { selector: string; text: string; pressEnter?: boolean }) => Promise<{ success?: boolean; error?: string }>
