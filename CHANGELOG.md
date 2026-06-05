@@ -7,6 +7,29 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.39] — 2026-06-05
+
+### Fixed — Contexto do GLM mal-detectado causava `tool_search` + timeout (bug reportado)
+
+**Causa-raiz de um bug real** (print do usuário: pesquisa de preço no Modal/GLM →
+`tool_search` → "O provedor demorou demais para responder"). Rastreado:
+`getModelContextLimit('zai-org/GLM-5.1-FP8')` **não tinha entrada GLM** e caía no
+default **8192**. Com 8.2k de contexto, a auto-deferral de ferramentas dispara
+(24 tools ≈ 2.2k / 8.2k ≈ **27% ≥ 15%**), forçando um **round-trip extra de
+`tool_search`** antes de poder usar as ferramentas — e essa segunda chamada no
+Modal/GLM (cold-start de GPU) estourava o `timeout` (o único erro do digest). Ou
+seja, contexto errado → deferral espúrio → round-trip extra → timeout.
+
+- **`contextEngine.ts`** — adicionadas entradas Z.ai/GLM ao `MODEL_CONTEXT_LIMITS`
+  (ordem específico→genérico): `glm-5.1`/`glm-5`/`glm-4.6` = 200k (janela nativa do
+  GLM-5.1, MoE 744B, abr/2026), `glm-4.5`/`glm-4`/`glm` = 128k. Cobre tanto o id do
+  Modal (`zai-org/GLM-…`) quanto o do OpenRouter (`z-ai/glm-…`).
+- Efeito: GLM agora resolve ≥128k → tools ≈ 1,7% do contexto → **deferral NÃO
+  dispara** → sem round-trip extra → o `tool_search` some do fluxo normal e a
+  pressão de timeout cai. Também corrige o corte agressivo de contexto a 8.2k.
+- **+2 testes** (id exato do bug `zai-org/GLM-5.1-FP8` → 200k; invariante de
+  deferral < 15%); 325 no total.
+
 ## [2.12.38] — 2026-06-05
 
 ### Added — Cronômetro de "pensando" (latência percebida em turnos longos)

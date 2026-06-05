@@ -128,6 +128,20 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   'gemini-2.5-pro': 1_000_000,
   'gemini-2.5-flash': 1_000_000,
   'gemini-1.5-pro': 2_000_000,
+  // Z.ai / Zhipu GLM — served via Modal (`zai-org/GLM-…`) and OpenRouter
+  // (`z-ai/glm-…`). GLM-5.1 (Apr 2026) is a 744B MoE with a 200k native window;
+  // GLM-5 / GLM-4.6 also 200k, GLM-4.5 128k. WITHOUT these the id
+  // "zai-org/GLM-5.1-FP8" fell through to the 8192 default — which made AUTO
+  // tool-deferral fire (2.2k tool schemas / 8.2k ctx ≈ 27% ≥ 15%), forcing an
+  // extra slow `tool_search` round-trip on Modal and triggering the provider
+  // `timeout` (the only error kind in the Dev Insights digest). Keys are ordered
+  // specific → generic because getModelContextLimit returns the FIRST match.
+  'glm-5.1': 200_000,
+  'glm-5': 200_000,
+  'glm-4.6': 200_000,
+  'glm-4.5': 128_000,
+  'glm-4': 128_000,
+  'glm': 128_000,
   // Common Ollama models
   'llama3': 8_192,
   'llama3.1': 128_000,

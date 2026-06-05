@@ -80,6 +80,25 @@ describe('getModelContextLimit', () => {
     expect(getModelContextLimit('some-random-local-model')).toBe(8_192)
   })
 
+  it('detects Z.ai/GLM models served via Modal/OpenRouter (regression: the timeout bug)', () => {
+    // The exact id from the Modal deployment that fell through to 8192 →
+    // spurious auto tool-deferral → extra `tool_search` round-trip → timeout.
+    expect(getModelContextLimit('zai-org/GLM-5.1-FP8')).toBe(200_000)
+    expect(getModelContextLimit('z-ai/glm-5.1')).toBe(200_000)
+    expect(getModelContextLimit('glm-4.6')).toBe(200_000)
+    expect(getModelContextLimit('glm-4.5-air')).toBe(128_000)
+    // Generic GLM fallback — never the tiny 8192 default.
+    expect(getModelContextLimit('some-glm-variant')).toBeGreaterThanOrEqual(128_000)
+  })
+
+  it('keeps any GLM window above the auto-deferral threshold (no spurious tool_search)', () => {
+    // 24 built-in tools ≈ 2.2k tokens; auto-deferral fires at ≥15% of ctx.
+    // Any GLM window (≥128k) keeps that ratio ~1.7%, well under the threshold —
+    // so the model never has to make the extra slow tool_search round-trip.
+    const glmCtx = getModelContextLimit('zai-org/GLM-5.1-FP8')
+    expect(2200 / glmCtx).toBeLessThan(0.15)
+  })
+
   it('covers all documented families', () => {
     // Guard rails: make sure we don't silently lose a model family
     expect(Object.keys(MODEL_CONTEXT_LIMITS).length).toBeGreaterThan(15)
