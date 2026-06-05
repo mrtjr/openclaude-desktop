@@ -23,7 +23,7 @@ function mapSession(s: any): AuthSession | null {
 // ── Email + password ──────────────────────────────────────────────────
 
 export async function signUpWithEmail(email: string, password: string): Promise<AuthSession> {
-  const sb = getSupabase()
+  const sb = await getSupabase()
   const { data, error } = await sb.auth.signUp({ email, password })
   if (error) throw error
   // Supabase may require email confirmation — session null until confirmed.
@@ -35,7 +35,7 @@ export async function signUpWithEmail(email: string, password: string): Promise<
 }
 
 export async function signInWithEmail(email: string, password: string): Promise<AuthSession> {
-  const sb = getSupabase()
+  const sb = await getSupabase()
   const { data, error } = await sb.auth.signInWithPassword({ email, password })
   if (error) throw error
   const session = mapSession(data.session)
@@ -65,7 +65,7 @@ export async function signInWithGoogle(): Promise<AuthSession> {
   if (result?.error) throw new Error(result.error)
   if (!result?.session) throw new Error('OAuth cancelado')
   // Persist session into Supabase client so subsequent calls use it
-  const sb = getSupabase()
+  const sb = await getSupabase()
   await sb.auth.setSession({
     access_token: result.session.access_token,
     refresh_token: result.session.refresh_token,
@@ -79,32 +79,45 @@ export async function signInWithGoogle(): Promise<AuthSession> {
 
 export async function getCurrentSession(): Promise<AuthSession | null> {
   if (!isSupabaseConfigured()) return null
-  const sb = getSupabase()
+  const sb = await getSupabase()
   const { data } = await sb.auth.getSession()
   return mapSession(data.session)
 }
 
 export async function signOut(): Promise<void> {
-  const sb = getSupabase()
+  const sb = await getSupabase()
   await sb.auth.signOut()
 }
 
 export async function sendPasswordReset(email: string): Promise<void> {
-  const sb = getSupabase()
+  const sb = await getSupabase()
   const { error } = await sb.auth.resetPasswordForEmail(email)
   if (error) throw error
 }
 
-/** Subscribe to auth state changes — returns unsubscribe fn. */
+/** Subscribe to auth state changes — returns unsubscribe fn. Keeps the
+ *  synchronous signature while the Supabase SDK loads lazily: the real
+ *  subscription is wired once the client resolves, and the returned cleanup
+ *  cancels either the pending load or the live subscription. */
 export function onAuthStateChange(
   handler: (session: AuthSession | null) => void,
 ): () => void {
   if (!isSupabaseConfigured()) return () => {}
-  const sb = getSupabase()
-  const { data } = sb.auth.onAuthStateChange((_event, session) => {
-    handler(mapSession(session))
-  })
-  return () => data.subscription.unsubscribe()
+  let unsub = () => {}
+  let cancelled = false
+  getSupabase()
+    .then((sb) => {
+      if (cancelled) return
+      const { data } = sb.auth.onAuthStateChange((_event, session) => {
+        handler(mapSession(session))
+      })
+      unsub = () => data.subscription.unsubscribe()
+    })
+    .catch((e) => console.warn('[auth] onAuthStateChange lazy load failed:', e))
+  return () => {
+    cancelled = true
+    unsub()
+  }
 }
 
 /** Expose the current user using the public supabase-js API.

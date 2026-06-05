@@ -7,6 +7,40 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.14] — 2026-06-04
+
+### Changed — Boot −196 KB: SDK do Supabase agora é lazy (local-first não paga mais)
+
+`services/supabase.ts` importava `@supabase/supabase-js` **estaticamente**, então
+o SDK inteiro (~198 KB / GoTrue + PostgREST + Realtime + Storage) entrava no
+**chunk de boot de todo mundo** — apesar de cloud sync/contas serem **opt-in** e
+o app ser local-first por padrão. A maioria que nunca loga pagava o custo.
+
+- **`getSupabase()` agora é `async`** e faz `await import('@supabase/supabase-js')`
+  por baixo — o SDK vira um **chunk dinâmico próprio**, carregado só quando um
+  usuário *configurado* realmente loga ou sincroniza. O import de tipo virou
+  `import type` (apagado no build, custo zero). O cliente continua cacheado e
+  reusado pelo resto da sessão.
+- **`isSupabaseConfigured()` segue síncrono e barato** (só lê `localStorage`) —
+  é o gate que decide *sem* tocar no SDK, então o caminho local-first nunca
+  dispara o load.
+- **`auth.ts` / `sync.ts`** — os 10 sites `getSupabase()` viraram
+  `await getSupabase()` (já estavam em funções async). `onAuthStateChange`
+  mantém a assinatura síncrona: faz o load lazy e fia a subscription quando o
+  cliente resolve; o cleanup retornado cancela o load pendente ou a subscription
+  viva.
+
+### Notas
+
+- **Boot:** o chunk de entrada caiu de **578 KB → 382 KB (−196 KB, −34 %)**; o
+  SDK (198 KB) foi para um chunk lazy separado — confirmado no build:
+  `GoTrueClient` aparece **só** no chunk dinâmico, não no entry. Zero custo no
+  boot para quem não usa contas; quem usa paga um load único no primeiro login.
+- 208 testes passando (eram 205). +3 casos (`supabase.test.ts`): gate falso sem
+  credenciais, `getSupabase()` rejeita quando não configurado (decidido antes de
+  carregar o SDK), e construção lazy do cliente real quando há credenciais.
+  Typecheck limpo.
+
 ## [2.12.13] — 2026-06-04
 
 ### Changed — Orçamento de contexto preciso: `limite − overhead real` no lugar do `0.60` cego

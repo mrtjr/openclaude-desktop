@@ -17,7 +17,11 @@
 //   4. Either set env vars at build time, or paste URL+anon key into the
 //      Account panel — same effect.
 
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+// Type-only import — erased at build, so it pulls NOTHING into the bundle.
+// The runtime SDK (~120KB+) is loaded lazily inside getSupabase() via a
+// dynamic import, keeping it out of the boot chunk for the local-first
+// majority who never configure cloud sync.
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 const LS_URL = 'oc.supabaseUrl'
 const LS_KEY = 'oc.supabaseAnonKey'
@@ -44,7 +48,7 @@ export function isSupabaseConfigured(): boolean {
   return Boolean(url && key)
 }
 
-export function getSupabase(): SupabaseClient {
+export async function getSupabase(): Promise<SupabaseClient> {
   const { url, key } = readCreds()
   if (!url || !key) {
     throw new Error(
@@ -53,6 +57,10 @@ export function getSupabase(): SupabaseClient {
     )
   }
   if (!client) {
+    // Lazy-load the SDK only when a configured user actually signs in or
+    // syncs — its own dynamic chunk, never in the boot bundle. The single
+    // cached client is reused for the rest of the session.
+    const { createClient } = await import('@supabase/supabase-js')
     client = createClient(url, key, {
       auth: {
         persistSession: true,

@@ -47,7 +47,7 @@ export async function pushItem<T>(
   passphrase?: string,
 ): Promise<void> {
   if (!isSupabaseConfigured()) throw new Error('Supabase not configured')
-  const sb = getSupabase()
+  const sb = await getSupabase()
 
   let payload: any
   if (isEncryptedKind(kind)) {
@@ -80,7 +80,7 @@ export async function pullItem<T = any>(
   passphrase?: string,
 ): Promise<SyncItem<T> | null> {
   if (!isSupabaseConfigured()) throw new Error('Supabase not configured')
-  const sb = getSupabase()
+  const sb = await getSupabase()
 
   const { data, error } = await sb
     .from('sync_items')
@@ -110,7 +110,7 @@ export async function pullItem<T = any>(
 /** Delete an item (used when user disables a sync category). */
 export async function deleteItem(userId: string, kind: SyncKind): Promise<void> {
   if (!isSupabaseConfigured()) throw new Error('Supabase not configured')
-  const sb = getSupabase()
+  const sb = await getSupabase()
   const { error } = await sb.from('sync_items').delete().eq('user_id', userId).eq('kind', kind)
   if (error) throw error
 }
