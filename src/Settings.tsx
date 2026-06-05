@@ -154,6 +154,17 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                 </label>
               </div>
 
+              {/* Extended Thinking */}
+              <div className="settings-group">
+                <label className="settings-label">
+                  <span>Mostrar raciocínio (Extended Thinking)</span>
+                  <div className={`toggle ${local.showThinking !== false ? 'on' : ''}`}
+                    onClick={() => setLocal(s => ({ ...s, showThinking: s.showThinking === false }))}>
+                    <div className="toggle-knob" />
+                  </div>
+                </label>
+              </div>
+
               {/* Memory */}
               <div className="settings-group">
                 <label className="settings-label">

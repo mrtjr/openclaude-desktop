@@ -7,6 +7,28 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.34] — 2026-06-05
+
+### Changed — Extended Thinking v2: caminho não-streaming + toggle de controle
+
+Completa o Extended Thinking (v2.12.32, que cobria só streaming).
+
+- **`useChat.ts`** — o caminho **não-streaming** (Gemini, etc.) agora também captura
+  o raciocínio (antes de sanitizar) e o anexa à mensagem final.
+- **Setting `showThinking` (default on)** em `settingsConfig.ts` + **toggle
+  "Mostrar raciocínio (Extended Thinking)"** nas Configurações. O bloco 💭 só
+  aparece se ligado — controle do usuário sobre uma feature que era sempre-ligada.
+
+### Notas
+
+- 294 testes (eram 293). +1: default `showThinking` ligado. Typecheck limpo.
+- **Estado do backlog "portar Anthropic":** os itens de maior valor estão
+  entregues (modelos 2026, prompt caching, Extended Thinking, Artifacts). Os
+  demais já existiam no projeto — **editor de memória** (o `AgentMemoryPanel` já
+  é um editor completo) e **web search com fontes** (o `web_search` já retorna
+  title+url+snippet, então o modelo já cita). Próximos ciclos: polish desses, ou
+  pivô guiado pelos dados de uso (browser automation é o hotspot real).
+
 ## [2.12.33] — 2026-06-05
 
 ### Added — Artifacts: preview ao vivo de HTML/SVG (porta os Artifacts da Claude)

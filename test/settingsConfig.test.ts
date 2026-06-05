@@ -8,6 +8,10 @@ describe('settingsConfig — loadSettings / saveSettings', () => {
     expect(loadSettings()).toEqual(DEFAULT_SETTINGS)
   })
 
+  it('defaults showThinking on (Extended Thinking visible)', () => {
+    expect(loadSettings().showThinking).toBe(true)
+  })
+
   it('merges stored values over defaults, leaving the rest intact', () => {
     localStorage.setItem('openclaude-settings', JSON.stringify({ temperature: 0.1, provider: 'openai' }))
     const s = loadSettings()

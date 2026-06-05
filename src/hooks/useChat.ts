@@ -693,6 +693,9 @@ export function useChat({
           // the streaming safety net: if sanitizing would empty the reply
           // (all-reasoning output), keep the raw text so we never save
           // a blank message after a tool-call turn.
+          // Capture the model's reasoning before it's sanitized out, so the
+          // non-streaming final message can show it (Extended Thinking).
+          const turnThinking = extractThinking(assistantMsg.content || '').thinking
           if (assistantMsg.content) {
             assistantMsg.content = sanitizeReasoningLeaksSafe(assistantMsg.content)
           }
@@ -748,7 +751,9 @@ export function useChat({
             }
             const finalMsg: Message = {
               id: generateId(), role: 'assistant',
-              content: safeContent, timestamp: new Date()
+              content: safeContent,
+              ...(turnThinking ? { thinking: turnThinking } : {}),
+              timestamp: new Date()
             }
             setConversations(prev => prev.map(c =>
               c.id !== convId ? c : { ...c, messages: [...c.messages, finalMsg] }

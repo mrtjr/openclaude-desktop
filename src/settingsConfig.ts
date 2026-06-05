@@ -28,6 +28,9 @@ export interface AppSettings {
   systemPrompt: string
   maxTokens: number
   streamingEnabled: boolean
+  /** v2.12.34 — show the model's reasoning (Extended Thinking) in a collapsible
+   *  block above the answer. Default on. */
+  showThinking?: boolean
   language: Language
   provider: Provider
   openaiApiKey: string
@@ -75,6 +78,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   systemPrompt: `Você é um assistente IA chamado OpenClaude.\n\nREGRAS OBRIGATÓRIAS:\n1. SEMPRE responda no mesmo idioma que o usuário usou. Se ele escrever em português, responda em português. Se escrever em inglês, responda em inglês.\n2. Seja direto e objetivo. Não use ferramentas desnecessariamente — só use quando o usuário pedir explicitamente uma ação no sistema.\n3. Quando o usuário disser \"ola\", \"olá\", \"oi\" ou saudações similares, apenas cumprimente de volta e pergunte como pode ajudar. NÃO liste arquivos nem execute comandos.\n4. Use ferramentas (execute_command, read_file, list_directory, etc.) SOMENTE quando o usuário pedir explicitamente.\n5. Respostas curtas para perguntas simples. Respostas detalhadas apenas quando necessário.\n6. Nunca recuse pedidos legítimos do usuário.`,
   maxTokens: 4096,
   streamingEnabled: true,
+  showThinking: true,
   language: 'pt',
   provider: 'ollama',
   openaiApiKey: '',
