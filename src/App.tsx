@@ -8,6 +8,7 @@ import CommandPalette from './components/CommandPalette'
 import Toasts from './components/Toasts'
 import OnboardingModal from './components/OnboardingModal'
 import CopyButton from './components/CopyButton'
+import { ThinkingTimer } from './components/ThinkingTimer'
 
 // Heavy feature panels — lazy-loaded on first use.
 // Saves ~1MB from initial bundle; each chunk loads async when user opens the modal.
@@ -1387,6 +1388,7 @@ export default function App() {
                 <div className="message-content">
                   <div className="agent-status-container">
                     <div className="typing-indicator"><span></span><span></span><span></span></div>
+                    <ThinkingTimer />
                     {isAgentMode && (
                       <div className="agent-badge"><Zap size={10} className="pulse" /><span>Agente: Passo {chat.agentSteps}</span></div>
                     )}

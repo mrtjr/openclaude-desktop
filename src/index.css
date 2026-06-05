@@ -446,6 +446,11 @@ body {
 .typing-indicator span:nth-child(3) { animation-delay: 0.36s; }
 @keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-7px); } }
 
+/* Elapsed-time readout next to the dots — sign of life on long Modal waits */
+.thinking-timer { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; }
+.thinking-elapsed { color: var(--text-muted); font-variant-numeric: tabular-nums; opacity: 0.8; }
+.thinking-hint { color: var(--text-muted); opacity: 0.6; font-style: italic; }
+
 /* ── Input ────────────────────────────────────────────────────── */
 .input-area {
   padding: 14px 20px 12px;

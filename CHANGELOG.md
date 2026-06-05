@@ -7,6 +7,26 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.38] — 2026-06-05
+
+### Added — Cronômetro de "pensando" (latência percebida em turnos longos)
+
+Fecha o pivô de browser/agente atacando a **latência percebida**. O digest mostra
+turnos de ~5–10 min no Modal/GLM (p95 629s) e o cold-start de GPU do Modal pode
+levar minutos até o primeiro token. Até agora, durante essa espera o usuário via
+**só três pontinhos pulando** — parece travado.
+
+- **Novo `src/components/ThinkingTimer.tsx`** — readout de tempo decorrido ao lado
+  dos pontos. O App renderiza o indicador **só na janela de espera** (loading sem
+  texto ainda), então o tempo-desde-a-montagem do componente **é** o tempo de
+  espera (sem relógio externo). Aparece após 3s (evita flicker em respostas
+  rápidas) e, após 20s, mostra a dica "modelos grandes podem levar 1–2 min…".
+- **Novo `src/utils/elapsed.ts`** (`formatElapsed`, puro/testável): `"12s"` /
+  `"2m 05s"`, com guarda p/ negativo/NaN. **+4 testes**; 323 no total.
+- `App.tsx` insere `<ThinkingTimer />` no indicador existente; `index.css` ganha
+  estilos sutis (`--text-muted`, `tabular-nums`). Sinal de vida, zero mudança de
+  backend.
+
 ## [2.12.37] — 2026-06-05
 
 ### Fixed — Timeout de provider por fase (mata o `timeout` no cold-start do Modal)
