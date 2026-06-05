@@ -22,6 +22,10 @@ release
 # TypeScript build artifacts
 *.tsbuildinfo
 
+# Claude Code runtime artifacts (loop / scheduled-task locks — not source)
+.claude/*.lock
+.claude/scheduled_tasks*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
