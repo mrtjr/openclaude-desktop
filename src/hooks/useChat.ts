@@ -5,6 +5,7 @@ import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIM
 import { partitionTools, renderDeferredManifest, decideDeferral } from '../services/toolDeferral'
 import { generateId, isSmallModel } from '../utils/formatting'
 import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice } from '../utils/sanitizers'
+import { classifyProviderError, humanizeProviderError } from '../utils/providerErrors'
 import { createContextEngine, getModelContextLimit, countToolSchemas, computeMessageBudget } from '../services/contextEngine'
 import type { ProviderConfig } from './useProviderConfig'
 
@@ -347,6 +348,11 @@ export function useChat({
       // provider. Reset per sendMessage.
       let emptyRetriesUsed = 0
       const MAX_EMPTY_RETRIES = 1
+      // Transient-failure auto-retry (rate limit / overloaded / network blip).
+      // One attempt with a short backoff, mirroring the tools-unsupported
+      // recovery below. Reset per sendMessage.
+      let transientRetriesUsed = 0
+      const MAX_TRANSIENT_RETRIES = 1
       const isToolsUnsupportedError = (msg: string | undefined): boolean => {
         if (!msg) return false
         const m = msg.toLowerCase()
@@ -498,6 +504,19 @@ export function useChat({
               steps-- // don't count the failed attempt
               continue
             }
+            // Transient failure: back off and retry once. Guarded by
+            // `!accumulated` so we never re-send after partial output already
+            // streamed (no double output / double billing).
+            const cls = classifyProviderError(err?.message)
+            if (cls.retryable && transientRetriesUsed < MAX_TRANSIENT_RETRIES && !accumulated) {
+              transientRetriesUsed++
+              setIsStreaming(false)
+              setStreamingText('')
+              showToast(humanizeProviderError(err?.message, lang) + (lang === 'en' ? ' (retrying…)' : ' (tentando de novo…)'))
+              await new Promise(r => setTimeout(r, 1500))
+              steps-- // don't count the failed attempt
+              continue
+            }
             throw err
           }
 
@@ -646,6 +665,15 @@ export function useChat({
               steps--
               continue
             }
+            // Transient failure auto-retry (mirrors the streaming path).
+            const cls = classifyProviderError(response.error)
+            if (cls.retryable && transientRetriesUsed < MAX_TRANSIENT_RETRIES) {
+              transientRetriesUsed++
+              showToast(humanizeProviderError(response.error, lang) + (lang === 'en' ? ' (retrying…)' : ' (tentando de novo…)'))
+              await new Promise(r => setTimeout(r, 1500))
+              steps--
+              continue
+            }
             throw new Error(response.error)
           }
           onProviderSuccessRef.current?.()
@@ -730,7 +758,7 @@ export function useChat({
       setStreamingText('')
       const errMsg: Message = {
         id: generateId(), role: 'assistant',
-        content: `Erro: ${e.message}`, timestamp: new Date()
+        content: humanizeProviderError(e.message, settings.language || 'pt'), timestamp: new Date()
       }
       setConversations(prev => prev.map(c =>
         c.id !== convId ? c : { ...c, messages: [...c.messages, errMsg] }

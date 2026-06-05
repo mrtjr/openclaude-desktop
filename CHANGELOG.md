@@ -7,6 +7,39 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.17] — 2026-06-04
+
+### Added — Resiliência do chat: erros humanizados + auto-retry de falhas transitórias
+
+Quando um provider falhava, o chat despejava `Erro: <mensagem crua>` (um
+`API error 429: {…}`, `HTTP 401`, um `ECONNRESET`) e a rodada simplesmente
+morria — sem recuperação para blips transitórios.
+
+- **`providerErrors.ts` (novo)** — `classifyProviderError(raw)` mapeia a
+  mensagem (códigos HTTP + palavras-chave que o `main.js` já embute) em 8 tipos
+  (`auth`, `rate_limit`, `overloaded`, `network`, `timeout`, `context`,
+  `not_found`, `unknown`) e marca como **retryable** só os genuinamente
+  transitórios (rate-limit / overload / blip de rede).
+  `humanizeProviderError(raw, lang)` devolve uma mensagem **acionável** (chave
+  inválida → "verifique em Configurações"; 429 → "aguarde alguns segundos";
+  contexto → "compacte ou inicie nova conversa"). Erros desconhecidos preservam
+  o detalhe cru, rotulado — nada fica escondido.
+- **`useChat.ts`** — em ambos os caminhos (streaming e não-streaming), uma falha
+  transitória dispara **um** auto-retry com backoff de 1,5 s, espelhando a
+  recuperação de "tools não suportadas" já existente. No streaming, o retry é
+  guardado por `!accumulated` — nunca refaz a chamada se já houve saída parcial
+  (sem dupla cobrança / texto duplicado). A bolha de erro final agora usa a
+  versão humanizada.
+
+### Notas
+
+- 234 testes passando (eram 216). +18 casos: classificação de cada tipo
+  (401/429/503/ECONNRESET/timeout/contexto/404/desconhecido), o flag retryable
+  (só transitórios), entradas vazias, e a humanização pt/en com preservação do
+  detalhe cru. Typecheck limpo.
+- O classificador é puro e testado; a fiação do retry segue o padrão de retry já
+  existente no loop (cap de 1, `steps--`, backoff). Sem mudança no caminho feliz.
+
 ## [2.12.16] — 2026-06-04
 
 ### Fixed — Custo: variantes mini/nano não são mais cobradas como o irmão maior
