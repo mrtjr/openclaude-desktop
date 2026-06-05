@@ -7,6 +7,33 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.22] — 2026-06-04
+
+### Changed — Política de tools (gate de aprovação + truncamento) testada e isolada
+
+A decisão de **pedir aprovação do usuário** antes de rodar uma tool perigosa
+(`execute_command`, `write_file`, `git_command`, `browser_*`…) e o **clamp de
+saída** moravam inline em `useToolExecution` — o hook mais sensível depois do
+chat, e **sem nenhum teste**. Uma regressão ali poderia rodar uma tool
+destrutiva sem perguntar.
+
+- **`toolPolicy.ts` (novo)** — `toolNeedsApproval(level, name)` (pura) encapsula
+  a regra: `ask`/`planning` pedem aprovação de toda tool perigosa; `auto_edits`
+  libera os edit tools (`write_file`/`git_command`/`undo_last_write`) mas ainda
+  pede o resto (ex.: `execute_command`); `ignore` não pede nada.
+  `truncateToolOutput(out)` clampa saídas > 4000 chars (cabeça+cauda+marcador).
+- **`useToolExecution.ts`** — usa os dois helpers; some o bloco inline e os
+  imports de `SAFE_TOOLS`/`DANGEROUS_TOOLS` que ficaram sem uso. Comportamento
+  idêntico — só extraído e agora coberto.
+
+### Notas
+
+- 260 testes passando (eram 253). +7 casos (`toolPolicy.test.ts`): tools
+  perigosas barradas em ask/planning, edit tools liberados só em auto_edits
+  (mas execute_command ainda barrado), `ignore` libera tudo, tools seguras nunca
+  pedem, e o truncamento (curto/limite/acima com cabeça+cauda+marcador).
+  Typecheck limpo.
+
 ## [2.12.21] — 2026-06-04
 
 ### Fixed — Circuit breaker do agente: janela deslizante (sem falso-positivo em reuso)

@@ -1,7 +1,8 @@
 import { useState, useCallback, useRef } from 'react'
 import type { AppSettings, PendingApproval, TaskPlan, Conversation } from '../types'
-import { SAFE_TOOLS, DANGEROUS_TOOLS, TOOLS } from '../constants/tools'
+import { TOOLS } from '../constants/tools'
 import { resolveToolSearch, formatToolSearchResult } from '../services/toolDeferral'
+import { toolNeedsApproval, truncateToolOutput } from '../utils/toolPolicy'
 import type { ModalKeyPool } from './useModalKeyPool'
 import type { ParallelChatResult, ParallelChatTask } from '../types/ipc'
 
@@ -282,18 +283,7 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
   const executeTool = useCallback(async (name: string, args: Record<string, any>): Promise<string> => {
     const convId = activeConvIdRef.current
     const level = settings.permissionLevel || 'ask'
-    let needsApproval = false
-
-    if (level === 'ask') {
-      needsApproval = DANGEROUS_TOOLS.has(name)
-    } else if (level === 'auto_edits') {
-      const editTools = new Set(['write_file', 'git_command', 'undo_last_write'])
-      needsApproval = DANGEROUS_TOOLS.has(name) && !editTools.has(name)
-    } else if (level === 'planning') {
-      needsApproval = DANGEROUS_TOOLS.has(name)
-    } else if (level === 'ignore') {
-      needsApproval = false
-    }
+    const needsApproval = toolNeedsApproval(level, name)
 
     if (needsApproval) {
       const approved = await requestApproval(name, args)
@@ -316,13 +306,7 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
       conversationId: convId,
     }).catch(e => console.warn('[toolExec] audit error:', e))
 
-    if (out && out.length > 4000) {
-      return out.substring(0, 2000) +
-        `\n\n...[SYSTEM TRUNCATED: Output too large. Original size was ${out.length} characters. Showing start and end only.]...\n\n` +
-        out.substring(out.length - 1500)
-    }
-
-    return out
+    return truncateToolOutput(out)
   }, [settings, executeToolRaw, requestApproval])
 
   return { pendingApproval, setPendingApproval, executeTool, executeToolRaw }
