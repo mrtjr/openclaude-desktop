@@ -1359,7 +1359,12 @@ export default function App() {
                             <>
                               <pre className="tool-call-args">{JSON.stringify(tc.arguments, null, 2)}</pre>
                               {msg.toolResults?.[i] && (
-                                <div className="tool-result"><Terminal size={12} /><pre>{msg.toolResults[i].result}</pre></div>
+                                tc.name === 'web_search'
+                                  // Render search results as markdown so the source
+                                  // links are clickable (citation-ready format from
+                                  // electron/web-search-util.js).
+                                  ? <div className="tool-result tool-result-search" dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.toolResults[i].result || '', false) }} />
+                                  : <div className="tool-result"><Terminal size={12} /><pre>{msg.toolResults[i].result}</pre></div>
                               )}
                             </>
                           )}

@@ -7,6 +7,24 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.41] — 2026-06-05
+
+### Changed — Pesquisa web turbinada (web_search é o tool nº1, 19×)
+
+Escolha do usuário, guiada por dados: `web_search` é de longe o tool mais usado.
+A engine (scraping do DuckDuckGo) não tinha dedup, nem cache, e o formato não era
+bom para citação.
+
+- **Novo `electron/web-search-util.js`** (puro/testável): `normalizeUrl` + `dedupeResults`
+  (colapsa URLs que apontam pra mesma página), `formatResults` (markdown numerado
+  **com link clicável + domínio**, pronto pra o modelo citar [1],[2]…), `cacheKey`/`isFresh`.
+- **`main.js`** — handler `web-search` agora **dedupa** + usa o formato de citação +
+  **cache em memória com TTL de 5 min** (um loop agêntico que refina a mesma query
+  não re-scrapa; cap de 50 entradas, evicção do mais antigo).
+- **`App.tsx` + `index.css`** — o resultado do `web_search` é renderizado como
+  **markdown** (fontes **clicáveis**) em vez de texto puro `<pre>`.
+- **+12 testes** (`test/webSearchUtil.test.ts`); 337 no total.
+
 ## [2.12.40] — 2026-06-05
 
 ### Added — Auto-update estilo Claude ("Reiniciar para atualizar")

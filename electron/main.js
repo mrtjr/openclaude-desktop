@@ -12,6 +12,7 @@ const { cachedSystem, withCachedTools } = require('./anthropic-cache')
 const { resolveNavOutcome } = require('./browser-nav')
 const { planScreenshot, SHOT_JPEG_QUALITY } = require('./screenshot-util')
 const { initAutoUpdater, quitAndInstall } = require('./updater')
+const { dedupeResults, formatResults, cacheKey, isFresh } = require('./web-search-util')
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -538,7 +539,21 @@ ipcMain.handle('dev-insights-clear', async () => {
 })
 
 // ─── IPC: Web search (DuckDuckGo HTML scraping) ─────────────────────
+// Turbocharged (v2.12.41 — web_search is the #1 tool): results are de-duped by
+// normalized URL, formatted as citation-ready markdown (clickable in the chat),
+// and cached briefly so an agentic loop refining the same query doesn't re-scrape.
+const WEB_SEARCH_CACHE = new Map() // cacheKey → { result, ts }
+const WEB_SEARCH_TTL_MS = 5 * 60 * 1000 // 5 min
+const WEB_SEARCH_CACHE_MAX = 50
+
 ipcMain.handle('web-search', async (event, query) => {
+  // Cache hit: an identical query within the TTL returns instantly (no re-scrape).
+  const key = cacheKey(query)
+  const cached = WEB_SEARCH_CACHE.get(key)
+  if (isFresh(cached, Date.now(), WEB_SEARCH_TTL_MS)) {
+    return { result: cached.result, error: null, cached: true }
+  }
+
   return new Promise((resolve) => {
     const encodedQuery = encodeURIComponent(query)
     const options = {
@@ -590,10 +605,14 @@ ipcMain.handle('web-search', async (event, query) => {
         idx++
       }
       if (results.length > 0) {
-        const text = results.map((r, i) =>
-          `${i + 1}. **${r.title}**\n   ${r.url}${r.snippet ? `\n   ${r.snippet}` : ''}`
-        ).join('\n\n')
-        resolve({ result: `Resultados para "${query}":\n\n${text}`, error: null })
+        const deduped = dedupeResults(results)
+        const result = formatResults(query, deduped)
+        // Cache the formatted result (evict oldest when over the cap).
+        WEB_SEARCH_CACHE.set(key, { result, ts: Date.now() })
+        if (WEB_SEARCH_CACHE.size > WEB_SEARCH_CACHE_MAX) {
+          WEB_SEARCH_CACHE.delete(WEB_SEARCH_CACHE.keys().next().value)
+        }
+        resolve({ result, error: null })
       } else {
         // Fallback to instant answer API
         https.get(`https://api.duckduckgo.com/?q=${encodedQuery}&format=json&no_html=1`, (res2) => {
