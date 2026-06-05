@@ -63,6 +63,28 @@ export function useConversations() {
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
   }, [conversations])
 
+  // ─── Flush pending save on app close ───────────────────────────
+  // The 1s debounce above drops the last change if the app closes inside
+  // its window — send a message and quit, and it's gone. Flush on
+  // beforeunload using the ref (always current, no stale closure): clear
+  // the pending timer and write immediately. The main handler is a
+  // synchronous atomicWriteJSON (v2.12.15), so even fire-and-forget here
+  // lands the save before the renderer tears down.
+  useEffect(() => {
+    const flush = () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = null
+      }
+      const convs = conversationsRef.current
+      if (convs.length > 0) {
+        window.electron.saveConversations(convs).catch(() => { /* unloading */ })
+      }
+    }
+    window.addEventListener('beforeunload', flush)
+    return () => window.removeEventListener('beforeunload', flush)
+  }, [])
+
   // ─── Immediate save (bypass debounce for critical updates) ─────
   const saveNow = useCallback(() => {
     if (conversations.length > 0) {

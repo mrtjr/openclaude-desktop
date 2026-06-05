@@ -7,6 +7,31 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.18] — 2026-06-04
+
+### Fixed — Flush no fechamento: a última mensagem não se perde mais ao sair
+
+O save de conversas é *debounced* em 1 s. Se o app fechasse dentro dessa
+janela (mandar a mensagem e fechar logo em seguida), o `setTimeout` pendente
+nunca disparava e **a última mensagem era perdida**. Complementa o Ciclo 8
+(escrita atômica evita corrupção; isto evita perder o que é recente). O
+`saveNow` exposto pelo hook existia mas **não era chamado em lugar nenhum** —
+o flush no fechamento estava de fato ausente.
+
+- **`useConversations.ts`** — novo efeito que escuta `beforeunload`: limpa o
+  timer pendente e grava **imediatamente**, lendo de `conversationsRef.current`
+  (sempre atual, sem closure obsoleto). É fire-and-forget — `beforeunload` não
+  pode `await` —, mas o handler do main escreve de forma síncrona
+  (`atomicWriteJSON`, v2.12.15), então o save chega antes do renderer encerrar.
+
+### Notas
+
+- 236 testes passando (eram 234). +2 casos (`useConversations.test.ts`, via
+  `renderHook` + `dispatchEvent('beforeunload')`): o flush grava a conversa
+  carregada ao sair, e grava a versão **mais recente** (conversa adicionada
+  após o mount aparece no save — prova o uso do ref). Typecheck limpo.
+- Sem mudança no caminho feliz — só fecha a janela de perda no encerramento.
+
 ## [2.12.17] — 2026-06-04
 
 ### Added — Resiliência do chat: erros humanizados + auto-retry de falhas transitórias
