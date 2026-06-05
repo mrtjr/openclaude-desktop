@@ -8,6 +8,7 @@ import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice } from
 import { classifyProviderError, humanizeProviderError } from '../utils/providerErrors'
 import { resolveTurnUsage } from '../utils/usage'
 import { countRecentRepeats, CIRCUIT_WINDOW } from '../utils/circuitBreaker'
+import { logInsight } from '../services/devInsights'
 import { createContextEngine, getModelContextLimit, countToolSchemas, computeMessageBudget } from '../services/contextEngine'
 import type { ProviderConfig } from './useProviderConfig'
 
@@ -275,6 +276,7 @@ export function useChat({
       if (droppedCount > 0) {
         const oldMessages = history.slice(0, droppedCount)
         trimmedHistory = history.slice(droppedCount)
+        logInsight('context', 'compaction', { dropped: droppedCount })
 
         try {
           const compactResult = await window.electron.compactContext({
@@ -371,6 +373,7 @@ export function useChat({
       }
 
       console.log('[useChat] Starting chat loop:', { provider: finalProvider, model: finalModel, useStreaming, messageCount: allMessages.length })
+      logInsight('chat', 'turn', { provider: finalProvider, model: finalModel, agent: isAgentMode, streaming: useStreaming })
 
       while (continueLoop && steps < safetyLimit) {
         if (stopRequestedRef.current) break
@@ -756,6 +759,7 @@ export function useChat({
       console.error('[useChat] Error in sendMessage:', e)
       sessionTracker.errors++
       onProviderErrorRef.current?.(e.message || 'Unknown error')
+      try { logInsight('error', classifyProviderError(e.message).kind, { provider: finalProvider, model: finalModel }) } catch { /* telemetry best-effort */ }
       setIsStreaming(false)
       setStreamingText('')
       const errMsg: Message = {
@@ -847,6 +851,7 @@ export function useChat({
         const repeats = countRecentRepeats(recentToolCalls, callSignature)
         result = `[SYSTEM INTERCEPT]: Circuit Breaker Triggered. You already called "${tc.function.name}" with these exact arguments ${repeats} times. This approach is not working. You MUST try a completely different strategy, use a different tool, or give a final text response. Do NOT repeat this call.`
         tracker.circuitBreaks++
+        logInsight('agent', 'circuit_break', { tool: tc.function.name })
       } else {
         result = await executeTool(tc.function.name, args)
       }

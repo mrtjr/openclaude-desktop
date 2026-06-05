@@ -3,6 +3,7 @@ import type { AppSettings, PendingApproval, TaskPlan, Conversation } from '../ty
 import { TOOLS } from '../constants/tools'
 import { resolveToolSearch, formatToolSearchResult } from '../services/toolDeferral'
 import { toolNeedsApproval, truncateToolOutput } from '../utils/toolPolicy'
+import { logInsight } from '../services/devInsights'
 import type { ModalKeyPool } from './useModalKeyPool'
 import type { ParallelChatResult, ParallelChatTask } from '../types/ipc'
 
@@ -289,6 +290,7 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
       const approved = await requestApproval(name, args)
       if (!approved) {
         window.electron.auditLogAppend({ tool: name, args, status: 'denied', output: '' }).catch(e => console.warn('[toolExec] audit error:', e))
+        logInsight('tool', 'denied', { name })
         return `[USER DENIED]: The user rejected execution of "${name}". Try a different approach or ask the user what they prefer.`
       }
     }
@@ -296,6 +298,7 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
     const startTime = Date.now()
     const out = await executeToolRaw(name, args)
     const duration = Date.now() - startTime
+    logInsight('tool', 'use', { name })
 
     window.electron.auditLogAppend({
       tool: name,

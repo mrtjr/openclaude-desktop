@@ -40,6 +40,12 @@ function isPathSafe(filePath) {
 const CONVERSATIONS_PATH = path.join(app.getPath('userData'), 'conversations.json')
 const ANALYTICS_PATH = path.join(app.getPath('userData'), 'analytics.json')
 const AUDIT_LOG_PATH = path.join(app.getPath('userData'), 'audit-log.json')
+// Dev Insights — privacy-safe usage telemetry (events + metadata only).
+// The digest is the small, pre-aggregated file the maintainer reads each cycle.
+const DEV_INSIGHTS_PATH = path.join(app.getPath('userData'), 'dev-insights.json')
+const DEV_INSIGHTS_DIGEST_PATH = path.join(app.getPath('userData'), 'dev-insights-digest.json')
+const DEV_INSIGHTS_CAP = 5000
+const DEV_INSIGHTS_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
 
 // ─── Analytics Engine (MCD + MASA) ──────────────────────────────────
 // Silent data collection + secure local storage with auto-purge
@@ -494,6 +500,36 @@ ipcMain.handle('save-conversations', async (event, data) => {
 
 ipcMain.handle('load-conversations', async () => {
   return loadConversations()
+})
+
+// ─── IPC: Dev Insights (privacy-safe usage telemetry) ────────────────
+ipcMain.handle('dev-insights-flush', async (event, payload) => {
+  try {
+    const events = Array.isArray(payload?.events) ? payload.events : []
+    const existing = readJSONWithFallback(DEV_INSIGHTS_PATH, [])
+    const now = Date.now()
+    let merged = (Array.isArray(existing) ? existing : []).concat(events)
+    // Auto-purge old events, then cap to the most recent N.
+    merged = merged.filter(e => e && typeof e.t === 'number' && (now - e.t) <= DEV_INSIGHTS_MAX_AGE_MS)
+    if (merged.length > DEV_INSIGHTS_CAP) merged = merged.slice(-DEV_INSIGHTS_CAP)
+    atomicWriteJSON(DEV_INSIGHTS_PATH, merged)
+    if (payload?.digest) atomicWriteJSON(DEV_INSIGHTS_DIGEST_PATH, payload.digest)
+    return { error: null }
+  } catch (e) {
+    return { error: e.message }
+  }
+})
+
+ipcMain.handle('dev-insights-load', async () => readJSONWithFallback(DEV_INSIGHTS_PATH, []))
+
+ipcMain.handle('dev-insights-clear', async () => {
+  try {
+    atomicWriteJSON(DEV_INSIGHTS_PATH, [])
+    atomicWriteJSON(DEV_INSIGHTS_DIGEST_PATH, {})
+    return { error: null }
+  } catch (e) {
+    return { error: e.message }
+  }
 })
 
 // ─── IPC: Web search (DuckDuckGo HTML scraping) ─────────────────────

@@ -137,6 +137,11 @@ contextBridge.exposeInMainWorld('electron', {
   analyticsGetInsights: () => ipcRenderer.invoke('analytics-get-insights'),
   analyticsClear: () => ipcRenderer.invoke('analytics-clear'),
 
+  // Dev Insights (privacy-safe usage telemetry — events + metadata only)
+  devInsightsFlush: (payload) => ipcRenderer.invoke('dev-insights-flush', payload),
+  devInsightsLoad: () => ipcRenderer.invoke('dev-insights-load'),
+  devInsightsClear: () => ipcRenderer.invoke('dev-insights-clear'),
+
   // ─── v1.8.0 Feature Bridges ─────────────────────────────────────────────
 
   // Prompt Vault

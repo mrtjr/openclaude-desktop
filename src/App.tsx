@@ -68,6 +68,8 @@ import { runSecurityAudit } from './utils/securityAudit'
 import { useToast } from './hooks/useToast'
 import { useAuth } from './hooks/useAuth'
 import { useSync } from './hooks/useSync'
+import { useDevInsights } from './hooks/useDevInsights'
+import { logInsight } from './services/devInsights'
 
 // ─── App ─────────────────────────────────────────────────────────────
 export default function App() {
@@ -364,6 +366,26 @@ export default function App() {
     enabled: settings.memoryEnabled,
     onToast: showToast,
   })
+
+  // ─── Dev Insights (privacy-safe usage telemetry) ───────────────
+  // Owns the flush lifecycle; gated by the existing analytics opt-out.
+  useDevInsights(settings.analyticsEnabled !== false)
+  // Record which feature panels actually get used (event + name only, no
+  // content), so improvement cycles can be prioritised from real usage.
+  const prevFeatureOpen = useRef<Record<string, boolean>>({})
+  useEffect(() => {
+    const flags: Array<[string, boolean]> = [
+      ['settings', showSettings], ['analytics', showAnalytics], ['parliament', showParliament],
+      ['promptVault', showVault], ['persona', showPersona], ['modelArena', showArena],
+      ['rag', showRAG], ['workflow', showWorkflow], ['orion', showOrion], ['vision', showVision],
+      ['codeWorkspace', showCodeWorkspace], ['profiles', showProfiles], ['scheduler', showScheduler],
+      ['agentDashboard', showAgentDashboard],
+    ]
+    for (const [name, open] of flags) {
+      if (open && !prevFeatureOpen.current[name]) logInsight('feature', 'open', { feature: name })
+      prevFeatureOpen.current[name] = open
+    }
+  }, [showSettings, showAnalytics, showParliament, showVault, showPersona, showArena, showRAG, showWorkflow, showOrion, showVision, showCodeWorkspace, showProfiles, showScheduler, showAgentDashboard])
 
   // Forward ref for sendMessage — declared early so scheduledTasks can use it
   const sendMessageRef = useRef<(text: string, convId?: string) => void>(() => {})

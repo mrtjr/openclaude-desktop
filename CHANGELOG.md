@@ -7,6 +7,43 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.24] — 2026-06-05
+
+### Added — Dev Insights: telemetria de uso (privada, local) para evolução guiada por dados
+
+Novo: o app agora **gera um log de uso** (chat + features) que o mantenedor lê a
+cada ciclo para priorizar melhorias com **dados reais**, em vez de palpite
+("você usa → eu evoluo"). **Só eventos + metadados — nunca conteúdo de mensagem.**
+
+- **`devInsights.ts` (novo)** — `logInsight(category, action, meta)` com buffer em
+  memória; `meta` aceita **só primitivos** (objetos/arrays são descartados — guarda
+  de privacidade por construção). `summarizeInsights(events)` (pura) agrega num
+  **digest**: erros por categoria, ranking de uso de features, atrito
+  (circuit-breaks, denials, respostas vazias, compactações), mix provedor/modelo,
+  uso de tools, e **notas de priorização** auto-geradas.
+- **`useDevInsights.ts` (novo)** — flush em lote (intervalo + `beforeunload`, padrão
+  do Ciclo 11), gated pelo setting existente `analyticsEnabled`.
+- **`electron/main.js` + `preload.js`** — IPC `dev-insights-flush/load/clear`. Grava
+  `dev-insights.json` (cru, cap 5000, auto-purge 30 dias) e
+  `dev-insights-digest.json` (resumo) em `userData`, via `atomicWriteJSON` (Ciclo 8).
+- **Instrumentação** — `useChat`: turno (provider/model), **erro por categoria**
+  (via `classifyProviderError`, Ciclo 10 — categoria, não o texto), compactação de
+  contexto, circuit-break. `useToolExecution`: tool usada / **negada**. `App`: abertura
+  dos 14 painéis de feature (ORION, Parliament, RAG, Arena, …). Tudo evento+nome,
+  sem conteúdo.
+
+### Notas
+
+- **Coleta:** o digest mora em `userData\openclaude-desktop\dev-insights-digest.json`
+  — pré-agregado e pequeno; é o que eu leio no início de cada ciclo. Respeita o
+  opt-out de analytics; `dev-insights-clear` apaga tudo.
+- 272 testes passando (eram 265). +7 casos (`devInsights.test.ts`): buffer/drain,
+  desabilitado não grava, **guarda de privacidade** (descarta não-primitivos),
+  agregação (erros/features/mix/atrito), janela de dias, notas, e vazio→zerado.
+  `node --check` nos arquivos do main; typecheck limpo.
+- Próximo (follow-up): painel "Dev Insights" in-app + export `.md` + instrumentação
+  adicional (retry/empty-reply/latência).
+
 ## [2.12.23] — 2026-06-04
 
 ### Changed — Streaming mais fluido: `formatMarkdown` com cache por conteúdo

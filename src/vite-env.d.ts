@@ -85,6 +85,10 @@ interface Window {
     analyticsLoad: () => Promise<any>
     analyticsGetInsights: () => Promise<any>
     analyticsClear: () => Promise<{ error: string | null }>
+    // Dev Insights (privacy-safe usage telemetry — events + metadata only)
+    devInsightsFlush: (payload: { events: import('./services/devInsights').InsightEvent[]; digest?: import('./services/devInsights').InsightsDigest }) => Promise<{ error: string | null }>
+    devInsightsLoad: () => Promise<import('./services/devInsights').InsightEvent[]>
+    devInsightsClear: () => Promise<{ error: string | null }>
     // Prompt Vault
     vaultLoad: () => Promise<{ prompts: import('./PromptVault').VaultPrompt[] }>
     vaultSave: (prompts: import('./PromptVault').VaultPrompt[]) => Promise<{ error: string | null }>
