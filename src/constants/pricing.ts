@@ -1,5 +1,5 @@
 // ─── Model Pricing ──────────────────────────────────────────────────
-// Prices per 1 million tokens (USD). Updated April 2025.
+// Prices per 1 million tokens (USD). Refreshed June 2026.
 // Ollama models are free (local). Unknown models default to $0.
 
 export interface ModelPricing {
@@ -9,6 +9,9 @@ export interface ModelPricing {
 
 export const PRICING: Record<string, ModelPricing> = {
   // OpenAI
+  'gpt-4.1': { input: 2.00, output: 8.00 },
+  'gpt-4.1-mini': { input: 0.40, output: 1.60 },
+  'gpt-4.1-nano': { input: 0.10, output: 0.40 },
   'gpt-4o': { input: 2.50, output: 10.00 },
   'gpt-4o-mini': { input: 0.15, output: 0.60 },
   'gpt-4-turbo': { input: 10.00, output: 30.00 },
@@ -86,9 +89,20 @@ function isLikelyLocalModel(model: string): boolean {
 export function getModelPricing(model: string): ModelPricing {
   if (PRICING[model]) return PRICING[model]
   const modelLower = model.toLowerCase()
+  // Prefer the LONGEST (most specific) key that is a substring of the model
+  // id. Returning the first match instead made dated variants resolve to
+  // their shorter, pricier sibling — e.g. "gpt-4o-mini-2024-07-18" matched
+  // "gpt-4o" (16× too dear), "o3-mini-2025-01-31" matched "o3" (9×).
+  let best: ModelPricing | null = null
+  let bestLen = 0
   for (const [key, pricing] of Object.entries(PRICING)) {
-    if (modelLower.includes(key.toLowerCase())) return pricing
+    const k = key.toLowerCase()
+    if (k.length > bestLen && modelLower.includes(k)) {
+      best = pricing
+      bestLen = k.length
+    }
   }
+  if (best) return best
   for (const fb of FAMILY_FALLBACK) {
     if (fb.match.test(model)) return fb.pricing
   }

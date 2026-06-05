@@ -7,6 +7,37 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.16] — 2026-06-04
+
+### Fixed — Custo: variantes mini/nano não são mais cobradas como o irmão maior
+
+`getModelPricing` resolvia modelos não-exatos pegando a **primeira** chave de
+`PRICING` que fosse substring do id. Como `gpt-4o` vem antes de `gpt-4o-mini`,
+`o1` antes de `o1-mini` e `o3` antes de `o3-mini`, qualquer id datado caía no
+irmão **maior e mais caro**:
+
+| Modelo (id datado) | Resolvia para | Erro de custo |
+|--------------------|---------------|:---:|
+| `gpt-4o-mini-2024-07-18` | `gpt-4o` | **16×** |
+| `o3-mini-2025-01-31` | `o3` | **9×** |
+| `o1-mini-2024-09-12` | `o1` | **5×** |
+
+- **Match mais longo/específico** — o passo de substring agora escolhe a
+  **chave mais longa** que casa (`gpt-4o-mini` vence `gpt-4o`), em vez da
+  primeira na ordem de inserção. Determinístico e imune à ordem do objeto.
+- **Família `gpt-4.1` adicionada** (`gpt-4.1` $2/$8, `-mini` $0.40/$1.60,
+  `-nano` $0.10/$0.40). Antes não estava na tabela e caía no fallback
+  `/^gpt-4/` → tier do **gpt-4 legado ($10/$30)**, ~5× caro demais.
+- Header atualizado (estava "April 2025").
+
+### Notas
+
+- 216 testes passando (eram 214). +2 casos: variantes datadas mini/nano
+  resolvem ao próprio tier (não ao irmão maior), e a família `gpt-4.1` é mais
+  barata que o `gpt-4` legado. O `FAMILY_FALLBACK` (já ordenado específico-
+  primeiro) e a detecção de modelos locais seguem inalterados. Typecheck limpo.
+- Só afeta o dashboard de custo/uso (estimativa); modelos locais continuam $0.
+
 ## [2.12.15] — 2026-06-04
 
 ### Fixed — Persistência atômica: fim do risco de perder TODAS as conversas

@@ -39,6 +39,24 @@ describe('getModelPricing', () => {
     const gflash = getModelPricing('gemini-3.0-flash')
     expect(gflash.input).toBeLessThan(1)
   })
+
+  it('resolves dated mini/nano variants to their own tier, not the pricier sibling', () => {
+    // Regression: the substring step returned the first (shorter) key, so a
+    // dated gpt-4o-mini was priced as gpt-4o (16×), o3-mini as o3 (9×).
+    // Longest-match fixes it.
+    expect(getModelPricing('gpt-4o-mini-2024-07-18')).toEqual(PRICING['gpt-4o-mini'])
+    expect(getModelPricing('openai/o1-mini-2024-09-12')).toEqual(PRICING['o1-mini'])
+    expect(getModelPricing('o3-mini-2025-01-31')).toEqual(PRICING['o3-mini'])
+  })
+
+  it('prices the gpt-4.1 family at its own (cheaper) tier, not legacy gpt-4', () => {
+    expect(getModelPricing('gpt-4.1')).toEqual(PRICING['gpt-4.1'])
+    expect(getModelPricing('gpt-4.1-mini')).toEqual(PRICING['gpt-4.1-mini'])
+    expect(getModelPricing('gpt-4.1-nano')).toEqual(PRICING['gpt-4.1-nano'])
+    // Dated variant lands on the right tier via longest-match (not gpt-4).
+    expect(getModelPricing('gpt-4.1-2025-04-14')).toEqual(PRICING['gpt-4.1'])
+    expect(getModelPricing('gpt-4.1').input).toBeLessThan(PRICING['gpt-4'].input)
+  })
 })
 
 describe('calculateCost', () => {
