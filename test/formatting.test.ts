@@ -1,5 +1,34 @@
 import { describe, it, expect } from 'vitest'
-import { isSmallModel, generateId, getRelativeTime } from '../src/utils/formatting'
+import { isSmallModel, generateId, getRelativeTime, formatMarkdown } from '../src/utils/formatting'
+
+describe('formatMarkdown (cached)', () => {
+  it('renders markdown to sanitized HTML', () => {
+    expect(formatMarkdown('**bold**')).toContain('<strong>bold</strong>')
+    expect(formatMarkdown('`code`')).toContain('<code')
+  })
+
+  it('returns consistent output on repeated calls (cache hit)', () => {
+    const md = '# Title\n\nsome **text** and a list:\n- a\n- b'
+    expect(formatMarkdown(md)).toBe(formatMarkdown(md))
+  })
+
+  it('cached and uncached paths agree', () => {
+    const md = '## H2\n\n`inline` and _em_'
+    expect(formatMarkdown(md, false)).toBe(formatMarkdown(md, true))
+  })
+
+  it('does not cross-contaminate distinct cache entries', () => {
+    const a = formatMarkdown('alpha **A**')
+    const b = formatMarkdown('beta _B_')
+    expect(formatMarkdown('alpha **A**')).toBe(a)
+    expect(formatMarkdown('beta _B_')).toBe(b)
+    expect(a).not.toBe(b)
+  })
+
+  it('returns empty string for empty input', () => {
+    expect(formatMarkdown('')).toBe('')
+  })
+})
 
 describe('isSmallModel', () => {
   it('cloud models are NOT classified as small', () => {

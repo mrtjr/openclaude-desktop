@@ -7,7 +7,7 @@ import { marked } from 'marked'
 // the getLanguage() guard below — a worthwhile trade for a ~800KB lighter boot.
 import hljs from 'highlight.js/lib/common'
 import DOMPurify from 'dompurify'
-import { ensureKatex, isKatexReady, hasMath } from './katexLoader'
+import { ensureKatex, isKatexReady, hasMath, onKatexReady } from './katexLoader'
 
 // Configure marked
 marked.setOptions({ breaks: true, gfm: true })
@@ -19,12 +19,33 @@ renderer.code = ({ text, lang }: any) => {
 }
 marked.use({ renderer })
 
-export function formatMarkdown(text: string): string {
+// Cache rendered HTML by source text. formatMarkdown is pure given the KaTeX
+// ready-state, but the chat re-runs it for EVERY message on every streamed
+// token (App re-renders per token), so a long conversation re-parses all of
+// its markdown on each token — visible jank. Caching makes the stable
+// messages O(1); only the growing streaming text actually re-renders. Cleared
+// when KaTeX finishes loading, since math output changes from raw to typeset.
+const FORMAT_CACHE = new Map<string, string>()
+const FORMAT_CACHE_CAP = 600
+onKatexReady(() => FORMAT_CACHE.clear())
+
+/** Render markdown → sanitized HTML. Pass `cache=false` for transient content
+ *  (the live streaming text) so it doesn't evict stable message entries. */
+export function formatMarkdown(text: string, cache = true): string {
+  if (!text) return ''
+  if (cache) {
+    const hit = FORMAT_CACHE.get(text)
+    if (hit !== undefined) return hit
+  }
   // Lazy-load KaTeX the first time math appears. This render stays plain and
   // upgrades to typeset output once the lib is ready (see useMathReady).
   if (!isKatexReady() && hasMath(text)) ensureKatex()
-  const html = marked.parse(text) as string
-  return DOMPurify.sanitize(html)
+  const html = DOMPurify.sanitize(marked.parse(text) as string)
+  if (cache) {
+    if (FORMAT_CACHE.size >= FORMAT_CACHE_CAP) FORMAT_CACHE.clear()
+    FORMAT_CACHE.set(text, html)
+  }
+  return html
 }
 
 export function generateId(): string {

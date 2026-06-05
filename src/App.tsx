@@ -1322,7 +1322,7 @@ export default function App() {
               <div className="message message-assistant">
                 <div className="message-avatar"><div className="oc-logo">OC</div></div>
                 <div className="message-content">
-                  <div className="message-text" dangerouslySetInnerHTML={{ __html: formatMarkdown(chat.streamingText) }} />
+                  <div className="message-text" dangerouslySetInnerHTML={{ __html: formatMarkdown(chat.streamingText, false) }} />
                   <span className="streaming-cursor" />
                 </div>
               </div>

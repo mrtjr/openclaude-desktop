@@ -7,6 +7,33 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.23] — 2026-06-04
+
+### Changed — Streaming mais fluido: `formatMarkdown` com cache por conteúdo
+
+As mensagens são renderizadas inline em `App` chamando `formatMarkdown(msg.content)`
+direto no `.map`. Como o `App` re-renderiza **a cada token** do streaming
+(`setStreamingText`), uma conversa de N mensagens re-parseava **todo** o
+markdown (marked + DOMPurify + highlight) a cada token — `O(N)` por token,
+travando visivelmente em conversas longas.
+
+- **`formatting.ts`** — `formatMarkdown` ganha um **cache por texto-fonte**
+  (`Map`, cap 600). Mensagens estáveis viram **`O(1)`** (formatam uma vez); só o
+  texto em streaming, que muda a cada token, re-renderiza. O cache é **limpo
+  quando o KaTeX termina de carregar** (a saída de matemática muda de cru para
+  tipografado). A chamada do streaming passa `cache=false` para não poluir/
+  despejar as entradas estáveis com strings transitórias.
+
+### Notas
+
+- 265 testes passando (eram 260). +5 casos: render correto, consistência em
+  chamadas repetidas (cache hit), concordância caminho cacheado vs não, ausência
+  de contaminação entre entradas distintas, e input vazio. O teste de KaTeX
+  lazy segue verde (o clear-on-ready garante que a matemática "sobe" para
+  tipografada). Typecheck limpo.
+- Sem mudança visual — só elimina o trabalho redundante de render durante o
+  streaming. Determinístico: a única transição de saída (KaTeX) invalida o cache.
+
 ## [2.12.22] — 2026-06-04
 
 ### Changed — Política de tools (gate de aprovação + truncamento) testada e isolada
