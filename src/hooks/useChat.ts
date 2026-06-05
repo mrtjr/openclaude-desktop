@@ -7,6 +7,7 @@ import { generateId, isSmallModel } from '../utils/formatting'
 import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice } from '../utils/sanitizers'
 import { classifyProviderError, humanizeProviderError } from '../utils/providerErrors'
 import { resolveTurnUsage } from '../utils/usage'
+import { countRecentRepeats, CIRCUIT_WINDOW } from '../utils/circuitBreaker'
 import { createContextEngine, getModelContextLimit, countToolSchemas, computeMessageBudget } from '../services/contextEngine'
 import type { ProviderConfig } from './useProviderConfig'
 
@@ -839,8 +840,12 @@ export function useChat({
         activeMemory = args as any
         setConversations(prev => prev.map(c => c.id !== convId ? c : { ...c, workingMemory: args }))
         result = `[SYSTEM]: Working memory updated successfully.`
-      } else if (recentToolCalls.filter(c => c === callSignature).length >= 2) {
-        result = `[SYSTEM INTERCEPT]: Circuit Breaker Triggered. You already called "${tc.function.name}" with these exact arguments ${recentToolCalls.filter(c => c === callSignature).length} times. This approach is not working. You MUST try a completely different strategy, use a different tool, or give a final text response. Do NOT repeat this call.`
+      } else if (countRecentRepeats(recentToolCalls, callSignature) >= 2) {
+        // Loop guard: the same exact call appeared ≥2× within the recent
+        // window (not across the whole session — a tool legitimately reused
+        // much later shouldn't trip it). This is the 3rd identical attempt.
+        const repeats = countRecentRepeats(recentToolCalls, callSignature)
+        result = `[SYSTEM INTERCEPT]: Circuit Breaker Triggered. You already called "${tc.function.name}" with these exact arguments ${repeats} times. This approach is not working. You MUST try a completely different strategy, use a different tool, or give a final text response. Do NOT repeat this call.`
         tracker.circuitBreaks++
       } else {
         result = await executeTool(tc.function.name, args)
@@ -849,6 +854,11 @@ export function useChat({
       tracker.toolCalls++
       tracker.toolsUsed[tc.function.name] = (tracker.toolsUsed[tc.function.name] || 0) + 1
       recentToolCalls.push(callSignature)
+      // Bound the signature history to the detection window so it can't grow
+      // unbounded over a long agent session.
+      if (recentToolCalls.length > CIRCUIT_WINDOW) {
+        recentToolCalls.splice(0, recentToolCalls.length - CIRCUIT_WINDOW)
+      }
       toolResults.push({ toolCallId: tc.id, name: tc.function.name, result })
     }
 

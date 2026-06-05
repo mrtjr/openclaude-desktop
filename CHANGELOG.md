@@ -7,6 +7,33 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.21] — 2026-06-04
+
+### Fixed — Circuit breaker do agente: janela deslizante (sem falso-positivo em reuso)
+
+O circuit breaker do loop do agente contava chamadas idênticas (nome + args)
+em **toda a sessão**: `recentToolCalls.filter(c => c === sig).length >= 2`.
+Numa sessão longa, uma tool legitimamente reusada bem depois (o mesmo
+`list_directory` no mesmo path no passo 3 e no 40) **disparava um break falso**
+— "você já chamou isso, mude de estratégia" — mesmo sem loop nenhum. E o array
+de assinaturas crescia **sem limite**.
+
+- **`circuitBreaker.ts` (novo)** — `countRecentRepeats(recent, sig, window)`
+  conta repetições só nas **últimas `CIRCUIT_WINDOW` (8) chamadas**. Um loop
+  travado é repetição rápida (cai na janela e dispara no 3º idêntico, como
+  antes); reuso distante sai da janela e não dispara.
+- **`useChat.ts`** — o breaker usa o helper, e `recentToolCalls` é **limitado**
+  à janela após cada push (não cresce mais indefinidamente em sessões longas de
+  agente).
+
+### Notas
+
+- 253 testes passando (eram 249). +4 casos (`circuitBreaker.test.ts`): contagem
+  na janela, disparo no 3º consecutivo, repetição antiga fora da janela
+  ignorada, e janela customizada. Typecheck limpo.
+- Comportamento para loops reais é idêntico (3 chamadas idênticas seguidas ainda
+  disparam); só elimina o falso-positivo em reuso espaçado.
+
 ## [2.12.20] — 2026-06-04
 
 ### Changed — Boot mais leve: modal de Settings agora é lazy + carga de settings testada
