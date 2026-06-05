@@ -7,6 +7,31 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.26] — 2026-06-05
+
+### Fixed — Timeout de provider por categoria (1º ciclo guiado por dados do Dev Insights)
+
+**Motivado pela telemetria:** o digest do Dev Insights registrou um erro
+`timeout` real no provider **`modal`** (modelo GLM-5.1-FP8). O Modal Research
+faz cold-start de um modelo grande num container de GPU, que pode levar bem mais
+de 60s até o primeiro byte — e o timeout **fixo de 60s** do processo main
+abortava a requisição espuriamente.
+
+- **`electron/provider-timeouts.js` (novo)** — `providerTimeoutMs(provider)`:
+  **Modal → 180s** (cold start + inferência de modelo grande); **demais → 90s**
+  (folga para primeiro-token lento / modelos de raciocínio). Sempre acima dos
+  60s antigos.
+- **`electron/main.js`** — os dois sites de timeout (provider-chat e
+  provider-chat-stream) usam o helper; a mensagem de erro reflete o valor real.
+
+### Notas
+
+- 276 testes (eram 273). +3 casos (`providerTimeouts.test.ts`): Modal mais
+  longo, default generoso para os demais, e sempre > 60s. `node --check` no
+  main; typecheck limpo.
+- **Marco:** primeira melhoria escolhida a partir de dados reais de uso (o loop
+  de evolução guiada por dados está funcionando — o app reporta, eu priorizo).
+
 ## [2.12.25] — 2026-06-05
 
 ### Added — Dev Insights: sinais de latência e retry (telemetria mais completa)

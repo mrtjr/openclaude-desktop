@@ -7,6 +7,7 @@ const https = require('https')
 
 const os = require('os')
 const { atomicWriteJSON, readJSONWithFallback } = require('./atomic-write')
+const { providerTimeoutMs } = require('./provider-timeouts')
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -959,7 +960,8 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
       })
     })
     req.on('error', (e) => resolve({ error: e.message }))
-    req.setTimeout(60000, () => { req.destroy(); resolve({ error: 'Provider request timeout after 60s' }) })
+    const reqTimeoutMs = providerTimeoutMs(provider)
+    req.setTimeout(reqTimeoutMs, () => { req.destroy(); resolve({ error: `Provider request timeout after ${reqTimeoutMs / 1000}s` }) })
     req.write(body)
     req.end()
   })
@@ -1131,7 +1133,8 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
     })
 
     req.on('error', (err) => { sendDone(err.message); resolve({ ok: false, error: err.message }) })
-    req.setTimeout(60000, () => { req.destroy(); sendDone('Provider request timeout after 60s') })
+    const reqTimeoutMs = providerTimeoutMs(provider)
+    req.setTimeout(reqTimeoutMs, () => { req.destroy(); sendDone(`Provider request timeout after ${reqTimeoutMs / 1000}s`) })
     activeProviderStream = req
     req.write(body)
     req.end()
