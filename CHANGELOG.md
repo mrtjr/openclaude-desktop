@@ -7,6 +7,30 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.29] — 2026-06-05
+
+### Changed — Dev Insights: latência por-passo (confiável) + nota da tool mais usada
+
+**Guiado pelos dados reais:** o digest mostrou `latency.avg = 385s` — porque a
+métrica media a **sessão de agente inteira** (browsing multi-step de minutos),
+não a latência de resposta. Conflava duração-da-tarefa com velocidade-de-resposta.
+
+- **`useChat.ts`** — o evento `chat/complete` agora reporta `ms` = **tempo médio
+  de resposta por passo** (`avgRT`, reusado do registro de analytics), com
+  `totalMs` (duração total) e `steps` à parte. A métrica de latência do digest
+  passa a refletir **velocidade de resposta de verdade**, decoplada do nº de
+  passos do agente.
+- **`devInsights.ts`** — `buildNotes` ganha "Tool mais usada" (≥3×), destacando o
+  hotspot de uso real. (Os dados atuais apontam **browser automation** —
+  navigate/screenshot/get_text/scroll/links/forms — como a área mais usada.)
+
+### Notas
+
+- 278 testes (eram 277). +1 caso: nota da tool mais usada. Typecheck limpo.
+- **Direção de dados:** com 24 eventos reais, o uso se concentra em **automação
+  de browser** via agente no provider `modal`. Próximos ciclos guiados por dados
+  devem priorizar essa área.
+
 ## [2.12.28] — 2026-06-05
 
 ### Added — Painel "Dev Insights" in-app + export `.md` (visibilidade ao usuário)

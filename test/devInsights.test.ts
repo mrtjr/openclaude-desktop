@@ -99,6 +99,13 @@ describe('summarizeInsights', () => {
     expect(md).toContain('## Atrito')
   })
 
+  it('notes the most-used tool when frequent (surfaces the real-usage hotspot)', () => {
+    const events = Array.from({ length: 3 }, () => ev('tool', 'use', { name: 'browser_navigate' }))
+    const d = summarizeInsights(events, 30, now)
+    expect(d.toolUsage).toEqual({ browser_navigate: 3 })
+    expect(d.notes.some((n) => /browser_navigate/.test(n))).toBe(true)
+  })
+
   it('empty input → zeroed digest', () => {
     const d = summarizeInsights([], 30, now)
     expect(d.totalEvents).toBe(0)

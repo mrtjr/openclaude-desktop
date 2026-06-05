@@ -781,13 +781,17 @@ export function useChat({
       setIsStreaming(false)
       setStreamingText('')
       setStreamingConvId(null)
-      logInsight('chat', 'complete', { ms: Date.now() - sessionTracker.startTime, steps: sessionTracker.agentSteps })
+      // Per-STEP response latency, decoupled from total agent-run length: a
+      // multi-step browsing session runs for minutes and would otherwise
+      // masquerade as "latency" in the digest (observed: 385s avg). Reused for
+      // both telemetry and the analytics session record below.
+      const avgRT = sessionTracker.responseTimes.length > 0
+        ? Math.round(sessionTracker.responseTimes.reduce((a, b) => a + b, 0) / sessionTracker.responseTimes.length)
+        : 0
+      logInsight('chat', 'complete', { ms: avgRT, totalMs: Date.now() - sessionTracker.startTime, steps: sessionTracker.agentSteps })
 
       // Save session analytics
       if (settings.analyticsEnabled !== false) {
-        const avgRT = sessionTracker.responseTimes.length > 0
-          ? Math.round(sessionTracker.responseTimes.reduce((a, b) => a + b, 0) / sessionTracker.responseTimes.length)
-          : 0
         window.electron.analyticsSaveSession({
           toolCalls: sessionTracker.toolCalls,
           errors: sessionTracker.errors,

@@ -116,6 +116,10 @@ function buildNotes(d: Omit<InsightsDigest, 'notes'>): string[] {
     const top = Object.entries(d.featureUsage).sort((a, b) => b[1] - a[1])[0]
     notes.push(`Feature mais usada: "${top[0]}" (${top[1]}×).`)
   }
+  const topTool = Object.entries(d.toolUsage).sort((a, b) => b[1] - a[1])[0]
+  if (topTool && topTool[1] >= 3) {
+    notes.push(`Tool mais usada: "${topTool[0]}" (${topTool[1]}×) — área de maior uso real.`)
+  }
   return notes
 }
 
