@@ -610,9 +610,11 @@ export function useChat({
             // truncation, provider glitch). Surface a human-readable
             // note instead of a blank bubble so the user sees the
             // session ended rather than "something broke silently".
-            const safeContent = accumulated.trim().length > 0
-              ? accumulated
-              : emptyReplyNotice(lang)
+            let safeContent = accumulated
+            if (accumulated.trim().length === 0) {
+              logInsight('chat', 'empty_reply', { provider: finalProvider, model: finalModel })
+              safeContent = emptyReplyNotice(lang)
+            }
             const finalMsg: Message = {
               id: generateId(), role: 'assistant', content: safeContent, timestamp: new Date()
             }
@@ -734,9 +736,11 @@ export function useChat({
             ]
           } else {
             const raw = (assistantMsg.content || '').trim()
-            const safeContent = raw.length > 0
-              ? assistantMsg.content
-              : emptyReplyNotice(lang)
+            let safeContent = assistantMsg.content
+            if (raw.length === 0) {
+              logInsight('chat', 'empty_reply', { provider: finalProvider, model: finalModel })
+              safeContent = emptyReplyNotice(lang)
+            }
             const finalMsg: Message = {
               id: generateId(), role: 'assistant',
               content: safeContent, timestamp: new Date()

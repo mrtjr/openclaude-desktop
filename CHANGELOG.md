@@ -7,6 +7,25 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.27] — 2026-06-05
+
+### Added — Dev Insights: sinal `empty_reply` (telemetria completa)
+
+Último sinal de atrito que faltava: `useChat` agora emite `chat/empty_reply`
+(com provider/model) quando o modelo retorna uma resposta vazia — nos dois
+caminhos (streaming e não-streaming), exatamente onde a `emptyReplyNotice` é
+usada. Alimenta `friction.emptyReplies` no digest, fechando a cobertura de
+telemetria (erros, atrito, features, latência, mix).
+
+### Notas
+
+- 276 testes (a agregação de `empty_reply` já era coberta em `devInsights.test.ts`).
+  Typecheck limpo. Só eventos+metadados.
+- **Estado do backlog:** com a telemetria completa, as melhorias de alto/médio
+  impacto identificáveis por leitura de código estão esgotadas (18 ciclos + 2
+  features). Daqui pra frente, o maior valor vem de **dados reais de uso** — use
+  a build e o digest guiará os próximos ciclos.
+
 ## [2.12.26] — 2026-06-05
 
 ### Fixed — Timeout de provider por categoria (1º ciclo guiado por dados do Dev Insights)
