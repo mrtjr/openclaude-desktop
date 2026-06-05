@@ -6,6 +6,7 @@ const http = require('http')
 const https = require('https')
 
 const os = require('os')
+const { atomicWriteJSON, readJSONWithFallback } = require('./atomic-write')
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -64,7 +65,7 @@ function saveAnalytics(data) {
     if (data.sessions && data.sessions.length > 500) {
       data.sessions = data.sessions.slice(-500)
     }
-    fs.writeFileSync(ANALYTICS_PATH, JSON.stringify(data, null, 2), 'utf-8')
+    atomicWriteJSON(ANALYTICS_PATH, data)
     return { error: null }
   } catch (e) {
     return { error: e.message }
@@ -73,19 +74,14 @@ function saveAnalytics(data) {
 
 // ─── Conversations persistence ───────────────────────────────────────
 function loadConversations() {
-  try {
-    if (fs.existsSync(CONVERSATIONS_PATH)) {
-      return JSON.parse(fs.readFileSync(CONVERSATIONS_PATH, 'utf-8'))
-    }
-  } catch (e) {
-    console.error('Failed to load conversations:', e)
-  }
-  return []
+  // Falls back to the .bak rotation if the primary file is ever missing or
+  // corrupt, so a bad shutdown can't wipe the user's whole history.
+  return readJSONWithFallback(CONVERSATIONS_PATH, [])
 }
 
 function saveConversations(data) {
   try {
-    fs.writeFileSync(CONVERSATIONS_PATH, JSON.stringify(data, null, 2), 'utf-8')
+    atomicWriteJSON(CONVERSATIONS_PATH, data)
     return { error: null }
   } catch (e) {
     return { error: e.message }
@@ -747,7 +743,7 @@ function loadMemory() {
 
 function saveMemory(data) {
   try {
-    fs.writeFileSync(MEMORY_PATH, JSON.stringify(data, null, 2), 'utf-8')
+    atomicWriteJSON(MEMORY_PATH, data)
     return { error: null }
   } catch (e) {
     return { error: e.message }
@@ -1804,7 +1800,7 @@ function saveAuditLog(entries) {
   try {
     // Keep max 1000 entries, auto-purge old
     const trimmed = entries.slice(-1000)
-    fs.writeFileSync(AUDIT_LOG_PATH, JSON.stringify(trimmed, null, 2), 'utf-8')
+    atomicWriteJSON(AUDIT_LOG_PATH, trimmed)
   } catch (e) { console.error('[audit-log] save error:', e) }
 }
 
@@ -2161,7 +2157,7 @@ ipcMain.handle('vault-load', async () => {
 })
 
 ipcMain.handle('vault-save', async (event, prompts) => {
-  try { fs.writeFileSync(VAULT_PATH, JSON.stringify(prompts, null, 2), 'utf-8'); return { error: null } }
+  try { atomicWriteJSON(VAULT_PATH, prompts); return { error: null } }
   catch (e) { return { error: e.message } }
 })
 
@@ -2174,7 +2170,7 @@ ipcMain.handle('persona-load', async () => {
 })
 
 ipcMain.handle('persona-save', async (event, personas) => {
-  try { fs.writeFileSync(PERSONAS_PATH, JSON.stringify(personas, null, 2), 'utf-8'); return { error: null } }
+  try { atomicWriteJSON(PERSONAS_PATH, personas); return { error: null } }
   catch (e) { return { error: e.message } }
 })
 
@@ -2187,7 +2183,7 @@ ipcMain.handle('arena-load', async () => {
 })
 
 ipcMain.handle('arena-save', async (event, scores) => {
-  try { fs.writeFileSync(ARENA_PATH, JSON.stringify(scores, null, 2), 'utf-8'); return { error: null } }
+  try { atomicWriteJSON(ARENA_PATH, scores); return { error: null } }
   catch (e) { return { error: e.message } }
 })
 
@@ -2200,7 +2196,7 @@ ipcMain.handle('workflow-load', async () => {
 })
 
 ipcMain.handle('workflow-save', async (event, workflows) => {
-  try { fs.writeFileSync(WORKFLOWS_PATH, JSON.stringify(workflows, null, 2), 'utf-8'); return { error: null } }
+  try { atomicWriteJSON(WORKFLOWS_PATH, workflows); return { error: null } }
   catch (e) { return { error: e.message } }
 })
 
@@ -2266,7 +2262,7 @@ ipcMain.handle('rag-index-load', async () => {
 })
 
 ipcMain.handle('rag-index-save', async (event, chunks) => {
-  try { fs.writeFileSync(RAG_INDEX_PATH, JSON.stringify(chunks), 'utf-8'); return { error: null } }
+  try { atomicWriteJSON(RAG_INDEX_PATH, chunks, false); return { error: null } }
   catch (e) { return { error: e.message } }
 })
 
@@ -2294,7 +2290,7 @@ ipcMain.handle('rag-search', async (event, { queryEmbedding, topK = 5 }) => {
 })
 
 ipcMain.handle('rag-clear', async () => {
-  try { fs.writeFileSync(RAG_INDEX_PATH, '[]', 'utf-8'); return { error: null } }
+  try { atomicWriteJSON(RAG_INDEX_PATH, [], false); return { error: null } }
   catch (e) { return { error: e.message } }
 })
 

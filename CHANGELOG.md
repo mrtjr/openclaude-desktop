@@ -7,6 +7,44 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.15] — 2026-06-04
+
+### Fixed — Persistência atômica: fim do risco de perder TODAS as conversas
+
+Todo store do processo main gravava com `fs.writeFileSync(PATH, JSON.stringify(...))`,
+que **trunca o arquivo antes de escrever**. Um crash, disco cheio ou queda de
+energia **no meio da escrita** deixava o arquivo pela metade → o `JSON.parse` do
+próximo boot estourava e **o store inteiro se perdia** (conversas, vault,
+personas, memória do agente, workflows, RAG…). Para um app cujo valor primário é
+o histórico do usuário, essa era a falha de maior severidade — e silenciosa.
+
+- **`electron/atomic-write.js` (novo)** — `atomicWriteJSON(path, data, pretty?)`
+  escreve num `.tmp` irmão, faz `fsync`, **rotaciona** o arquivo atual para
+  `.bak` (rename barato, sem cópia) e então faz `rename` do `.tmp` sobre o alvo.
+  `rename` é **atômico** no mesmo filesystem: um leitor sempre vê o arquivo
+  antigo completo ou o novo completo — nunca um truncado.
+  `readJSONWithFallback(path, fallback)` lê o alvo e, se faltar ou estiver
+  corrompido, cai para o `.bak` e depois para o `fallback`. Nunca lança.
+- **`electron/main.js`** — as 10 escritas de stores passaram a usar
+  `atomicWriteJSON` (conversas, analytics, audit-log, memória, vault, personas,
+  arena, workflows, índice RAG e o clear do RAG). `loadConversations` agora usa
+  `readJSONWithFallback`, então um desligamento ruim não zera o histórico —
+  recupera a versão anterior do `.bak`. (As escritas de `write_file` do usuário e
+  do script temporário do ORION seguem diretas de propósito: path arbitrário /
+  efêmero, onde o rename de irmão não se aplica.)
+- **`electron/ipc-agent-memory.js`** — mesma blindagem no store de memória do
+  agente (save atômico + load com fallback).
+
+### Notas
+
+- 214 testes passando (eram 208). +6 casos (`atomicWrite.test.ts`, contra o
+  filesystem real num dir temporário): round-trip, fallback sem arquivo, sem
+  `.tmp` residual, rotação para `.bak`, **recuperação do `.bak` quando o primário
+  é corrompido**, e saída compacta vs pretty. `node --check` confirma a sintaxe
+  dos arquivos do main process (que o vitest não executa). Typecheck limpo.
+- Sem mudança de comportamento visível — só durabilidade. Os arquivos `.bak`
+  aparecem ao lado dos stores em `userData` (uma versão anterior de cada).
+
 ## [2.12.14] — 2026-06-04
 
 ### Changed — Boot −196 KB: SDK do Supabase agora é lazy (local-first não paga mais)

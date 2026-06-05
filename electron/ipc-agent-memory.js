@@ -7,7 +7,7 @@
 
 module.exports = function registerAgentMemoryHandlers(ipcMain, app) {
   const path = require('path')
-  const fs   = require('fs')
+  const { atomicWriteJSON, readJSONWithFallback } = require('./atomic-write')
 
   const AGENT_MEMORY_PATH = path.join(app.getPath('userData'), 'agent-memory.json')
 
@@ -22,18 +22,13 @@ module.exports = function registerAgentMemoryHandlers(ipcMain, app) {
   }
 
   function loadAgentMemory() {
-    try {
-      if (fs.existsSync(AGENT_MEMORY_PATH)) {
-        const raw = JSON.parse(fs.readFileSync(AGENT_MEMORY_PATH, 'utf-8'))
-        return { ...defaultMemory(), ...raw }
-      }
-    } catch {}
-    return defaultMemory()
+    const raw = readJSONWithFallback(AGENT_MEMORY_PATH, null)
+    return raw ? { ...defaultMemory(), ...raw } : defaultMemory()
   }
 
   function saveAgentMemory(data) {
     try {
-      fs.writeFileSync(AGENT_MEMORY_PATH, JSON.stringify(data, null, 2), 'utf-8')
+      atomicWriteJSON(AGENT_MEMORY_PATH, data)
       return { error: null }
     } catch (e) {
       return { error: e.message }
