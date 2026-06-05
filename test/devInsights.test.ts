@@ -5,6 +5,7 @@ import {
   hasBufferedInsights,
   setInsightsEnabled,
   summarizeInsights,
+  formatInsightsReport,
   type InsightCategory,
   type InsightEvent,
 } from '../src/services/devInsights'
@@ -83,6 +84,19 @@ describe('summarizeInsights', () => {
   it('produces a prioritisation note for a frequent error', () => {
     const events = Array.from({ length: 4 }, () => ev('error', 'rate_limit'))
     expect(summarizeInsights(events, 30, now).notes.some((n) => /rate_limit/.test(n))).toBe(true)
+  })
+
+  it('formatInsightsReport renders readable markdown from a digest', () => {
+    const d = summarizeInsights([
+      ev('error', 'auth'), ev('feature', 'open', { feature: 'orion' }),
+      ev('chat', 'turn', { provider: 'openai', model: 'gpt-4o' }),
+    ], 30, now)
+    const md = formatInsightsReport(d)
+    expect(md).toContain('# Dev Insights')
+    expect(md).toContain('Erros por categoria')
+    expect(md).toContain('auth: 1')
+    expect(md).toContain('orion: 1')
+    expect(md).toContain('## Atrito')
   })
 
   it('empty input → zeroed digest', () => {

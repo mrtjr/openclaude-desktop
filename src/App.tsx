@@ -12,6 +12,7 @@ import CopyButton from './components/CopyButton'
 // Heavy feature panels — lazy-loaded on first use.
 // Saves ~1MB from initial bundle; each chunk loads async when user opens the modal.
 const AnalyticsDashboard = lazy(() => import('./Analytics'))
+const DevInsightsPanel = lazy(() => import('./DevInsightsPanel'))
 const ParliamentMode = lazy(() => import('./Parliament'))
 const PromptVault = lazy(() => import('./PromptVault'))
 const PersonaEngine = lazy(() => import('./PersonaEngine'))
@@ -111,6 +112,7 @@ export default function App() {
   const themeLabel = theme === 'dark' ? 'Tema: escuro (clique para claro)' : theme === 'light' ? 'Tema: claro (clique para OLED)' : 'Tema: OLED (clique para escuro)'
   const [isAgentMode, setIsAgentMode] = useState(false)
   const [showAnalytics, setShowAnalytics] = useState(false)
+  const [showDevInsights, setShowDevInsights] = useState(false)
   const [showParliament, setShowParliament] = useState(false)
   // ── Feature states ────────────────────────────────────────────────
   const [showVault, setShowVault] = useState(false)
@@ -379,13 +381,13 @@ export default function App() {
       ['promptVault', showVault], ['persona', showPersona], ['modelArena', showArena],
       ['rag', showRAG], ['workflow', showWorkflow], ['orion', showOrion], ['vision', showVision],
       ['codeWorkspace', showCodeWorkspace], ['profiles', showProfiles], ['scheduler', showScheduler],
-      ['agentDashboard', showAgentDashboard],
+      ['agentDashboard', showAgentDashboard], ['devInsights', showDevInsights],
     ]
     for (const [name, open] of flags) {
       if (open && !prevFeatureOpen.current[name]) logInsight('feature', 'open', { feature: name })
       prevFeatureOpen.current[name] = open
     }
-  }, [showSettings, showAnalytics, showParliament, showVault, showPersona, showArena, showRAG, showWorkflow, showOrion, showVision, showCodeWorkspace, showProfiles, showScheduler, showAgentDashboard])
+  }, [showSettings, showAnalytics, showParliament, showVault, showPersona, showArena, showRAG, showWorkflow, showOrion, showVision, showCodeWorkspace, showProfiles, showScheduler, showAgentDashboard, showDevInsights])
 
   // Forward ref for sendMessage — declared early so scheduledTasks can use it
   const sendMessageRef = useRef<(text: string, convId?: string) => void>(() => {})
@@ -523,6 +525,7 @@ export default function App() {
       [showRegenMenu, () => setShowRegenMenu(false)],
       [showSettings, () => setShowSettings(false)],
       [showAnalytics, () => setShowAnalytics(false)],
+      [showDevInsights, () => setShowDevInsights(false)],
       [showProfiles, () => setShowProfiles(false)],
       [showScheduler, () => setShowScheduler(false)],
       [showVault, () => setShowVault(false)],
@@ -941,6 +944,7 @@ export default function App() {
          Saves ~1MB from initial bundle. Fallback is minimal (modals load fast). */}
       <Suspense fallback={<div className="lazy-panel-fallback" role="status" aria-label="Carregando painel"><Loader2 size={20} className="spin" /></div>}>
         {showAnalytics && <AnalyticsDashboard isOpen={showAnalytics} onClose={() => setShowAnalytics(false)} language={settings.language} />}
+        {showDevInsights && <DevInsightsPanel isOpen={showDevInsights} onClose={() => setShowDevInsights(false)} language={settings.language} />}
         {showParliament && (
           <ParliamentMode settings={settings} ollamaModels={models} onClose={() => setShowParliament(false)}
             onInsertToChat={(text) => { setInput(prev => (prev ? prev + '\n\n' : '') + text); setShowParliament(false) }} />
@@ -1085,6 +1089,7 @@ export default function App() {
             </>
           )}
           <button className="titlebar-action-btn" onClick={() => setShowAnalytics(true)} title="Analytics & Insights"><BarChart3 size={14} /></button>
+          <button className="titlebar-action-btn" onClick={() => setShowDevInsights(true)} title="Dev Insights — telemetria de uso (local, privada)"><Activity size={14} /></button>
         </div>
         <div className="titlebar-controls">
           <button onClick={() => window.electron.minimize()} className="ctrl-btn minimize"><Minus size={12}/></button>

@@ -188,3 +188,44 @@ function computeLatency(ms: number[]): InsightsDigest['latency'] {
   const p95Ms = sorted[Math.floor(0.95 * (sorted.length - 1))]
   return { count: sorted.length, avgMs, p95Ms }
 }
+
+/** Render a digest as a readable Markdown report — used by the in-app
+ *  "Export .md" button and shareable as-is. Pure. */
+export function formatInsightsReport(d: InsightsDigest): string {
+  const lines: string[] = [
+    `# Dev Insights — OpenClaude Desktop`,
+    ``,
+    `Gerado: ${new Date(d.generatedAt).toISOString()} · Janela: ${d.windowDays} dias · Eventos: ${d.totalEvents}`,
+    ``,
+  ]
+  const section = (title: string, rec: Record<string, number>) => {
+    const entries = Object.entries(rec).sort((a, b) => b[1] - a[1])
+    if (entries.length === 0) return
+    lines.push(`## ${title}`)
+    for (const [k, v] of entries) lines.push(`- ${k}: ${v}`)
+    lines.push(``)
+  }
+  section('Erros por categoria', d.errorsByKind)
+  section('Uso de features', d.featureUsage)
+  section('Uso de tools', d.toolUsage)
+  section('Provedores', d.providerMix)
+  section('Modelos', d.modelMix)
+  lines.push(
+    `## Atrito`,
+    `- circuit-breaks: ${d.friction.circuitBreaks}`,
+    `- retries: ${d.friction.retries}`,
+    `- tools negadas: ${d.friction.toolDenials}`,
+    `- respostas vazias: ${d.friction.emptyReplies}`,
+    `- compactações de contexto: ${d.friction.contextCompactions}`,
+    ``,
+  )
+  if (d.latency.count > 0) {
+    lines.push(`## Latência`, `- amostras: ${d.latency.count} · média: ${d.latency.avgMs}ms · p95: ${d.latency.p95Ms}ms`, ``)
+  }
+  if (d.notes.length) {
+    lines.push(`## Notas`)
+    for (const n of d.notes) lines.push(`- ${n}`)
+    lines.push(``)
+  }
+  return lines.join('\n')
+}

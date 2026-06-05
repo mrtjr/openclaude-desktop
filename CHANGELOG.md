@@ -7,6 +7,33 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.28] — 2026-06-05
+
+### Added — Painel "Dev Insights" in-app + export `.md` (visibilidade ao usuário)
+
+Conclui a feature Dev Insights: agora **você** também vê os próprios dados de
+uso (não só eu lendo o digest). Botão **Activity** na barra de título abre um
+painel com: erros por categoria, uso de features, tools, provedores/modelos,
+atrito (breaks/retries/denials/empty/compactações), latência (avg/p95) e as
+notas de priorização — tudo agregado por `summarizeInsights`.
+
+- **`DevInsightsPanel.tsx` (novo)** — carrega os eventos (`devInsightsLoad`),
+  agrega e renderiza; reusa o frame dos painéis (`settings-overlay`/
+  `analytics-modal`). Lazy-loaded (fora do boot). Botões **Exportar .md**
+  (via `formatInsightsReport` + `saveDialog`/`writeFile`) e **Limpar**
+  (`devInsightsClear`).
+- **`devInsights.ts`** — `formatInsightsReport(digest)` (puro): relatório
+  Markdown legível, usado no export e compartilhável.
+- **`App.tsx`** — lazy import, botão na title bar, render, fechar-no-Esc e a
+  abertura entra na própria telemetria de features.
+
+### Notas
+
+- 277 testes (eram 276). +1 caso: `formatInsightsReport` gera o markdown
+  esperado. Typecheck limpo. Painel é UI (coberto pelos testes puros de
+  `summarizeInsights`/`formatInsightsReport`). Só eventos+metadados.
+- Fecha o plano "Dev Insights" (Ciclo A telemetria + Ciclo B visibilidade).
+
 ## [2.12.27] — 2026-06-05
 
 ### Added — Dev Insights: sinal `empty_reply` (telemetria completa)
