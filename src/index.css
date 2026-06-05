@@ -256,6 +256,32 @@ body {
 .conv-item:hover .conv-delete { opacity: 1; }
 .conv-delete:hover { color: var(--red); background: rgba(224,92,92,0.1); }
 
+/* ── Projects (workspaces) bar ───────────────────────────────── */
+.projects-bar { display: flex; flex-wrap: wrap; gap: 5px; padding: 8px 10px 4px; align-items: center; }
+.projects-bar.assigning { background: var(--accent-dim); border-radius: 8px; margin: 4px 6px 0; padding: 6px 8px; }
+.projects-assign-hint { font-size: 11px; color: var(--text-secondary); margin-right: 2px; }
+.project-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px;
+  background: var(--bg-tertiary); border: 1px solid var(--border); color: var(--text-secondary);
+  font-size: 12px; cursor: pointer; max-width: 150px; }
+.project-chip:hover { color: var(--text-primary); border-color: var(--accent-border); }
+.project-chip.active, .project-chip-wrap.active .project-chip { background: var(--accent-dim); border-color: var(--accent); color: var(--text-primary); }
+.project-chip .project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-chip.new { color: var(--accent); }
+.project-chip.cancel { color: var(--text-secondary); }
+.project-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.project-count { font-size: 10px; opacity: 0.75; background: var(--bg-input); border-radius: 8px; padding: 0 5px; }
+.project-chip-wrap { position: relative; display: inline-flex; align-items: center; }
+.project-del { position: absolute; top: -5px; right: -5px; width: 15px; height: 15px; border-radius: 50%;
+  display: none; align-items: center; justify-content: center; background: var(--bg-elevated);
+  border: 1px solid var(--border); color: var(--text-secondary); cursor: pointer; padding: 0; }
+.project-chip-wrap:hover .project-del { display: inline-flex; }
+.project-del:hover { color: #e76f8f; border-color: #e76f8f; }
+.project-create { display: inline-flex; align-items: center; gap: 4px; }
+.project-create input { width: 112px; padding: 3px 8px; border-radius: 999px; background: var(--bg-input);
+  border: 1px solid var(--accent-border); color: var(--text-primary); font-size: 12px; outline: none; }
+.project-create button { display: inline-flex; padding: 3px; background: var(--accent); border: none;
+  border-radius: 50%; color: #fff; cursor: pointer; }
+
 .sidebar-footer { padding: 10px; border-top: 1px solid var(--border); }
 
 /* "Reiniciar para atualizar" — Claude-style auto-update button */

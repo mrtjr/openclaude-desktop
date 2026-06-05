@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react'
 import 'highlight.js/styles/github-dark.css'
-import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Trash, Mic, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, GitBranch } from 'lucide-react'
+import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Trash, Mic, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, GitBranch, Folder } from 'lucide-react'
 import { loadSettings, type AppSettings } from './settingsConfig'
 import type { Persona } from './PersonaEngine'
 // Small / hot-path components — eager
@@ -9,6 +9,9 @@ import Toasts from './components/Toasts'
 import OnboardingModal from './components/OnboardingModal'
 import CopyButton from './components/CopyButton'
 import { ThinkingTimer } from './components/ThinkingTimer'
+import ProjectsBar from './components/ProjectsBar'
+import { useProjects } from './hooks/useProjects'
+import { conversationsInProject, countByProject, removeProject } from './utils/projects'
 
 // Heavy feature panels — lazy-loaded on first use.
 // Saves ~1MB from initial bundle; each chunk loads async when user opens the modal.
@@ -284,6 +287,35 @@ export default function App() {
   })
 
   const convManager = useConversations()
+
+  // ─── Projects (workspaces, v2.12.42) ───────────────────────────
+  const projManager = useProjects()
+  const [assigningConvId, setAssigningConvId] = useState<string | null>(null)
+  const projectCounts = useMemo(() => countByProject(convManager.conversations), [convManager.conversations])
+  const handleNewConversation = useCallback(() => {
+    const id = convManager.newConversation()
+    const pid = projManager.activeProjectId
+    if (pid) convManager.setConversations(prev => prev.map(c => (c.id === id ? { ...c, projectId: pid } : c)))
+  }, [convManager, projManager.activeProjectId])
+  const assignConvToProject = useCallback((convId: string, projectId: string | undefined) => {
+    convManager.setConversations(prev => prev.map(c => (c.id === convId ? { ...c, projectId } : c)))
+    setAssigningConvId(null)
+  }, [convManager])
+  const handleProjectChipSelect = useCallback((projectId: string | null) => {
+    if (assigningConvId) assignConvToProject(assigningConvId, projectId ?? undefined)
+    else projManager.setActiveProjectId(projectId)
+  }, [assigningConvId, assignConvToProject, projManager])
+  const handleDeleteProject = useCallback((projectId: string) => {
+    const res = removeProject(projManager.projects, convManager.conversations, projectId)
+    projManager.setProjects(res.projects)
+    convManager.setConversations(res.conversations)
+    if (projManager.activeProjectId === projectId) projManager.setActiveProjectId(null)
+    showToast('Projeto excluído (conversas preservadas)')
+  }, [projManager, convManager, showToast])
+  const handleCreateProject = useCallback((name: string) => {
+    const p = projManager.createProject(name)
+    if (p) projManager.setActiveProjectId(p.id)
+  }, [projManager])
   // useConversationFork has its own local Message shape that omits id/timestamp;
   // our app's Message is stricter. The fork logic only reads role/content/
   // arbitrary fields via spread, so the mismatch is cosmetic — cast away.
@@ -1138,7 +1170,7 @@ export default function App() {
         {/* Sidebar */}
         <div className={`sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
           <div className="sidebar-header">
-            <button className="new-chat-btn" onClick={convManager.newConversation}>
+            <button className="new-chat-btn" onClick={handleNewConversation}>
               <Plus size={16} /> Nova conversa
             </button>
             <div className="search-container">
@@ -1149,6 +1181,17 @@ export default function App() {
             </div>
           </div>
 
+          <ProjectsBar
+            projects={projManager.projects}
+            activeProjectId={projManager.activeProjectId}
+            counts={projectCounts}
+            assigning={!!assigningConvId}
+            onSelect={handleProjectChipSelect}
+            onCreate={handleCreateProject}
+            onDelete={handleDeleteProject}
+            onCancelAssign={() => setAssigningConvId(null)}
+          />
+
           <div className="conversations-list">
             {convManager.loadingConversations ? (
               <>{[1,2,3,4,5].map(i => <div key={i} className="conv-item skeleton"><div className="skeleton-bar" /></div>)}</>
@@ -1156,7 +1199,7 @@ export default function App() {
               // ChatGPT/Claude-style sidebar: pinned first (no bucket header),
               // then temporal buckets ("Hoje", "Ontem", "7 dias"…). Buckets with
               // zero items are omitted by groupByBucket.
-              const all = convManager.filteredConversations
+              const all = conversationsInProject(convManager.filteredConversations, projManager.activeProjectId)
               const pinned = all.filter(c => convManager.pinnedConvs.has(c.id))
               const rest = all.filter(c => !convManager.pinnedConvs.has(c.id))
               const buckets = groupByBucket(rest)
@@ -1170,6 +1213,9 @@ export default function App() {
                     <span className="conv-date">{getRelativeTime(conv.createdAt)}</span>
                   </div>
                   <div className="conv-actions">
+                    <button className="conv-action-btn" onClick={(e) => { e.stopPropagation(); setAssigningConvId(conv.id) }} title="Mover para projeto">
+                      <Folder size={12} />
+                    </button>
                     <button className="conv-action-btn" onClick={(e) => { e.stopPropagation(); convManager.togglePin(conv.id) }} title={convManager.pinnedConvs.has(conv.id) ? 'Desafixar' : 'Fixar'}>
                       <Pin size={12} />
                     </button>

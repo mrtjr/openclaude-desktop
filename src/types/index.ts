@@ -43,6 +43,19 @@ export interface Conversation {
   contextSummary?: string
   /** Active agent profile for this conversation */
   profileId?: string
+  /** Workspace this conversation belongs to (Projects, v2.12.42). Undefined =
+   *  not in any project ("Todas"). */
+  projectId?: string
+}
+
+/** A Project groups related conversations into a workspace (Claude-style).
+ *  v2.12.42 ships organization (name + color); per-project instructions and
+ *  files arrive in later cycles. */
+export interface Project {
+  id: string
+  name: string
+  color?: string
+  createdAt: Date
 }
 
 export interface PendingApproval {

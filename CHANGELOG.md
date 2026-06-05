@@ -7,6 +7,28 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.42] — 2026-06-05
+
+### Added — Projects (workspaces) — ciclo 1: fundação (organização)
+
+A pedido do usuário (igual ao Claude). Ele tem dezenas de conversas relacionadas
+(robôs/estratégias/código/pesquisa) e pediu para agrupá-las. **Épico em ciclos** —
+este é o 1º (organização); instruções por projeto e arquivos vêm depois.
+
+- **Modelo**: `Project { id, name, color, createdAt }` + `Conversation.projectId`.
+- **Novo `src/utils/projects.ts`** (puro/testável): `validateProjectName`,
+  `conversationsInProject` (filtro, "Todas" = sem filtro), `countByProject`,
+  `removeProject` (exclui o projeto e **preserva** as conversas, que voltam a "Todas"),
+  `colorForIndex`/`PROJECT_COLORS`.
+- **Novo `src/hooks/useProjects.ts`**: persistência em localStorage + CRUD + projeto ativo.
+- **Novo `src/components/ProjectsBar.tsx`**: chips de projeto na sidebar (criar inline,
+  filtrar, excluir com conversas preservadas). Os mesmos chips viram o **seletor de
+  projeto** ao mover uma conversa (sem popover separado).
+- **`App.tsx`**: barra de projetos na sidebar; "Nova conversa" herda o projeto ativo;
+  ícone de pasta em cada conversa para **mover para um projeto**; lista filtrada pelo
+  projeto selecionado.
+- **+9 testes** (`test/projects.test.ts`); 346 no total.
+
 ## [2.12.41] — 2026-06-05
 
 ### Changed — Pesquisa web turbinada (web_search é o tool nº1, 19×)
