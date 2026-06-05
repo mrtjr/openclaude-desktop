@@ -257,6 +257,22 @@ body {
 .conv-delete:hover { color: var(--red); background: rgba(224,92,92,0.1); }
 
 .sidebar-footer { padding: 10px; border-top: 1px solid var(--border); }
+
+/* "Reiniciar para atualizar" — Claude-style auto-update button */
+.sidebar-update-btn {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  margin-bottom: 8px; padding: 9px 11px;
+  background: var(--accent-dim); border: 1px solid var(--accent-border);
+  border-radius: 9px; cursor: pointer; color: var(--text-primary);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.sidebar-update-btn:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+.sidebar-update-icon, .sidebar-update-arrow { color: var(--accent); flex-shrink: 0; }
+.sidebar-update-btn:hover .sidebar-update-icon,
+.sidebar-update-btn:hover .sidebar-update-arrow { color: #fff; }
+.sidebar-update-arrow { opacity: 0.85; }
+.sidebar-update-text { display: flex; flex-direction: column; line-height: 1.15; font-size: 13px; font-weight: 600; text-align: left; flex: 1; }
+.sidebar-update-text small { font-size: 11px; font-weight: 400; opacity: 0.7; }
 .model-selector { position: relative; }
 .model-btn {
   width: 100%; padding: 8px 10px;

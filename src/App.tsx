@@ -95,6 +95,10 @@ export default function App() {
   const [collapsedTools, setCollapsedTools] = useState<Set<string>>(new Set())
   const [taskPlanCollapsed, setTaskPlanCollapsed] = useState(false)
   const [updateAvailable, setUpdateAvailable] = useState<{available: boolean, releaseUrl: string, latestVersion: string} | null>(null)
+  // Auto-update (electron-updater): set once a new version finished downloading
+  // in the background, which reveals the Claude-style "Reiniciar para atualizar"
+  // button in the sidebar footer.
+  const [updateReady, setUpdateReady] = useState<{ version?: string } | null>(null)
   const [theme, setTheme] = useState<'dark' | 'light' | 'oled'>(() => {
     // Priority: explicit user choice > OS preference > dark default.
     // OLED is opt-in only (never auto) — it's a power-user preference
@@ -441,6 +445,19 @@ export default function App() {
         if (res?.updateAvailable) setUpdateAvailable({ available: true, releaseUrl: res.releaseUrl, latestVersion: res.latestVersion })
       }).catch(console.error)
     }
+  }, [])
+
+  // ─── Auto-update events (electron-updater, Claude-style) ────────
+  // The main process downloads new releases in the background and emits
+  // 'update-status'. When one finishes downloading we surface the
+  // "Reiniciar para atualizar" button; the manual banner above stays as a
+  // fallback for environments where auto-download can't run.
+  useEffect(() => {
+    if (!window.electron.onUpdateStatus) return
+    const off = window.electron.onUpdateStatus((data) => {
+      if (data?.state === 'downloaded') setUpdateReady({ version: data.version })
+    })
+    return off
   }, [])
 
   // ─── Load models ───────────────────────────────────────────────
@@ -1182,6 +1199,23 @@ export default function App() {
           </div>
 
           <div className="sidebar-footer">
+            {/* ── "Restart to update" (Claude-Desktop style) ───────────
+                Appears once electron-updater finished downloading a new
+                version in the background; click → quit + relaunch on it. */}
+            {updateReady && (
+              <button
+                className="sidebar-update-btn"
+                onClick={() => window.electron.quitAndInstall?.()}
+                title={settings.language === 'en' ? 'Restart to apply the update' : 'Reiniciar para aplicar a atualização'}
+              >
+                <RefreshCw size={16} className="sidebar-update-icon" />
+                <span className="sidebar-update-text">
+                  {settings.language === 'en' ? 'Restart to update' : 'Reiniciar para atualizar'}
+                  {updateReady.version && <small>v{updateReady.version}</small>}
+                </span>
+                <ArrowUpCircle size={15} className="sidebar-update-arrow" />
+              </button>
+            )}
             {/* ── User identity row (Claude-Desktop style) ─────────────
                 Trigger for UserMenu + inline theme toggle. Shown even
                 without a session (renders as "Convidado"); the menu

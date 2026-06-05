@@ -7,6 +7,30 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.40] — 2026-06-05
+
+### Added — Auto-update estilo Claude ("Reiniciar para atualizar")
+
+A pedido do usuário (mostrou o botão do Claude Desktop) e resolvendo uma dor real:
+ele **instalava cada build manualmente**. Antes só havia um check manual que abria a
+página de release no browser — e o feed de releases do GitHub estava **parado no
+v2.8.1**, então nunca avisava.
+
+- **Novo `electron/updater.js`** — integra `electron-updater`: baixa a nova versão
+  **em background** e emite `update-status`. Erros são engolidos (um update quebrado
+  nunca pode travar o boot); o polling só roda em build empacotado (`app.isPackaged`).
+- **`main.js`** — `initAutoUpdater(() => win, app.isPackaged)` no `whenReady` (guardado
+  em try/catch) + IPC `quit-and-install`.
+- **`preload.js`** — `quitAndInstall()` + `onUpdateStatus(cb)`.
+- **`App.tsx` + `index.css`** — botão **"Reiniciar para atualizar"** no rodapé da
+  sidebar (estilo Claude: ícone + texto + versão), exibido quando o download termina;
+  clique → `quitAndInstall()` → relança na nova versão. O banner manual antigo
+  permanece como fallback.
+- **`package.json`** — `electron-updater` em dependencies + `build.publish` (github
+  `mrtjr/openclaude-desktop`). **As releases voltam a ser publicadas no GitHub** como
+  parte do fluxo de ship, então o feed fica vivo (.exe + .blockmap + latest.yml).
+- 325 testes (módulo é glue de Electron, sem unit test próprio).
+
 ## [2.12.39] — 2026-06-05
 
 ### Fixed — Contexto do GLM mal-detectado causava `tool_search` + timeout (bug reportado)

@@ -11,6 +11,7 @@ const { providerTimeoutMs } = require('./provider-timeouts')
 const { cachedSystem, withCachedTools } = require('./anthropic-cache')
 const { resolveNavOutcome } = require('./browser-nav')
 const { planScreenshot, SHOT_JPEG_QUALITY } = require('./screenshot-util')
+const { initAutoUpdater, quitAndInstall } = require('./updater')
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -768,6 +769,9 @@ ipcMain.handle('check-update', async () => {
     req.end()
   })
 })
+
+// Apply a downloaded auto-update: quit and relaunch on the new version.
+ipcMain.handle('quit-and-install', () => quitAndInstall())
 
 // ─── IPC: Memory system (persistent user memory) ────────────────────
 const MEMORY_PATH = path.join(app.getPath('userData'), 'memory.json')
@@ -2629,6 +2633,11 @@ require('./ipc-document')(ipcMain, app, dialog)
 app.whenReady().then(() => {
   createWindow()
   createTray()
+
+  // Background auto-update (Claude-style). Wires events + polls GitHub Releases
+  // in packaged builds; the renderer shows a "Reiniciar para atualizar" button
+  // when a download is ready. Guarded so a broken updater never blocks startup.
+  try { initAutoUpdater(() => win, app.isPackaged) } catch (e) { console.error('[updater] init failed:', e) }
 
   // Global hotkey: Ctrl+Shift+Space
   try {

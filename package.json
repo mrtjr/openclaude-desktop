@@ -1,6 +1,6 @@
 {
   "name": "openclaude-desktop",
-  "version": "2.12.39",
+  "version": "2.12.40",
   "description": "Desktop GUI for OpenClaude",
   "author": "OpenClaude",
   "main": "electron/main.js",
@@ -37,7 +37,14 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "mrtjr",
+        "repo": "openclaude-desktop"
+      }
+    ]
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",
@@ -62,6 +69,7 @@
     "@supabase/supabase-js": "^2.103.3",
     "@types/dompurify": "^3.0.5",
     "dompurify": "^3.1.0",
+    "electron-updater": "^6.8.3",
     "highlight.js": "^11.10.0",
     "js-tiktoken": "^1.0.21",
     "katex": "^0.16.11",

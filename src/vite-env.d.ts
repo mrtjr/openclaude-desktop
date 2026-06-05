@@ -30,6 +30,8 @@ interface Window {
     close: () => Promise<void>
     isMaximized: () => Promise<boolean>
     checkForUpdates: () => Promise<{ updateAvailable: boolean; releaseUrl?: string; latestVersion?: string; error?: string }>
+    quitAndInstall: () => Promise<{ ok?: boolean; error?: string }>
+    onUpdateStatus: (cb: (data: { state: 'available' | 'downloading' | 'downloaded' | 'none' | 'error'; version?: string; percent?: number; message?: string }) => void) => () => void
     abortStream: () => Promise<{ aborted: boolean }>
     loadMemory: () => Promise<any>
     saveMemory: (data: any) => Promise<{ error: string | null }>

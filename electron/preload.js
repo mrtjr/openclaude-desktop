@@ -54,6 +54,12 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Updates
   checkForUpdates: () => ipcRenderer.invoke('check-update'),
+  quitAndInstall: () => ipcRenderer.invoke('quit-and-install'),
+  onUpdateStatus: (callback) => {
+    const handler = (event, data) => callback(data)
+    ipcRenderer.on('update-status', handler)
+    return () => ipcRenderer.removeListener('update-status', handler)
+  },
 
   // Abort stream
   abortStream: () => ipcRenderer.invoke('abort-stream'),
