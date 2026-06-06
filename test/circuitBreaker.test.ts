@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { countRecentRepeats, CIRCUIT_WINDOW } from '../src/utils/circuitBreaker'
+import { countRecentRepeats, CIRCUIT_WINDOW, isProgressResult, computeAgentProgress } from '../src/utils/circuitBreaker'
 
 describe('countRecentRepeats', () => {
   it('counts occurrences within the window', () => {
@@ -23,5 +23,48 @@ describe('countRecentRepeats', () => {
   it('respects a custom window', () => {
     expect(countRecentRepeats(['a', 'a', 'a'], 'a', 2)).toBe(2) // last 2 entries only
     expect(countRecentRepeats(['a', 'b', 'c'], 'a', 2)).toBe(0) // 'a' outside last 2
+  })
+})
+
+describe('isProgressResult', () => {
+  it('treats a normal tool result as progress', () => {
+    expect(isProgressResult({ name: 'web_search', result: 'Resultados...' })).toBe(true)
+    expect(isProgressResult({ name: 'execute_command', result: 'OK' })).toBe(true)
+  })
+  it('does NOT count working-memory writes as progress', () => {
+    expect(isProgressResult({ name: 'update_working_memory', result: '[SYSTEM]: ok' })).toBe(false)
+  })
+  it('does NOT count [SYSTEM INTERCEPT] guards (JSON error / circuit breaker) as progress', () => {
+    expect(isProgressResult({ name: 'web_search', result: '[SYSTEM INTERCEPT]: Circuit Breaker Triggered...' })).toBe(false)
+    expect(isProgressResult({ name: 'x', result: '[SYSTEM INTERCEPT]: JSON Parse Error...' })).toBe(false)
+  })
+  it('handles a missing result string', () => {
+    expect(isProgressResult({ name: 'x', result: undefined as any })).toBe(true)
+  })
+})
+
+describe('computeAgentProgress', () => {
+  it('resets idle to 0 when a step makes real progress', () => {
+    const r = computeAgentProgress([{ name: 'web_search', result: 'hits' }], 3, 5)
+    expect(r).toEqual({ idleSteps: 0, continue: true })
+  })
+  it('increments idle when a step makes no progress', () => {
+    const r = computeAgentProgress([{ name: 'update_working_memory', result: '[SYSTEM]: ok' }], 2, 5)
+    expect(r).toEqual({ idleSteps: 3, continue: true })
+  })
+  it('stops the loop once idle reaches the threshold', () => {
+    const r = computeAgentProgress([{ name: 'x', result: '[SYSTEM INTERCEPT]: ...' }], 4, 5)
+    expect(r.idleSteps).toBe(5)
+    expect(r.continue).toBe(false)
+  })
+  it('a mix with at least one real tool counts as progress', () => {
+    const r = computeAgentProgress([
+      { name: 'update_working_memory', result: '[SYSTEM]: ok' },
+      { name: 'read_file', result: 'contents' },
+    ], 4, 5)
+    expect(r).toEqual({ idleSteps: 0, continue: true })
+  })
+  it('treats an empty result set as no progress', () => {
+    expect(computeAgentProgress([], 0, 5)).toEqual({ idleSteps: 1, continue: true })
   })
 })

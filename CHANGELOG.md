@@ -7,6 +7,23 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.45] — 2026-06-06
+
+### Changed — Auditoria ponta a ponta (ciclo 1): detecção de progresso do agente testada
+
+Início da varredura completa do projeto buscando melhorias. Achado: a lógica de
+**idle/no-progress** do loop agêntico (decide quando parar um agente que não está
+avançando o objetivo) estava **inline no `useChat.processToolCalls` e sem teste** —
+um caminho crítico para quem usa muito o modo agente (execute_command é o tool nº1).
+
+- **`utils/circuitBreaker.ts`** ganhou dois helpers puros: `isProgressResult` (um
+  resultado conta como progresso, exceto writes de working-memory e guardas
+  `[SYSTEM INTERCEPT]`) e `computeAgentProgress` (calcula idleSteps + se o loop
+  continua, parando após `threshold` passos sem progresso).
+- **`useChat.ts`** agora usa `computeAgentProgress` em vez da lógica inline —
+  **comportamento idêntico**, mas isolado e coberto por testes.
+- **+9 testes** (`circuitBreaker.test.ts`); 359 no total.
+
 ## [2.12.44] — 2026-06-06
 
 ### Added — Projects ciclo 3: pasta de trabalho por projeto (guiado por dados)

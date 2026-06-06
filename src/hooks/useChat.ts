@@ -7,7 +7,7 @@ import { generateId, isSmallModel } from '../utils/formatting'
 import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice, extractThinking } from '../utils/sanitizers'
 import { classifyProviderError, humanizeProviderError } from '../utils/providerErrors'
 import { resolveTurnUsage } from '../utils/usage'
-import { countRecentRepeats, CIRCUIT_WINDOW } from '../utils/circuitBreaker'
+import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
 import { logInsight } from '../services/devInsights'
 import { createContextEngine, getModelContextLimit, countToolSchemas, computeMessageBudget } from '../services/contextEngine'
 import type { ProviderConfig } from './useProviderConfig'
@@ -890,14 +890,9 @@ export function useChat({
 
     thinkingMsg.toolResults = toolResults
 
-    const hasRealToolWork = toolResults.some(tr =>
-      tr.name !== 'update_working_memory' && !tr.result.startsWith('[SYSTEM INTERCEPT]')
-    )
-    const newIdleSteps = hasRealToolWork ? 0 : idleSteps + 1
-
     return {
       message: thinkingMsg,
-      shouldContinue: { continue: newIdleSteps < IDLE_STEP_THRESHOLD, idleSteps: newIdleSteps }
+      shouldContinue: computeAgentProgress(toolResults, idleSteps, IDLE_STEP_THRESHOLD),
     }
   }
 

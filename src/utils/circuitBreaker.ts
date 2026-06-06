@@ -25,3 +25,33 @@ export function countRecentRepeats(
   }
   return n
 }
+
+// ─── Idle / no-progress detection ───────────────────────────────────
+// The other way an agent loop wastes a slow model (Modal/GLM): it keeps
+// emitting tool calls that don't actually advance the goal — only writing
+// working memory, or hitting [SYSTEM INTERCEPT] guards (JSON errors / the
+// circuit breaker above). After enough consecutive no-progress steps we stop
+// the loop instead of grinding to the safety limit (200). This logic used to
+// live inline in useChat.processToolCalls, untested; extracted here so it's
+// unit-tested alongside the rest of the loop-safety machinery.
+
+/** A tool result counts as real progress UNLESS it's a working-memory write or
+ *  a [SYSTEM INTERCEPT] (JSON-parse error / circuit-breaker) — neither advances
+ *  the user's goal. */
+export function isProgressResult(r: { name: string; result: string }): boolean {
+  return r.name !== 'update_working_memory' && !(r.result || '').startsWith('[SYSTEM INTERCEPT]')
+}
+
+/** Given a step's tool results and the running idle count, compute the new idle
+ *  count and whether the agent loop should continue. A step that made real
+ *  progress resets idle to 0; otherwise it increments, and `threshold`
+ *  consecutive idle steps stop the loop. */
+export function computeAgentProgress(
+  results: { name: string; result: string }[],
+  idleSteps: number,
+  threshold: number,
+): { idleSteps: number; continue: boolean } {
+  const madeProgress = (results || []).some(isProgressResult)
+  const next = madeProgress ? 0 : idleSteps + 1
+  return { idleSteps: next, continue: next < threshold }
+}
