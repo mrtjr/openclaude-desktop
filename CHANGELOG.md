@@ -7,6 +7,25 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.46] — 2026-06-06
+
+### Fixed — Auditoria (ciclo 2): `isSmallModel` cobre todos os tamanhos ≤14B
+
+Varredura continuada. Em `utils/formatting.ts`, `isSmallModel` (decide se injeta a
+"diretiva crítica de agente" para modelos pequenos) usava uma **lista fixa**
+(`0.5/1/3/7/8/9/14b`) que **ignorava 2b/4b/5b/10b–13b** — então modelos pequenos
+comuns (gemma-2b, qwen-4b, llama-13b) rodando em modo agente não recebiam o reforço
+de que precisam. Também havia dead code (uma checagem `hasSize` cujos dois ramos
+retornavam `false`).
+
+- Novo `parseModelSizeB(name)` (puro/testável) extrai a contagem de parâmetros em
+  bilhões ("llama3.1-8b" → 8, "qwen2.5-0.5b" → 0.5).
+- `isSmallModel` agora classifica **qualquer modelo ≤14B** como pequeno; 30B/70B
+  ficam médio/grande; modelos namespaced/cloud (ex: seu `zai-org/GLM-5.1-FP8`)
+  seguem **não-pequenos** (inalterado). Dead code removido.
+- **+5 testes** (cobertura nova + `parseModelSizeB`); 364 no total. Auditoria sem
+  achados em: SSE streaming (buffer parcial robusto) e tokenizer (já lazy).
+
 ## [2.12.45] — 2026-06-06
 
 ### Changed — Auditoria ponta a ponta (ciclo 1): detecção de progresso do agente testada

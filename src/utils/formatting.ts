@@ -61,27 +61,36 @@ export function generateId(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
 }
 
+/** Extract a model's parameter count in billions from its name
+ *  (e.g. "llama3.1-8b" → 8, "qwen2.5-0.5b" → 0.5, "llama-70b" → 70).
+ *  Returns null when the name carries no size token. */
+export function parseModelSizeB(name: string): number | null {
+  const m = (name || '').toLowerCase().match(/(\d+(?:\.\d+)?)\s*b\b/)
+  if (!m) return null
+  const n = parseFloat(m[1])
+  return Number.isFinite(n) ? n : null
+}
+
 export function isSmallModel(modelName: string): boolean {
   if (!modelName) return false
   const lower = modelName.toLowerCase()
 
-  // Cloud models are never "small" — they don't need the extra agent directive
+  // Cloud / hosted / namespaced models (anything with a "/", e.g. OpenRouter or
+  // Modal ids like "zai-org/GLM-5.1-FP8") are never "small" — they don't need
+  // the extra agent directive.
   if (lower.startsWith('gpt-') || lower.startsWith('claude-') || lower.startsWith('gemini-') ||
       lower.startsWith('o1') || lower.startsWith('o3') || lower.startsWith('o4') ||
       lower.includes('deepseek') || lower.includes('/')) return false
 
-  const smallSizes = /\b(0\.5b|1b|3b|7b|8b|9b|14b)\b/i
-  if (smallSizes.test(lower)) return true
-
-  // Models explicitly known as small
+  // Families that are small regardless of an explicit size token.
   if (lower.includes('phi')) return true
   if (lower.includes('mistral') && !lower.includes('large') && !lower.includes('medium')) return true
 
-  // If no size indicator found in local model name, assume medium/large
-  const hasSize = /\d+b\b/i.test(lower)
-  if (!hasSize) return false
-
-  return false
+  // Otherwise classify by parameter count: ≤14B needs the extra directive. This
+  // covers 2b/4b/5b/10b–13b that the old fixed list (0.5/1/3/7/8/9/14b) missed,
+  // while a 30b/70b local model stays medium/large. No size token → not small.
+  const size = parseModelSizeB(lower)
+  return size !== null && size <= 14
 }
 
 export function getRelativeTime(d: Date): string {

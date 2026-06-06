@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isSmallModel, generateId, getRelativeTime, formatMarkdown } from '../src/utils/formatting'
+import { isSmallModel, parseModelSizeB, generateId, getRelativeTime, formatMarkdown } from '../src/utils/formatting'
 
 describe('formatMarkdown (cached)', () => {
   it('renders markdown to sanitized HTML', () => {
@@ -59,6 +59,37 @@ describe('isSmallModel', () => {
   it('mistral-large is NOT small', () => {
     expect(isSmallModel('mistral-large')).toBe(false)
     expect(isSmallModel('mistral-medium')).toBe(false)
+  })
+
+  it('classifies ANY ≤14B size as small (covers sizes the old fixed list missed)', () => {
+    expect(isSmallModel('gemma-2b')).toBe(true)   // old list lacked 2b
+    expect(isSmallModel('qwen-4b')).toBe(true)    // old list lacked 4b
+    expect(isSmallModel('llama-13b')).toBe(true)  // old list lacked 13b
+    expect(isSmallModel('granite-10b')).toBe(true)
+  })
+
+  it('leaves 30B+ local models as medium/large', () => {
+    expect(isSmallModel('qwen-32b')).toBe(false)
+    expect(isSmallModel('llama-70b')).toBe(false)
+    expect(isSmallModel('yi-34b')).toBe(false)
+  })
+
+  it("the user's GLM-5.1 (namespaced) is never small", () => {
+    expect(isSmallModel('zai-org/GLM-5.1-FP8')).toBe(false)
+  })
+})
+
+describe('parseModelSizeB', () => {
+  it('extracts the billions count, including decimals', () => {
+    expect(parseModelSizeB('llama3.1-8b')).toBe(8)
+    expect(parseModelSizeB('qwen2.5-0.5b')).toBe(0.5)
+    expect(parseModelSizeB('llama-70b')).toBe(70)
+    expect(parseModelSizeB('llama3.2:3b')).toBe(3)
+  })
+  it('returns null when there is no size token', () => {
+    expect(parseModelSizeB('llama3')).toBeNull()
+    expect(parseModelSizeB('mystery-model')).toBeNull()
+    expect(parseModelSizeB('')).toBeNull()
   })
 })
 
