@@ -49,6 +49,15 @@ export function countByProject(conversations: Conversation[]): Record<string, nu
   return out
 }
 
+/** Build the text appended to the system prompt for a conversation that belongs
+ *  to `project`. Returns '' when there's no project or no instructions, so the
+ *  caller can append unconditionally. (Projects ciclo 2.) */
+export function projectInstructionsAddition(project: Project | null | undefined): string {
+  const instr = project?.instructions?.trim()
+  if (!instr) return ''
+  return `\n\n# Projeto: ${project!.name}\n${instr}`
+}
+
 /** Remove a project from the list and detach it from any conversation that
  *  referenced it (those conversations fall back to "Todas"). Pure — returns new
  *  arrays, mutates nothing. */

@@ -47,6 +47,12 @@ export function useProjects() {
     setProjects(prev => prev.map(p => (p.id === id ? { ...p, name: name.trim() } : p)))
   }, [])
 
+  /** Patch a project (name, color, instructions…). Ignores a blank name. */
+  const updateProject = useCallback((id: string, patch: Partial<Project>) => {
+    if (patch.name !== undefined && validateProjectName(patch.name)) return
+    setProjects(prev => prev.map(p => (p.id === id ? { ...p, ...patch, ...(patch.name ? { name: patch.name.trim() } : {}) } : p)))
+  }, [])
+
   return {
     projects,
     setProjects,
@@ -54,5 +60,6 @@ export function useProjects() {
     setActiveProjectId,
     createProject,
     renameProject,
+    updateProject,
   }
 }

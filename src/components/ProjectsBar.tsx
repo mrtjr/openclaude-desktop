@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, X, Check } from 'lucide-react'
+import { Plus, X, Check, Pencil } from 'lucide-react'
 import type { Project } from '../types'
 
 interface Props {
@@ -12,6 +12,7 @@ interface Props {
   onSelect: (projectId: string | null) => void
   onCreate: (name: string) => void
   onDelete: (projectId: string) => void
+  onEdit: (project: Project) => void
   onCancelAssign: () => void
 }
 
@@ -20,7 +21,7 @@ interface Props {
  *  avoids a separate popover. */
 export function ProjectsBar({
   projects, activeProjectId, counts, assigning,
-  onSelect, onCreate, onDelete, onCancelAssign,
+  onSelect, onCreate, onDelete, onEdit, onCancelAssign,
 }: Props) {
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
@@ -61,13 +62,22 @@ export function ProjectsBar({
             {counts[p.id] ? <span className="project-count">{counts[p.id]}</span> : null}
           </button>
           {!assigning && (
-            <button
-              className="project-del"
-              title="Excluir projeto (as conversas são preservadas)"
-              onClick={() => onDelete(p.id)}
-            >
-              <X size={10} />
-            </button>
+            <>
+              <button
+                className="project-edit"
+                title="Editar projeto (nome + instruções)"
+                onClick={() => onEdit(p)}
+              >
+                <Pencil size={9} />
+              </button>
+              <button
+                className="project-del"
+                title="Excluir projeto (as conversas são preservadas)"
+                onClick={() => onDelete(p.id)}
+              >
+                <X size={10} />
+              </button>
+            </>
           )}
         </span>
       ))}

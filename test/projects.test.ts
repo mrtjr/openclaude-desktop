@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   PROJECT_COLORS, colorForIndex, validateProjectName,
-  conversationsInProject, countByProject, removeProject,
+  conversationsInProject, countByProject, removeProject, projectInstructionsAddition,
 } from '../src/utils/projects'
 import type { Conversation, Project } from '../src/types'
 
@@ -49,6 +49,21 @@ describe('countByProject', () => {
   })
   it('handles an empty list', () => {
     expect(countByProject([])).toEqual({})
+  })
+})
+
+describe('projectInstructionsAddition', () => {
+  it('returns the project instructions block when present', () => {
+    const out = projectInstructionsAddition({ id: 'p', name: 'Robô MT5', createdAt: new Date(0), instructions: 'Foque em XP.' })
+    expect(out).toContain('# Projeto: Robô MT5')
+    expect(out).toContain('Foque em XP.')
+    expect(out.startsWith('\n\n')).toBe(true)
+  })
+  it('returns empty string when no project / no instructions / whitespace', () => {
+    expect(projectInstructionsAddition(null)).toBe('')
+    expect(projectInstructionsAddition(undefined)).toBe('')
+    expect(projectInstructionsAddition({ id: 'p', name: 'x', createdAt: new Date(0) })).toBe('')
+    expect(projectInstructionsAddition({ id: 'p', name: 'x', createdAt: new Date(0), instructions: '   ' })).toBe('')
   })
 })
 

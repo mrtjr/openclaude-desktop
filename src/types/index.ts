@@ -56,6 +56,9 @@ export interface Project {
   name: string
   color?: string
   createdAt: Date
+  /** Custom instructions injected into the system prompt of every conversation
+   *  in this project (Projects ciclo 2, v2.12.43). */
+  instructions?: string
 }
 
 export interface PendingApproval {

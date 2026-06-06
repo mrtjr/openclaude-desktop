@@ -7,6 +7,23 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.43] — 2026-06-05
+
+### Added — Projects ciclo 2: instruções por projeto (a "mágica")
+
+Cada projeto agora tem **instruções próprias** (system prompt) injetadas
+automaticamente em toda conversa daquele projeto — o coração do Projects do Claude.
+
+- **Modelo**: `Project.instructions?`.
+- **`utils/projects.ts`**: `projectInstructionsAddition(project)` (puro/testável) monta
+  o bloco `# Projeto: <nome>\n<instruções>` (ou '' quando vazio).
+- **`App.tsx`**: nova camada `effectiveSettingsWithProject` anexa as instruções do
+  projeto da conversa ativa ao `systemPrompt` — **sem tocar o `useChat`** (ele já lê
+  `settings.systemPrompt`). Injeção reativa: editar as instruções reflete na hora.
+- **Novo `src/components/ProjectEditModal.tsx`**: editor de nome + instruções (textarea).
+- **`ProjectsBar`**: ícone de lápis (hover) abre o editor; `useProjects.updateProject`.
+- **+2 testes** (`projectInstructionsAddition`); 348 no total.
+
 ## [2.12.42] — 2026-06-05
 
 ### Added — Projects (workspaces) — ciclo 1: fundação (organização)

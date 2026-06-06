@@ -10,8 +10,10 @@ import OnboardingModal from './components/OnboardingModal'
 import CopyButton from './components/CopyButton'
 import { ThinkingTimer } from './components/ThinkingTimer'
 import ProjectsBar from './components/ProjectsBar'
+import ProjectEditModal from './components/ProjectEditModal'
 import { useProjects } from './hooks/useProjects'
-import { conversationsInProject, countByProject, removeProject } from './utils/projects'
+import { conversationsInProject, countByProject, removeProject, projectInstructionsAddition } from './utils/projects'
+import type { Project } from './types'
 
 // Heavy feature panels — lazy-loaded on first use.
 // Saves ~1MB from initial bundle; each chunk loads async when user opens the modal.
@@ -316,6 +318,22 @@ export default function App() {
     const p = projManager.createProject(name)
     if (p) projManager.setActiveProjectId(p.id)
   }, [projManager])
+  const [editingProject, setEditingProject] = useState<Project | null>(null)
+  const handleSaveProject = useCallback((patch: { name: string; instructions: string }) => {
+    if (editingProject) projManager.updateProject(editingProject.id, patch)
+    setEditingProject(null)
+  }, [editingProject, projManager])
+  // Projects ciclo 2: inject the active conversation's project instructions into
+  // the system prompt (a thin layer over effectiveSettings, so useChat needs no
+  // change — it already reads settings.systemPrompt).
+  const effectiveSettingsWithProject = useMemo(() => {
+    const conv = convManager.activeConv
+    if (!conv?.projectId) return effectiveSettings
+    const project = projManager.projects.find(p => p.id === conv.projectId)
+    const addition = projectInstructionsAddition(project)
+    if (!addition) return effectiveSettings
+    return { ...effectiveSettings, systemPrompt: (effectiveSettings.systemPrompt || '') + addition }
+  }, [effectiveSettings, convManager.activeConv?.projectId, projManager.projects])
   // useConversationFork has its own local Message shape that omits id/timestamp;
   // our app's Message is stricter. The fork logic only reads role/content/
   // arbitrary fields via spread, so the mismatch is cosmetic — cast away.
@@ -336,7 +354,7 @@ export default function App() {
   })
 
   const chat = useChat({
-    settings: effectiveSettings,
+    settings: effectiveSettingsWithProject,
     providerConfig,
     activeConvId: convManager.activeConvId,
     conversationsRef: convManager.conversationsRef,
@@ -998,6 +1016,7 @@ export default function App() {
       <Suspense fallback={<div className="lazy-panel-fallback" role="status" aria-label="Carregando painel"><Loader2 size={20} className="spin" /></div>}>
         {showAnalytics && <AnalyticsDashboard isOpen={showAnalytics} onClose={() => setShowAnalytics(false)} language={settings.language} />}
         {showDevInsights && <DevInsightsPanel isOpen={showDevInsights} onClose={() => setShowDevInsights(false)} language={settings.language} />}
+        {editingProject && <ProjectEditModal project={editingProject} onSave={handleSaveProject} onClose={() => setEditingProject(null)} />}
         {openArtifact && (
           <Suspense fallback={null}>
             <ArtifactPanel artifact={openArtifact} onClose={() => setOpenArtifact(null)} language={settings.language} />
@@ -1189,6 +1208,7 @@ export default function App() {
             onSelect={handleProjectChipSelect}
             onCreate={handleCreateProject}
             onDelete={handleDeleteProject}
+            onEdit={setEditingProject}
             onCancelAssign={() => setAssigningConvId(null)}
           />
 
