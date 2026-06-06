@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   PROJECT_COLORS, colorForIndex, validateProjectName,
-  conversationsInProject, countByProject, removeProject, projectInstructionsAddition,
+  conversationsInProject, countByProject, removeProject, projectInstructionsAddition, projectCwdAddition,
 } from '../src/utils/projects'
 import type { Conversation, Project } from '../src/types'
 
@@ -64,6 +64,20 @@ describe('projectInstructionsAddition', () => {
     expect(projectInstructionsAddition(undefined)).toBe('')
     expect(projectInstructionsAddition({ id: 'p', name: 'x', createdAt: new Date(0) })).toBe('')
     expect(projectInstructionsAddition({ id: 'p', name: 'x', createdAt: new Date(0), instructions: '   ' })).toBe('')
+  })
+})
+
+describe('projectCwdAddition', () => {
+  it('builds a working-directory note when cwd is set', () => {
+    const out = projectCwdAddition({ id: 'p', name: 'x', createdAt: new Date(0), cwd: 'D:/robos/scalping' })
+    expect(out).toContain('Pasta de trabalho')
+    expect(out).toContain('D:/robos/scalping')
+    expect(out).toContain('execute_command')
+  })
+  it('returns empty string when there is no cwd', () => {
+    expect(projectCwdAddition(null)).toBe('')
+    expect(projectCwdAddition({ id: 'p', name: 'x', createdAt: new Date(0) })).toBe('')
+    expect(projectCwdAddition({ id: 'p', name: 'x', createdAt: new Date(0), cwd: '  ' })).toBe('')
   })
 })
 

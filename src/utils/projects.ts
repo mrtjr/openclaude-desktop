@@ -58,6 +58,16 @@ export function projectInstructionsAddition(project: Project | null | undefined)
   return `\n\n# Projeto: ${project!.name}\n${instr}`
 }
 
+/** Build the working-directory note appended to the system prompt for a
+ *  conversation in `project`. The user's #1 tool is execute_command, so a
+ *  project tied to a codebase should run its commands + file ops from one
+ *  folder. Returns '' when there's no cwd. (Projects ciclo 3.) */
+export function projectCwdAddition(project: Project | null | undefined): string {
+  const cwd = project?.cwd?.trim()
+  if (!cwd) return ''
+  return `\n\n# Pasta de trabalho do projeto\nRode todos os comandos (execute_command) e operações de arquivo (read_file, list_directory, write_file) a partir desta pasta, usando caminhos absolutos sob ela: ${cwd}`
+}
+
 /** Remove a project from the list and detach it from any conversation that
  *  referenced it (those conversations fall back to "Todas"). Pure — returns new
  *  arrays, mutates nothing. */

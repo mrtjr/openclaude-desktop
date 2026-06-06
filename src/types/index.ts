@@ -59,6 +59,10 @@ export interface Project {
   /** Custom instructions injected into the system prompt of every conversation
    *  in this project (Projects ciclo 2, v2.12.43). */
   instructions?: string
+  /** Default working directory for this project — commands (execute_command)
+   *  and file ops in this project's conversations run from here (Projects ciclo
+   *  3, v2.12.44). Injected into the system prompt. */
+  cwd?: string
 }
 
 export interface PendingApproval {

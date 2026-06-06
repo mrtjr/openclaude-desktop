@@ -4,7 +4,7 @@ import type { Project } from '../types'
 
 interface Props {
   project: Project
-  onSave: (patch: { name: string; instructions: string }) => void
+  onSave: (patch: { name: string; instructions: string; cwd: string }) => void
   onClose: () => void
 }
 
@@ -13,10 +13,11 @@ interface Props {
 export function ProjectEditModal({ project, onSave, onClose }: Props) {
   const [name, setName] = useState(project.name)
   const [instructions, setInstructions] = useState(project.instructions || '')
+  const [cwd, setCwd] = useState(project.cwd || '')
 
   const save = () => {
     if (!name.trim()) return
-    onSave({ name: name.trim(), instructions: instructions.trim() })
+    onSave({ name: name.trim(), instructions: instructions.trim(), cwd: cwd.trim() })
   }
 
   return (
@@ -46,6 +47,16 @@ export function ProjectEditModal({ project, onSave, onClose }: Props) {
           rows={8}
           onChange={e => setInstructions(e.target.value)}
           placeholder={'Ex: Você é um especialista em estratégias de trading para MetaTrader 5. Sempre responda com código MQL5 comentado e explique a lógica de entrada/saída...'}
+        />
+
+        <label className="project-edit-label">
+          Pasta de trabalho <small>— opcional; comandos e arquivos deste projeto rodam a partir daqui</small>
+        </label>
+        <input
+          className="project-edit-input"
+          value={cwd}
+          onChange={e => setCwd(e.target.value)}
+          placeholder="Ex: D:\\robos\\scalping"
         />
 
         <div className="project-edit-actions">

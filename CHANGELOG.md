@@ -7,6 +7,24 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.12.44] — 2026-06-06
+
+### Added — Projects ciclo 3: pasta de trabalho por projeto (guiado por dados)
+
+Loop CEO retomado. O digest mostrou uma virada: **`execute_command` virou o tool nº1
+(32×)** — código/automação. (Investiguei o tratamento de saída dele: a truncagem
+head+tail já existe em `truncateToolOutput`, então nada a fazer ali.) Conectei os
+Projects a esse uso real: cada projeto pode ter uma **pasta de trabalho**, e os
+comandos/arquivos das conversas daquele projeto rodam a partir dela.
+
+- **Modelo**: `Project.cwd?`.
+- **`utils/projects.ts`**: `projectCwdAddition(project)` (puro/testável) injeta a nota
+  "rode comandos e arquivos a partir de \<pasta\>" no system prompt.
+- **`App.tsx`**: `effectiveSettingsWithProject` agora anexa instruções **+** pasta.
+- **`ProjectEditModal`**: campo "Pasta de trabalho" (opcional).
+- **+2 testes**; 350 no total. Fecha a fundação do épico Projects (organização +
+  instruções + pasta de trabalho).
+
 ## [2.12.43] — 2026-06-05
 
 ### Added — Projects ciclo 2: instruções por projeto (a "mágica")

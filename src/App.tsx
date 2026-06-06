@@ -12,7 +12,7 @@ import { ThinkingTimer } from './components/ThinkingTimer'
 import ProjectsBar from './components/ProjectsBar'
 import ProjectEditModal from './components/ProjectEditModal'
 import { useProjects } from './hooks/useProjects'
-import { conversationsInProject, countByProject, removeProject, projectInstructionsAddition } from './utils/projects'
+import { conversationsInProject, countByProject, removeProject, projectInstructionsAddition, projectCwdAddition } from './utils/projects'
 import type { Project } from './types'
 
 // Heavy feature panels — lazy-loaded on first use.
@@ -319,7 +319,7 @@ export default function App() {
     if (p) projManager.setActiveProjectId(p.id)
   }, [projManager])
   const [editingProject, setEditingProject] = useState<Project | null>(null)
-  const handleSaveProject = useCallback((patch: { name: string; instructions: string }) => {
+  const handleSaveProject = useCallback((patch: { name: string; instructions: string; cwd: string }) => {
     if (editingProject) projManager.updateProject(editingProject.id, patch)
     setEditingProject(null)
   }, [editingProject, projManager])
@@ -330,7 +330,7 @@ export default function App() {
     const conv = convManager.activeConv
     if (!conv?.projectId) return effectiveSettings
     const project = projManager.projects.find(p => p.id === conv.projectId)
-    const addition = projectInstructionsAddition(project)
+    const addition = projectInstructionsAddition(project) + projectCwdAddition(project)
     if (!addition) return effectiveSettings
     return { ...effectiveSettings, systemPrompt: (effectiveSettings.systemPrompt || '') + addition }
   }, [effectiveSettings, convManager.activeConv?.projectId, projManager.projects])
