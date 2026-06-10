@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react'
 import 'highlight.js/styles/github-dark.css'
-import { Send, Plus, Trash2, Minus, Square, X, Bot, User, Loader2, ChevronDown, Wrench, Terminal, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Play, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Trash, Mic, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, GitBranch, Folder } from 'lucide-react'
+import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder } from 'lucide-react'
 import { loadSettings, type AppSettings } from './settingsConfig'
 import type { Persona } from './PersonaEngine'
 // Small / hot-path components — eager
 import CommandPalette from './components/CommandPalette'
 import Toasts from './components/Toasts'
 import OnboardingModal from './components/OnboardingModal'
-import CopyButton from './components/CopyButton'
+import ChatMessage from './components/ChatMessage'
+import { useStableCallback } from './hooks/useStableCallback'
 import { ThinkingTimer } from './components/ThinkingTimer'
 import ProjectsBar from './components/ProjectsBar'
 import ProjectEditModal from './components/ProjectEditModal'
@@ -78,12 +79,15 @@ import { useAuth } from './hooks/useAuth'
 import { useSync } from './hooks/useSync'
 import { useDevInsights } from './hooks/useDevInsights'
 import { logInsight } from './services/devInsights'
-import { extractArtifacts, type Artifact } from './utils/artifacts'
+import { type Artifact } from './utils/artifacts'
 
 // ─── App ─────────────────────────────────────────────────────────────
 export default function App() {
-  // Upgrade raw `$…$` to typeset math once KaTeX finishes lazy-loading.
-  useMathReady()
+  // Upgrade raw `$…$` to typeset math once KaTeX finishes lazy-loading. The
+  // flag is threaded into each memoized <ChatMessage> so the memo breaks
+  // exactly once when the lib arrives (App re-rendering alone no longer
+  // repaints memoized messages).
+  const mathReady = useMathReady()
   // Lazy-load the real BPE tokenizer after first paint; token counts and
   // the context-assembly budget sharpen from char/4 to exact once ready.
   useTokenizerReady()
@@ -776,6 +780,28 @@ export default function App() {
     setTimeout(() => sendMessageRef.current(lastUserContent), 80)
   }, [activeConv, isActiveConvLoading, convManager, settings])
 
+  // ─── Stable handlers for the memoized <ChatMessage> list ────────
+  // Each prop handed to ChatMessage must keep a permanent identity — one
+  // fresh-identity handler defeats React.memo and puts the whole history
+  // back on the per-streaming-chunk re-render path (regenerateResponse, for
+  // instance, gets a new identity whenever activeConv/settings change).
+  const handleToggleToolCollapse = useStableCallback((toolKey: string) => {
+    setCollapsedTools(prev => {
+      const next = new Set(prev)
+      if (next.has(toolKey)) next.delete(toolKey); else next.add(toolKey)
+      return next
+    })
+  })
+  const handleRegenerate = useStableCallback(() => regenerateResponse())
+  const handleDeleteMessage = useStableCallback(deleteMessage)
+  const handleBranchFrom = useStableCallback((msgId: string) => {
+    if (!activeConv) return
+    const idx = activeConv.messages.findIndex(m => m.id === msgId)
+    if (idx < 0) return
+    forkFrom(activeConv.id, idx)
+    showToast(settings.language === 'en' ? 'Conversation branched' : 'Conversa bifurcada')
+  })
+
   // Slash command parse + execute. Memoised so the popover render
   // doesn't re-walk SLASH_COMMANDS on every unrelated state change.
   const slash = useMemo(() => parseSlashInput(input), [input])
@@ -1392,93 +1418,20 @@ export default function App() {
               </div>
             ) : (
               activeConv.messages.map(msg => (
-                <div key={msg.id} className={`message message-${msg.role}`}>
-                  <div className="message-avatar">
-                    {msg.role === 'user' ? <User size={16} /> : <div className="oc-logo">OC</div>}
-                  </div>
-                  <div className="message-content">
-                    {msg.thinking && settings.showThinking !== false && (
-                      <details className="thinking-block" style={{ margin: '0 0 8px' }}>
-                        <summary style={{ cursor: 'pointer', opacity: 0.65, fontSize: 12, userSelect: 'none' }}>💭 Raciocínio</summary>
-                        <div className="thinking-content" style={{ marginTop: 6, padding: '8px 12px', borderLeft: '2px solid rgba(127,127,127,0.3)', opacity: 0.8, fontSize: 13 }} dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.thinking) }} />
-                      </details>
-                    )}
-                    {msg.content && <div className="message-text" dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }} />}
-                    {msg.role === 'assistant' && msg.content && extractArtifacts(msg.content).length > 0 && (
-                      <button
-                        onClick={() => setOpenArtifact(extractArtifacts(msg.content)[0])}
-                        title={settings.language === 'pt' ? 'Renderizar o artefato em preview ao vivo' : 'Render the artifact in a live preview'}
-                        style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', border: '1px solid rgba(127,127,127,0.3)', background: 'transparent', color: 'inherit', opacity: 0.85 }}
-                      >
-                        🎨 {settings.language === 'pt' ? 'Visualizar artefato' : 'Open artifact'}
-                      </button>
-                    )}
-                    {msg.toolCalls && msg.toolCalls.map((tc, i) => {
-                      const toolKey = `${msg.id}-${i}`
-                      const resultText = msg.toolResults?.[i]?.result || ''
-                      const defaultCollapsed = resultText.length > 200
-                      const isCollapsed = collapsedTools.has(toolKey) ? !defaultCollapsed : defaultCollapsed
-                      const toggleCollapse = () => {
-                        const newSet = new Set(collapsedTools)
-                        if (newSet.has(toolKey)) newSet.delete(toolKey); else newSet.add(toolKey)
-                        setCollapsedTools(newSet)
-                      }
-                      return (
-                        <div key={i} className="tool-call">
-                          <button className="tool-call-header" onClick={toggleCollapse}>
-                            {isCollapsed ? <Play size={10} className="tool-play" /> : <ChevronDown size={14} />}
-                            <Wrench size={12} className="tool-icon" /><span>{tc.name}</span>
-                          </button>
-                          {!isCollapsed && (
-                            <>
-                              <pre className="tool-call-args">{JSON.stringify(tc.arguments, null, 2)}</pre>
-                              {msg.toolResults?.[i] && (
-                                tc.name === 'web_search'
-                                  // Render search results as markdown so the source
-                                  // links are clickable (citation-ready format from
-                                  // electron/web-search-util.js).
-                                  ? <div className="tool-result tool-result-search" dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.toolResults[i].result || '', false) }} />
-                                  : <div className="tool-result"><Terminal size={12} /><pre>{msg.toolResults[i].result}</pre></div>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      )
-                    })}
-                    <div className="message-footer">
-                      <span className="message-timestamp">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                      <div className="message-actions">
-                        {msg.content && <CopyButton text={msg.content} title={settings.language === 'en' ? 'Copy as Markdown' : 'Copiar como Markdown'} onCopied={() => showToast(settings.language === 'en' ? 'Copied as Markdown' : 'Copiado como Markdown')} />}
-                        {msg.role === 'assistant' && (
-                          <button
-                            className="msg-action-btn msg-regen-btn"
-                            onClick={() => regenerateResponse()}
-                            title={settings.language === 'en' ? 'Regenerate this response' : 'Regenerar esta resposta'}
-                            aria-label="Regenerate"
-                          >
-                            <RefreshCw size={12} />
-                          </button>
-                        )}
-                        {activeConv && (
-                          <button
-                            className="msg-action-btn msg-branch-btn"
-                            onClick={() => {
-                              const idx = activeConv.messages.findIndex(m => m.id === msg.id)
-                              if (idx < 0) return
-                              forkFrom(activeConv.id, idx)
-                              showToast(settings.language === 'en' ? 'Conversation branched' : 'Conversa bifurcada')
-                            }}
-                            title={settings.language === 'en' ? 'Branch from here' : 'Bifurcar a partir daqui'}
-                            aria-label="Branch"
-                          >
-                            <GitBranch size={12} />
-                          </button>
-                        )}
-                        <button className="msg-action-btn" onClick={() => deleteMessage(msg.id)} title={settings.language === 'en' ? 'Delete message' : 'Excluir mensagem'}><Trash size={12} /></button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <ChatMessage
+                  key={msg.id}
+                  msg={msg}
+                  language={settings.language}
+                  showThinking={settings.showThinking !== false}
+                  mathReady={mathReady}
+                  collapsedTools={collapsedTools}
+                  onToggleCollapse={handleToggleToolCollapse}
+                  onOpenArtifact={setOpenArtifact}
+                  onRegenerate={handleRegenerate}
+                  onBranch={handleBranchFrom}
+                  onDelete={handleDeleteMessage}
+                  showToast={showToast}
+                />
               ))
             )}
             {/* Streaming text — only show in the conversation that is actively streaming */}
