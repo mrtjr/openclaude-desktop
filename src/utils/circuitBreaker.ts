@@ -35,11 +35,27 @@ export function countRecentRepeats(
 // live inline in useChat.processToolCalls, untested; extracted here so it's
 // unit-tested alongside the rest of the loop-safety machinery.
 
-/** A tool result counts as real progress UNLESS it's a working-memory write or
- *  a [SYSTEM INTERCEPT] (JSON-parse error / circuit-breaker) — neither advances
- *  the user's goal. */
+/** Deterministic failure markers that formatExecResult (v2.12.47) appends to
+ *  execute_command results: an own-line `[exit code: N]` on failure or the
+ *  timeout notice. Line-anchored so command output that merely *mentions* an
+ *  exit code doesn't match. */
+const EXEC_FAILURE_MARKER = /^\[(exit code: -?\d+|processo encerrado: tempo limite excedido)\]$/m
+
+/** A tool result counts as real progress UNLESS it's a working-memory write, a
+ *  [SYSTEM INTERCEPT] (JSON-parse error / circuit-breaker), or a FAILED
+ *  execute_command — none of those advance the user's goal. The exec check is
+ *  scoped to execute_command because only its results carry the marker by
+ *  construction (another tool could echo the same text from a file). A
+ *  thrashing agent issuing different failing commands used to count every
+ *  error as "progress" and grind toward the 200-call safety limit; now 5
+ *  consecutive all-fail steps stop the loop. Legit debug loops (fail → edit →
+ *  rerun) are unaffected: any successful tool in the step resets idle. */
 export function isProgressResult(r: { name: string; result: string }): boolean {
-  return r.name !== 'update_working_memory' && !(r.result || '').startsWith('[SYSTEM INTERCEPT]')
+  if (r.name === 'update_working_memory') return false
+  const result = r.result || ''
+  if (result.startsWith('[SYSTEM INTERCEPT]')) return false
+  if (r.name === 'execute_command' && EXEC_FAILURE_MARKER.test(result)) return false
+  return true
 }
 
 /** Given a step's tool results and the running idle count, compute the new idle

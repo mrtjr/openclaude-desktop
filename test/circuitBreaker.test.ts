@@ -41,6 +41,38 @@ describe('isProgressResult', () => {
   it('handles a missing result string', () => {
     expect(isProgressResult({ name: 'x', result: undefined as any })).toBe(true)
   })
+
+  // ── Failed commands (v2.12.48, builds on the v2.12.47 exit-code markers) ──
+  it('does NOT count a failed execute_command as progress', () => {
+    expect(isProgressResult({
+      name: 'execute_command',
+      result: 'npm ERR! missing script: biuld\n[exit code: 1]',
+    })).toBe(false)
+    expect(isProgressResult({
+      name: 'execute_command',
+      result: '--- stderr ---\ncomando não reconhecido\n[exit code: 127]',
+    })).toBe(false)
+  })
+  it('does NOT count a timed-out execute_command as progress', () => {
+    expect(isProgressResult({
+      name: 'execute_command',
+      result: 'saída parcial…\n[processo encerrado: tempo limite excedido]',
+    })).toBe(false)
+  })
+  it('counts a successful execute_command as progress even when output MENTIONS an exit code', () => {
+    // not line-anchored → not the marker
+    expect(isProgressResult({
+      name: 'execute_command',
+      result: 'last run ended with [exit code: 3] according to the log',
+    })).toBe(true)
+    expect(isProgressResult({ name: 'execute_command', result: 'build ok' })).toBe(true)
+  })
+  it('ignores the marker text when it comes from ANOTHER tool (e.g. read_file on a saved log)', () => {
+    expect(isProgressResult({
+      name: 'read_file',
+      result: 'log antigo:\n[exit code: 1]',
+    })).toBe(true)
+  })
 })
 
 describe('computeAgentProgress', () => {
@@ -66,5 +98,33 @@ describe('computeAgentProgress', () => {
   })
   it('treats an empty result set as no progress', () => {
     expect(computeAgentProgress([], 0, 5)).toEqual({ idleSteps: 1, continue: true })
+  })
+  it('stops a thrashing agent: 5 consecutive all-fail command steps (different args each time)', () => {
+    let state = { idleSteps: 0, continue: true }
+    for (let i = 0; i < 5; i++) {
+      state = computeAgentProgress(
+        [{ name: 'execute_command', result: `tentativa ${i} falhou\n[exit code: 1]` }],
+        state.idleSteps, 5,
+      )
+    }
+    expect(state.idleSteps).toBe(5)
+    expect(state.continue).toBe(false)
+  })
+  it('does NOT stop a legit debug loop (fail → edit → rerun resets idle)', () => {
+    let state = { idleSteps: 0, continue: true }
+    for (let i = 0; i < 10; i++) {
+      // failing test run…
+      state = computeAgentProgress(
+        [{ name: 'execute_command', result: 'FAIL src/x.test.ts\n[exit code: 1]' }],
+        state.idleSteps, 5,
+      )
+      expect(state.continue).toBe(true)
+      // …followed by a fix attempt (real progress, resets idle)
+      state = computeAgentProgress(
+        [{ name: 'write_file', result: 'Arquivo escrito com sucesso' }],
+        state.idleSteps, 5,
+      )
+      expect(state).toEqual({ idleSteps: 0, continue: true })
+    }
   })
 })
