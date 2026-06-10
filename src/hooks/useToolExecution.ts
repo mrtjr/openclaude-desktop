@@ -3,7 +3,7 @@ import type { AppSettings, PendingApproval, TaskPlan, Conversation } from '../ty
 import { TOOLS } from '../constants/tools'
 import { resolveToolSearch, formatToolSearchResult } from '../services/toolDeferral'
 import { toolNeedsApproval, truncateToolOutput } from '../utils/toolPolicy'
-import { formatExecResult, resolveExecCwd } from '../utils/execResult'
+import { formatExecResult, resolveExecCwd, resolveExecTimeoutMs } from '../utils/execResult'
 import { logInsight } from '../services/devInsights'
 import type { ModalKeyPool } from './useModalKeyPool'
 import type { ParallelChatResult, ParallelChatTask } from '../types/ipc'
@@ -43,7 +43,8 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
       }
       if (name === 'execute_command') {
         const cwd = resolveExecCwd(args.cwd, projectCwdRef.current)
-        const result = await window.electron.execCommand(cwd ? { command: args.command, cwd } : args.command)
+        const timeoutMs = resolveExecTimeoutMs(args.timeout_s)
+        const result = await window.electron.execCommand({ command: args.command, cwd, timeoutMs })
         return formatExecResult(result)
       }
       if (name === 'read_file') {

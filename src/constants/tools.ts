@@ -21,12 +21,13 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'execute_command',
-      description: 'Execute a PowerShell command on the Windows system. Output includes stderr and the exit code on failure.',
+      description: 'Execute a PowerShell command on the Windows system. Output includes stderr and the exit code on failure. Default timeout is 60s — pass timeout_s for long-running commands (builds, installs, backtests).',
       parameters: {
         type: 'object',
         properties: {
           command: { type: 'string', description: 'The PowerShell command to execute' },
-          cwd: { type: 'string', description: 'Optional absolute path of the working directory to run in. Defaults to the active project folder when one is set.' }
+          cwd: { type: 'string', description: 'Optional absolute path of the working directory to run in. Defaults to the active project folder when one is set.' },
+          timeout_s: { type: 'number', description: 'Optional timeout in seconds (default 60, max 600). Use a higher value when the command is expected to take long, e.g. builds or installs.' }
         },
         required: ['command']
       }

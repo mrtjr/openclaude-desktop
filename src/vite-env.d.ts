@@ -6,7 +6,7 @@ interface Window {
     ollamaChat: (params: any) => Promise<any>
     ollamaChatStream: (params: any) => Promise<any>
     onStreamChunk: (callback: (chunk: any) => void) => () => void
-    execCommand: (cmd: string | { command: string; cwd?: string }) => Promise<{ stdout: string; stderr: string; exitCode?: number; timedOut?: boolean; error: string | null }>
+    execCommand: (cmd: string | { command: string; cwd?: string; timeoutMs?: number }) => Promise<{ stdout: string; stderr: string; exitCode?: number; timedOut?: boolean; timeoutMs?: number; error: string | null }>
     gitCommand: (params: { command: string; cwd: string }) => Promise<{ stdout: string; stderr: string; error: string | null }>
     readFile: (path: string) => Promise<{ content: string | null; error: string | null }>
     writeFile: (params: { filePath: string; content: string }) => Promise<{ error: string | null }>

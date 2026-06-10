@@ -378,20 +378,23 @@ ipcMain.handle('abort-stream', async () => {
 })
 
 // ─── IPC: Execute command ────────────────────────────────────────────
-// Accepts a plain string (legacy callers) or { command, cwd } so commands can
-// run inside a project's working folder instead of the app's process cwd.
+// Accepts a plain string (legacy callers) or { command, cwd, timeoutMs }.
+// `cwd` runs the command inside a project's working folder; `timeoutMs`
+// (model-requested via the timeout_s tool arg, re-clamped here as defense
+// in depth) lifts the old fixed 60s wall for builds/installs/backtests.
 ipcMain.handle('exec-command', async (event, payload) => {
-  const { command, cwd } = typeof payload === 'string'
-    ? { command: payload, cwd: undefined }
+  const { command, cwd, timeoutMs } = typeof payload === 'string'
+    ? { command: payload, cwd: undefined, timeoutMs: undefined }
     : (payload || {})
+  const timeout = Math.min(Math.max(Number(timeoutMs) || 60000, 1000), 600000)
   if (cwd && !fs.existsSync(cwd)) {
-    return { stdout: '', stderr: '', exitCode: 1, timedOut: false, error: `Pasta de trabalho não existe: ${cwd}` }
+    return { stdout: '', stderr: '', exitCode: 1, timedOut: false, timeoutMs: timeout, error: `Pasta de trabalho não existe: ${cwd}` }
   }
   return new Promise((resolve) => {
     exec(command, {
       shell: 'powershell.exe',
       cwd: cwd || undefined,
-      timeout: 60000,
+      timeout,
       maxBuffer: 10 * 1024 * 1024, // 10MB
       windowsHide: true
     }, (err, stdout, stderr) => {
@@ -402,6 +405,7 @@ ipcMain.handle('exec-command', async (event, payload) => {
         // spawn errors and absent on a timeout kill — normalize to a number.
         exitCode: err ? (typeof err.code === 'number' ? err.code : 1) : 0,
         timedOut: !!err?.killed,
+        timeoutMs: timeout,
         error: err && !stdout && !stderr ? err.message : null
       })
     })

@@ -13,7 +13,25 @@ export interface ExecIpcResult {
   stderr?: string | null
   exitCode?: number | null
   timedOut?: boolean
+  /** Effective timeout the handler applied — echoed back so the timeout
+   *  message can tell the model whether asking for more time is an option. */
+  timeoutMs?: number
   error?: string | null
+}
+
+// Timeout bounds for execute_command. The old fixed 60s wall made whole task
+// classes (builds, installs, backtests) impossible for the agent — the model
+// can now request up to 10 minutes per command via the `timeout_s` tool arg.
+export const DEFAULT_EXEC_TIMEOUT_MS = 60_000
+export const MIN_EXEC_TIMEOUT_MS = 1_000
+export const MAX_EXEC_TIMEOUT_MS = 600_000
+
+/** Resolve the model-supplied `timeout_s` (seconds) into clamped milliseconds.
+ *  Absent/invalid/non-positive values fall back to the 60s default. */
+export function resolveExecTimeoutMs(argTimeoutS: unknown): number {
+  const n = Number(argTimeoutS)
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_EXEC_TIMEOUT_MS
+  return Math.min(Math.max(Math.round(n * 1000), MIN_EXEC_TIMEOUT_MS), MAX_EXEC_TIMEOUT_MS)
 }
 
 /**
@@ -34,7 +52,15 @@ export function formatExecResult(r: ExecIpcResult): string {
   if (stdout) parts.push(stdout)
   if (stderr) parts.push(`--- stderr ---\n${stderr}`)
   if (r.timedOut) {
+    // The marker line must stay byte-identical — circuitBreaker's
+    // EXEC_FAILURE_MARKER matches it line-anchored. The remedy hint goes on
+    // its own line so the model knows MORE TIME is requestable (and stays
+    // quiet when the command already ran at the cap).
     parts.push('[processo encerrado: tempo limite excedido]')
+    const used = r.timeoutMs ?? DEFAULT_EXEC_TIMEOUT_MS
+    if (used < MAX_EXEC_TIMEOUT_MS) {
+      parts.push(`Dica: o comando excedeu ${Math.round(used / 1000)}s — chame de novo com timeout_s maior (máximo ${MAX_EXEC_TIMEOUT_MS / 1000}s).`)
+    }
   } else if (failed) {
     parts.push(`[exit code: ${r.exitCode}]`)
   }

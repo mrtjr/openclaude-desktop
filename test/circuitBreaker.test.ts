@@ -59,6 +59,12 @@ describe('isProgressResult', () => {
       result: 'saída parcial…\n[processo encerrado: tempo limite excedido]',
     })).toBe(false)
   })
+  it('still matches the timeout marker when the timeout_s hint line follows it (v2.12.50)', () => {
+    expect(isProgressResult({
+      name: 'execute_command',
+      result: 'saída parcial…\n[processo encerrado: tempo limite excedido]\nDica: o comando excedeu 60s — chame de novo com timeout_s maior (máximo 600s).',
+    })).toBe(false)
+  })
   it('counts a successful execute_command as progress even when output MENTIONS an exit code', () => {
     // not line-anchored → not the marker
     expect(isProgressResult({
