@@ -3,6 +3,8 @@ import { User, Play, ChevronDown, Wrench, Terminal, RefreshCw, GitBranch, Trash 
 import type { Message } from '../types'
 import { formatMarkdown } from '../utils/formatting'
 import { extractArtifacts, type Artifact } from '../utils/artifacts'
+import { toolCallSummary } from '../utils/toolDisplay'
+import { isToolError } from '../utils/toolPolicy'
 import CopyButton from './CopyButton'
 
 // One chat message, extracted from the inline map in App.tsx and memoized.
@@ -67,11 +69,18 @@ function ChatMessageInner({
           const resultText = msg.toolResults?.[i]?.result || ''
           const defaultCollapsed = resultText.length > 200
           const isCollapsed = collapsedTools.has(toolKey) ? !defaultCollapsed : defaultCollapsed
+          // Header readability (v2.12.52): a run with 10+ execute_commands used
+          // to render identical rows — surface the main arg and flag failures
+          // (isToolError reuses the audit classification, exec markers included).
+          const summary = toolCallSummary(tc.name, tc.arguments)
+          const failed = !!resultText && isToolError(resultText, tc.name)
           return (
             <div key={i} className="tool-call">
               <button className="tool-call-header" onClick={() => onToggleCollapse(toolKey)}>
                 {isCollapsed ? <Play size={10} className="tool-play" /> : <ChevronDown size={14} />}
                 <Wrench size={12} className="tool-icon" /><span>{tc.name}</span>
+                {summary && <span className="tool-call-summary" title={summary}>{summary}</span>}
+                {failed && <span className="tool-call-badge-error">{language === 'en' ? 'error' : 'erro'}</span>}
               </button>
               {!isCollapsed && (
                 <>

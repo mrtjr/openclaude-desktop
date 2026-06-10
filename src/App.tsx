@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react'
 import 'highlight.js/styles/github-dark.css'
-import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder } from 'lucide-react'
+import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder, Wrench } from 'lucide-react'
 import { loadSettings, type AppSettings } from './settingsConfig'
 import type { Persona } from './PersonaEngine'
 // Small / hot-path components — eager
@@ -103,6 +103,10 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings>(loadSettings)
   const [placeholderIdx, setPlaceholderIdx] = useState(0)
   const [collapsedTools, setCollapsedTools] = useState<Set<string>>(new Set())
+  // Message typed mid-turn, waiting for the conversation to idle (v2.12.52 —
+  // the composer no longer locks for the whole 3–10 min turn). convId pins
+  // the queue to the conversation it was typed in.
+  const [queuedMessage, setQueuedMessage] = useState<{ text: string; convId: string | null } | null>(null)
   const [taskPlanCollapsed, setTaskPlanCollapsed] = useState(false)
   const [updateAvailable, setUpdateAvailable] = useState<{available: boolean, releaseUrl: string, latestVersion: string} | null>(null)
   // Auto-update (electron-updater): set once a new version finished downloading
@@ -917,9 +921,28 @@ export default function App() {
     }
     // Escape hatch: leading "//" sends literal "/..." without the escape.
     const payload = input.startsWith('//') ? input.slice(1) : input
+    // Mid-turn (turns run 3–10 min on Modal): queue instead of dropping the
+    // user on a disabled composer. Auto-sends when this conversation idles.
+    if (isActiveConvLoading) {
+      setQueuedMessage({ text: payload.trim(), convId: convManager.activeConvId })
+      setInput('')
+      return
+    }
     sendMessageRef.current(payload.trim())
     setInput('')
-  }, [input, slash, slashIdx, executeSlash])
+  }, [input, slash, slashIdx, executeSlash, isActiveConvLoading, convManager.activeConvId])
+
+  // Fire the queued message once ITS conversation goes idle (switching to
+  // another conversation keeps it parked until the user returns).
+  useEffect(() => {
+    if (queuedMessage && !isActiveConvLoading && queuedMessage.convId === convManager.activeConvId) {
+      const msg = queuedMessage.text
+      setQueuedMessage(null)
+      // Let the finished turn's state settle before re-entering sendMessage
+      // (same pattern as regenerateResponse).
+      setTimeout(() => sendMessageRef.current(msg), 80)
+    }
+  }, [queuedMessage, isActiveConvLoading, convManager.activeConvId])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Slash popover: capture navigation keys before sending.
@@ -1459,7 +1482,12 @@ export default function App() {
                 <div className="message-content">
                   <div className="agent-status-container">
                     <div className="typing-indicator"><span></span><span></span><span></span></div>
-                    <ThinkingTimer />
+                    <ThinkingTimer suppressHint={!!chat.runningTool} />
+                    {chat.runningTool && (
+                      <span className="running-tool" title={chat.runningTool.detail}>
+                        <Wrench size={10} /> {chat.runningTool.name}{chat.runningTool.detail ? <span className="running-tool-detail"> · {chat.runningTool.detail}</span> : null}
+                      </span>
+                    )}
                     {isAgentMode && (
                       <div className="agent-badge"><Zap size={10} className="pulse" /><span>Agente: Passo {chat.agentSteps}</span></div>
                     )}
@@ -1565,12 +1593,22 @@ export default function App() {
                 onExecute={executeSlash}
                 language={settings.language}
               />
+              {queuedMessage && (
+                <div className="queued-pill">
+                  <Clock size={11} />
+                  <span className="queued-pill-text">{settings.language === 'en' ? 'Queued: ' : 'Na fila: '}{queuedMessage.text.length > 90 ? queuedMessage.text.slice(0, 89) + '…' : queuedMessage.text}</span>
+                  <button className="queued-pill-cancel" title={settings.language === 'en' ? 'Cancel (back to composer)' : 'Cancelar (volta ao campo)'}
+                    onClick={() => { setInput(queuedMessage.text); setQueuedMessage(null); textareaRef.current?.focus() }}>
+                    <X size={11} />
+                  </button>
+                </div>
+              )}
               <div className="input-pill" onClick={e => e.stopPropagation()}>
                 <div className="input-left-actions">
                   <button className="input-icon-btn" onClick={() => setShowCommandPalette(true)} title="Ferramentas e recursos (Ctrl+K)"><Plus size={18} /></button>
                 </div>
                 <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown}
-                  placeholder={PLACEHOLDER_HINTS[placeholderIdx]} className="message-input" rows={1} disabled={isActiveConvLoading} />
+                  placeholder={isActiveConvLoading ? (settings.language === 'en' ? 'Type the next message — Enter queues it' : 'Digite a próxima mensagem — Enter coloca na fila') : PLACEHOLDER_HINTS[placeholderIdx]} className="message-input" rows={1} />
                 <div className="input-right-actions">
                   {input.length > 0 && <button className="input-icon-btn" onClick={() => { setInput(''); textareaRef.current?.focus() }} title="Limpar"><XCircle size={14} /></button>}
                   <button className={`mode-toggle ${isAgentMode ? 'agent-on' : ''}`} onClick={() => setIsAgentMode(!isAgentMode)}

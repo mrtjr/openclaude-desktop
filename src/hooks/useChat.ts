@@ -8,6 +8,7 @@ import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice, extra
 import { classifyProviderError, humanizeProviderError } from '../utils/providerErrors'
 import { resolveTurnUsage } from '../utils/usage'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
+import { toolCallSummary } from '../utils/toolDisplay'
 import { logInsight } from '../services/devInsights'
 import { createContextEngine, getModelContextLimit, countToolSchemas, computeMessageBudget } from '../services/contextEngine'
 import type { ProviderConfig } from './useProviderConfig'
@@ -58,6 +59,10 @@ export function useChat({
   const [streamingText, setStreamingText] = useState('')
   const [agentSteps, setAgentSteps] = useState(0)
   const [streamingConvId, setStreamingConvId] = useState<string | null>(null)
+  // Tool currently executing (name + arg summary) — the live status the user
+  // sees during long tool runs (execute_command can run up to 600s; before
+  // this the UI showed only generic dots + "Passo N" the whole time).
+  const [runningTool, setRunningTool] = useState<{ name: string; detail: string } | null>(null)
 
   const stopRequestedRef = useRef(false)
   const streamCleanupRef = useRef<(() => void) | null>(null)
@@ -101,6 +106,7 @@ export function useChat({
     setIsStreaming(false)
     setStreamingText('')
     setStreamingConvId(null)
+    setRunningTool(null)
     if (streamCleanupRef.current) {
       streamCleanupRef.current()
       streamCleanupRef.current = null
@@ -791,6 +797,7 @@ export function useChat({
       setIsStreaming(false)
       setStreamingText('')
       setStreamingConvId(null)
+      setRunningTool(null)
       // Per-STEP response latency, decoupled from total agent-run length: a
       // multi-step browsing session runs for minutes and would otherwise
       // masquerade as "latency" in the digest (observed: 385s avg). Reused for
@@ -874,7 +881,12 @@ export function useChat({
         tracker.circuitBreaks++
         logInsight('agent', 'circuit_break', { tool: tc.function.name })
       } else {
-        result = await executeTool(tc.function.name, args)
+        setRunningTool({ name: tc.function.name, detail: toolCallSummary(tc.function.name, args) })
+        try {
+          result = await executeTool(tc.function.name, args)
+        } finally {
+          setRunningTool(null)
+        }
       }
 
       tracker.toolCalls++
@@ -902,6 +914,7 @@ export function useChat({
     streamingText,
     streamingConvId,
     agentSteps,
+    runningTool,
     stopAgent,
     sendMessage,
   }

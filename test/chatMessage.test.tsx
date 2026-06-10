@@ -93,6 +93,34 @@ describe('ChatMessage - rendering (behavior preserved from the inline App map)',
     const { queryByLabelText } = render(<ChatMessage msg={msg({ role: 'user' })} {...baseProps()} />)
     expect(queryByLabelText('Regenerate')).toBeNull()
   })
+
+  it('shows the main argument in the tool-call header (v2.12.52)', () => {
+    const m = msg({
+      toolCalls: [{ id: 't1', name: 'execute_command', arguments: { command: 'npm run build' } }],
+      toolResults: [{ toolCallId: 't1', name: 'execute_command', result: 'ok' }],
+    })
+    const { container } = render(<ChatMessage msg={m} {...baseProps()} />)
+    expect(container.querySelector('.tool-call-summary')?.textContent).toBe('npm run build')
+  })
+
+  it('flags a failed execute_command with the error badge', () => {
+    const m = msg({
+      toolCalls: [{ id: 't1', name: 'execute_command', arguments: { command: 'npm run biuld' } }],
+      toolResults: [{ toolCallId: 't1', name: 'execute_command', result: 'npm ERR! missing script\n[exit code: 1]' }],
+    })
+    const { container } = render(<ChatMessage msg={m} {...baseProps()} />)
+    expect(container.querySelector('.tool-call-badge-error')?.textContent).toBe('erro')
+  })
+
+  it('shows no badge on success and no summary when there is no primary arg', () => {
+    const m = msg({
+      toolCalls: [{ id: 't1', name: 'plan_tasks', arguments: {} }],
+      toolResults: [{ toolCallId: 't1', name: 'plan_tasks', result: 'Task plan created' }],
+    })
+    const { container } = render(<ChatMessage msg={m} {...baseProps()} />)
+    expect(container.querySelector('.tool-call-badge-error')).toBeNull()
+    expect(container.querySelector('.tool-call-summary')).toBeNull()
+  })
 })
 
 describe('ChatMessage - memo contract (the point of the extraction)', () => {

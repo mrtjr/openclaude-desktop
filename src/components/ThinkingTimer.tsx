@@ -13,7 +13,7 @@ import { formatElapsed } from '../utils/elapsed'
  * wait; a ticking timer (plus a hint once it's clearly a long one) tells the
  * user it's working — a pure perceived-latency win, no backend change.
  */
-export function ThinkingTimer() {
+export function ThinkingTimer({ suppressHint = false }: { suppressHint?: boolean } = {}) {
   const [elapsed, setElapsed] = useState(0)
 
   useEffect(() => {
@@ -28,7 +28,9 @@ export function ThinkingTimer() {
   return (
     <span className="thinking-timer" aria-live="polite">
       <span className="thinking-elapsed">{formatElapsed(elapsed)}</span>
-      {elapsed >= 20 && (
+      {/* The hint talks about MODEL latency — misleading while a tool is
+          running (the live running-tool status covers that case instead). */}
+      {elapsed >= 20 && !suppressHint && (
         <span className="thinking-hint">modelos grandes podem levar 1–2 min…</span>
       )}
     </span>
