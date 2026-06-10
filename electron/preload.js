@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 contextBridge.exposeInMainWorld('electron', {
   // Ollama
@@ -42,6 +42,9 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Dropped files
   readDroppedFile: (path) => ipcRenderer.invoke('read-dropped-file', path),
+  // Electron 32+ removed the non-standard File.path — this is the official
+  // replacement for resolving a dragged file's absolute path.
+  getPathForFile: (file) => webUtils.getPathForFile(file),
 
   // Document parsing (PDF / DOCX)
   readDocument: (filePath) => ipcRenderer.invoke('read-document', filePath),

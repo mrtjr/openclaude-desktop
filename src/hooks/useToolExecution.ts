@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react'
 import type { AppSettings, PendingApproval, TaskPlan, Conversation } from '../types'
 import { TOOLS } from '../constants/tools'
 import { resolveToolSearch, formatToolSearchResult } from '../services/toolDeferral'
-import { toolNeedsApproval, truncateToolOutput } from '../utils/toolPolicy'
+import { toolNeedsApproval, truncateToolOutput, isToolError } from '../utils/toolPolicy'
 import { formatExecResult, resolveExecCwd, resolveExecTimeoutMs } from '../utils/execResult'
 import { logInsight } from '../services/devInsights'
 import type { ModalKeyPool } from './useModalKeyPool'
@@ -319,12 +319,13 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
     const startTime = Date.now()
     const out = await executeToolRaw(name, args)
     const duration = Date.now() - startTime
-    logInsight('tool', 'use', { name })
+    const failed = isToolError(out, name)
+    logInsight('tool', 'use', { name, ok: !failed })
 
     window.electron.auditLogAppend({
       tool: name,
       args,
-      status: out.startsWith('Erro:') || out.startsWith('[SYSTEM INTERCEPT]') ? 'error' : 'success',
+      status: failed ? 'error' : 'success',
       output: out.substring(0, 500),
       duration,
       conversationId: convId,

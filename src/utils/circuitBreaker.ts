@@ -39,7 +39,7 @@ export function countRecentRepeats(
  *  execute_command results: an own-line `[exit code: N]` on failure or the
  *  timeout notice. Line-anchored so command output that merely *mentions* an
  *  exit code doesn't match. */
-const EXEC_FAILURE_MARKER = /^\[(exit code: -?\d+|processo encerrado: tempo limite excedido)\]$/m
+export const EXEC_FAILURE_MARKER = /^\[(exit code: -?\d+|processo encerrado: tempo limite excedido)\]$/m
 
 /** A tool result counts as real progress UNLESS it's a working-memory write, a
  *  [SYSTEM INTERCEPT] (JSON-parse error / circuit-breaker), or a FAILED

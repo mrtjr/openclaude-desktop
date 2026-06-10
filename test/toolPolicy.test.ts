@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toolNeedsApproval, truncateToolOutput, TOOL_OUTPUT_LIMIT } from '../src/utils/toolPolicy'
+import { toolNeedsApproval, truncateToolOutput, isToolError, TOOL_OUTPUT_LIMIT } from '../src/utils/toolPolicy'
 
 describe('toolNeedsApproval', () => {
   it('gates every dangerous tool in ask and planning', () => {
@@ -29,6 +29,37 @@ describe('toolNeedsApproval', () => {
       expect(toolNeedsApproval(level, 'web_search')).toBe(false)
       expect(toolNeedsApproval(level, 'undo_last_write')).toBe(false)
     }
+  })
+})
+
+describe('isToolError (audit/telemetry classification)', () => {
+  it('catches the legacy prefixes', () => {
+    expect(isToolError('Erro: arquivo não encontrado')).toBe(true)
+    expect(isToolError('Erro ao listar diretorio')).toBe(true)
+    expect(isToolError('[SYSTEM INTERCEPT]: Circuit Breaker Triggered')).toBe(true)
+  })
+
+  it('catches the labeled prefixes that were previously logged as SUCCESS', () => {
+    expect(isToolError('Git error: not a repository')).toBe(true)
+    expect(isToolError('Browser launch error: spawn failed')).toBe(true)
+    expect(isToolError('Navigation error: timeout')).toBe(true)
+    expect(isToolError('Screenshot error: no window')).toBe(true)
+    expect(isToolError('Key press error: x')).toBe(true)
+    expect(isToolError('Error: generic')).toBe(true)
+  })
+
+  it('catches failed execute_command via the exit-code/timeout markers (tool-scoped)', () => {
+    expect(isToolError('npm ERR!\n[exit code: 1]', 'execute_command')).toBe(true)
+    expect(isToolError('parcial…\n[processo encerrado: tempo limite excedido]', 'execute_command')).toBe(true)
+    // same text from another tool (e.g. read_file on an old log) is NOT an error
+    expect(isToolError('log antigo:\n[exit code: 1]', 'read_file')).toBe(false)
+  })
+
+  it('treats normal output as success — including text that mentions errors', () => {
+    expect(isToolError('Arquivo escrito com sucesso')).toBe(false)
+    expect(isToolError('build ok', 'execute_command')).toBe(false)
+    expect(isToolError('O log contém "Git error:" na linha 40')).toBe(false)
+    expect(isToolError('')).toBe(false)
   })
 })
 

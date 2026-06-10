@@ -299,6 +299,9 @@ ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, tem
     }
 
     const req = http.request(options, (res) => {
+      // Decode as UTF-8 with state across chunks — `chunk.toString()` corrupts
+      // a multi-byte char (ã/ç/é…) that lands on a packet boundary into U+FFFD.
+      res.setEncoding('utf8')
       // Check HTTP status for Ollama errors
       if (res.statusCode && res.statusCode >= 400) {
         let errorBody = ''
@@ -1093,6 +1096,10 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
       // budget (token gaps in SSE are short; see provider-timeouts.js). The
       // original 'timeout' listener stays attached, so this just lowers the value.
       req.setTimeout(providerTimeoutMs(provider, 'stream'))
+      // Stateful UTF-8 decode — without it a multi-byte char split across two
+      // TCP packets becomes U+FFFD mid-stream (silent, intermittent, and most
+      // likely on long Modal streams in Portuguese).
+      res.setEncoding('utf8')
       // Check HTTP status
       if (res.statusCode && res.statusCode >= 400) {
         let errorBody = ''
@@ -1732,6 +1739,7 @@ ipcMain.handle('mcp-connect', async (event, { id, command, args, env }) => {
       })
     }
 
+    proc.stdout.setEncoding('utf8')
     proc.stdout.on('data', (chunk) => {
       buffer += chunk.toString()
       const lines = buffer.split('\n')

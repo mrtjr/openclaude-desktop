@@ -1,5 +1,8 @@
 /// <reference types="vite/client" />
 
+/** Injected by Vite `define` from package.json at build time. */
+declare const __APP_VERSION__: string
+
 interface Window {
   electron: {
     compactContext: (params: { messages: any[]; model: string; language: string; provider?: string }) => Promise<{ summary: string; error: string | null; skipped?: boolean }>
@@ -9,6 +12,7 @@ interface Window {
     execCommand: (cmd: string | { command: string; cwd?: string; timeoutMs?: number }) => Promise<{ stdout: string; stderr: string; exitCode?: number; timedOut?: boolean; timeoutMs?: number; error: string | null }>
     gitCommand: (params: { command: string; cwd: string }) => Promise<{ stdout: string; stderr: string; error: string | null }>
     readFile: (path: string) => Promise<{ content: string | null; error: string | null }>
+    getPathForFile?: (file: File) => string
     writeFile: (params: { filePath: string; content: string }) => Promise<{ error: string | null }>
     undoLastWrite: () => Promise<{ error: string | null; restored: string | null }>
     listSnapshots: () => Promise<{ filePath: string; timestamp: number; fileName: string }[]>

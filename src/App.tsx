@@ -80,6 +80,7 @@ import { useSync } from './hooks/useSync'
 import { useDevInsights } from './hooks/useDevInsights'
 import { logInsight } from './services/devInsights'
 import { type Artifact } from './utils/artifacts'
+import { formatDroppedFile } from './utils/attachments'
 
 // ─── App ─────────────────────────────────────────────────────────────
 export default function App() {
@@ -694,12 +695,16 @@ export default function App() {
       if (e.dataTransfer?.files) {
         for (let i = 0; i < e.dataTransfer.files.length; i++) {
           const file = e.dataTransfer.files[i]
-          const filePath = (file as any).path
+          // Electron 32+ removed the non-standard File.path — without
+          // webUtils.getPathForFile (via preload) drops silently did nothing.
+          const filePath = window.electron.getPathForFile
+            ? window.electron.getPathForFile(file)
+            : (file as any).path
           if (filePath) {
             try {
               const result = await window.electron.readDroppedFile(filePath)
               if (result.content) {
-                setInput(prev => prev + `[Arquivo: ${result.name || filePath}]\n\`\`\`\n${result.content!.slice(0, 5000)}\n\`\`\`\n`)
+                setInput(prev => prev + formatDroppedFile(result.name || filePath, result.content!))
               } else if (result.error) {
                 setInput(prev => prev + `[Erro ao ler ${filePath}: ${result.error}]`)
               }
@@ -1358,7 +1363,7 @@ export default function App() {
                   onOpenAccentPicker={() => setShowAccentPicker(true)}
                   onCycleTheme={cycleTheme}
                   themeLabel={themeLabel}
-                  appVersion="2.12.5"
+                  appVersion={__APP_VERSION__}
                 />
               )}
             </div>

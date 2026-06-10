@@ -7,6 +7,7 @@
 // decision is a small pure function with full test coverage.
 
 import { DANGEROUS_TOOLS } from '../constants/tools'
+import { EXEC_FAILURE_MARKER } from './circuitBreaker'
 import type { PermissionLevel } from '../settingsConfig'
 
 /** Tools that 'auto_edits' mode lets through without a prompt (the file edits
@@ -30,6 +31,24 @@ export function toolNeedsApproval(level: PermissionLevel, name: string): boolean
     default:
       return DANGEROUS_TOOLS.has(name)
   }
+}
+
+/** Classify a tool's textual output as an error, for the audit log and the
+ *  Dev Insights telemetry. The old inline check only caught `Erro:` and
+ *  `[SYSTEM INTERCEPT]` — so `Git error:`, `Browser launch error:`, failed
+ *  commands etc. were all recorded as SUCCESS, and the digest that drives
+ *  each improvement cycle overstated tool reliability. Covers:
+ *   - the labeled prefixes used across useToolExecution (`Erro:`, `Error:`,
+ *     and any `<words> error:` form, so future tools get caught too);
+ *   - `[SYSTEM INTERCEPT]` guards;
+ *   - execute_command failures via the line-anchored exit-code/timeout
+ *     markers (scoped to that tool — other tools may echo similar text). */
+export function isToolError(output: string, toolName?: string): boolean {
+  const out = output || ''
+  if (/^(Erro\b|Error:|\[SYSTEM INTERCEPT\])/.test(out)) return true
+  if (/^[A-Za-z][A-Za-z ]{0,30} error:/.test(out)) return true
+  if (toolName === 'execute_command' && EXEC_FAILURE_MARKER.test(out)) return true
+  return false
 }
 
 export const TOOL_OUTPUT_LIMIT = 4000
