@@ -81,6 +81,8 @@ import { useDevInsights } from './hooks/useDevInsights'
 import { logInsight } from './services/devInsights'
 import { type Artifact } from './utils/artifacts'
 import { formatDroppedFile } from './utils/attachments'
+import { runCompaction, mergeSummary } from './services/compaction'
+import { renderWorkingMemory, renderPersistentMemory } from './utils/memoryRender'
 
 // ─── App ─────────────────────────────────────────────────────────────
 export default function App() {
@@ -422,11 +424,29 @@ export default function App() {
       settings.toolDeferralMode, getModelContextLimit(selectedModel), countToolSchemas(TOOLS as any),
     ).enabled),
     [settings.toolDeferralMode, selectedModel])
+  // Persistent memory text for the panel accounting — loaded via the same
+  // renderer (memoryRender.ts) the chat pipeline injects, so the panel counts
+  // exactly what goes into requests. Refreshes when the panel opens.
+  const [persistentMemoryText, setPersistentMemoryText] = useState('')
+  useEffect(() => {
+    if (!settings.memoryEnabled) { setPersistentMemoryText(''); return }
+    window.electron.loadMemory()
+      .then((mem: any) => setPersistentMemoryText(renderPersistentMemory(mem)))
+      .catch(() => setPersistentMemoryText(''))
+  }, [settings.memoryEnabled, showContextPanel])
+  // Everything injected as "memory" each turn: running summary + the agent's
+  // working-memory reminder + persistent facts. The panel used to count ONLY
+  // contextSummary — which (compaction being broken on cloud providers) was
+  // always empty, so "Memória / resumo" showed a permanent 0 even with
+  // memory in every request.
   const memoryText = useMemo(() => {
     const parts: string[] = []
     if (activeConv?.contextSummary) parts.push(activeConv.contextSummary)
+    const wm = renderWorkingMemory(activeConv?.workingMemory)
+    if (wm) parts.push(wm)
+    if (persistentMemoryText) parts.push(persistentMemoryText)
     return parts.join('\n\n')
-  }, [activeConv?.contextSummary])
+  }, [activeConv?.contextSummary, activeConv?.workingMemory, persistentMemoryText])
   const ctxBreakdown = useContextBreakdown({
     activeConv,
     model: providerConfig.model,
@@ -877,28 +897,22 @@ export default function App() {
             showToast(lang === 'en' ? 'Nothing to compact yet' : 'Nada para compactar ainda', 'info')
             return
           }
-          try {
-            const res = await window.electron.compactContext({
-              messages: conv.messages as any,
-              model: providerConfig.model,
-              language: lang,
-              provider: settings.provider,
-              ...(clean ? { instructions: clean } : {}),
-            } as any)
-            if (res?.summary) {
-              const prev = conv.contextSummary || ''
-              const merged = (prev ? prev + '\n\n' : '') + res.summary
-              const trimmed = merged.length > 2000 ? merged.slice(-2000) : merged
-              convManager.setConversations(list => list.map(c =>
-                c.id !== conv.id ? c : { ...c, contextSummary: trimmed }
-              ))
-              showToast(lang === 'en' ? 'Context compacted' : 'Contexto compactado', 'success')
-            } else {
-              showToast(lang === 'en' ? 'Compact returned no summary' : 'Compactação sem resumo', 'info')
-            }
-          } catch (e) {
-            console.warn('[slash/compact] failed:', e)
-            showToast(lang === 'en' ? 'Compact failed' : 'Falha ao compactar', 'error')
+          // Provider-agnostic since v2.12.53 (the old IPC silently skipped
+          // every cloud provider) — and `/compact <instruções>` now actually
+          // reaches the summarizer prompt.
+          const res = await runCompaction(providerConfig, conv.messages, lang, clean || undefined)
+          if (res.summary) {
+            const trimmed = mergeSummary(conv.contextSummary || '', res.summary)
+            convManager.setConversations(list => list.map(c =>
+              c.id !== conv.id ? c : { ...c, contextSummary: trimmed }
+            ))
+            logInsight('context', 'compaction', { manual: true })
+            showToast(lang === 'en' ? 'Context compacted' : 'Contexto compactado', 'success')
+          } else {
+            console.warn('[slash/compact] failed:', res.error)
+            showToast(res.error
+              ? (lang === 'en' ? `Compact failed: ${res.error}` : `Falha ao compactar: ${res.error}`)
+              : (lang === 'en' ? 'Compact returned no summary' : 'Compactação sem resumo'), 'error')
           }
         })()
         setInput('')

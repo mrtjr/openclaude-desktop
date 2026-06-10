@@ -168,10 +168,11 @@ function createWindow() {
 }
 
 // ─── IPC: Context Compaction (summarize old messages via model) ──────
-// Currently only routes through a local Ollama instance. For callers on
-// cloud providers (OpenAI/Anthropic/etc.) we short-circuit instead of
-// sending their prompt to an Ollama server that might not be running —
-// the caller falls back to plain truncation and no console noise.
+// OLLAMA-ONLY summarizer (localhost:11434). Since v2.12.53 cloud providers
+// are compacted in the RENDERER via services/compaction.ts → provider-chat
+// (this handler used to silently skip them, which kept "Memória / resumo"
+// at 0 forever for cloud users). The guard below remains as a safety net
+// for any stale caller.
 ipcMain.handle('compact-context', async (event, { messages, model, language, provider }) => {
   if (provider && provider !== 'ollama') {
     return { summary: '', error: null, skipped: true }

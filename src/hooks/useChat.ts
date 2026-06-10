@@ -9,6 +9,8 @@ import { classifyProviderError, humanizeProviderError } from '../utils/providerE
 import { resolveTurnUsage } from '../utils/usage'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
 import { toolCallSummary } from '../utils/toolDisplay'
+import { runCompaction, mergeSummary } from '../services/compaction'
+import { renderWorkingMemory, renderPersistentMemory } from '../utils/memoryRender'
 import { logInsight } from '../services/devInsights'
 import { createContextEngine, getModelContextLimit, countToolSchemas, computeMessageBudget } from '../services/contextEngine'
 import type { ProviderConfig } from './useProviderConfig'
@@ -257,14 +259,26 @@ export function useChat({
       // on small ones (gpt-4 8k).
       const modelLimit = getModelContextLimit(finalModel)
       let contextSummary = conv?.contextSummary || ''
+      // Load persistent memory BEFORE the budget so its tokens are real
+      // overhead, not hope that BUDGET_SAFETY_SLACK covers it (a grown facts
+      // list easily exceeds the 256-token slack).
+      let persistentMemoryText = ''
+      if (settings.memoryEnabled) {
+        try {
+          persistentMemoryText = renderPersistentMemory(await window.electron.loadMemory())
+        } catch (e) { console.warn('[useChat] memory load error:', e) }
+      }
+      const workingMemoryText = renderWorkingMemory(conv?.workingMemory)
       const tokenBudget = computeMessageBudget(modelLimit, {
         systemTokens: contextEngine.countTokens(systemPrompt),
         // Schemas actually sent this turn: the eager subset (+ tool_search)
         // when deferral is on, otherwise the full tool set.
         toolTokens: deferralEnabled ? toolPartition.eagerTokens : countToolSchemas(TOOLS as any),
-        // Known memory so far (the running summary). Persistent facts are
-        // loaded later and covered by BUDGET_SAFETY_SLACK + the reserve.
-        memoryTokens: contextEngine.countTokens(contextSummary),
+        // Everything injected as memory: running summary + persistent facts
+        // + the agent's working-memory reminder (re-sent every step).
+        memoryTokens: contextEngine.countTokens(contextSummary)
+          + contextEngine.countTokens(persistentMemoryText)
+          + contextEngine.countTokens(workingMemoryText),
         // Reserve the reply allocation so the prompt+completion never exceed
         // the window. Floor at 2k for providers that ignore max_tokens.
         responseReserve: settings.maxTokens || 2048,
@@ -284,43 +298,28 @@ export function useChat({
         trimmedHistory = history.slice(droppedCount)
         logInsight('context', 'compaction', { dropped: droppedCount })
 
-        try {
-          const compactResult = await window.electron.compactContext({
-            messages: oldMessages,
-            model: finalModel,
-            language: lang,
-            provider: settings.provider,
-          })
-          if (compactResult.summary) {
-            contextSummary = (contextSummary ? contextSummary + '\n\n' : '') + compactResult.summary
-            if (contextSummary.length > 2000) {
-              contextSummary = contextSummary.slice(-2000)
-            }
-            setConversations(prev => prev.map(c =>
-              c.id !== convId ? c : { ...c, contextSummary }
-            ))
-          }
-        } catch (e) {
-          console.warn('[useChat] context compaction failed, using truncation:', e)
+        // Route through the user's REAL provider (the old compactContext IPC
+        // is Ollama-only and silently skipped cloud providers — see
+        // services/compaction.ts). runCompaction never throws.
+        const compactResult = await runCompaction(providerConfig, oldMessages, lang)
+        if (compactResult.summary) {
+          contextSummary = mergeSummary(contextSummary, compactResult.summary)
+          setConversations(prev => prev.map(c =>
+            c.id !== convId ? c : { ...c, contextSummary }
+          ))
+        } else if (compactResult.error) {
+          console.warn('[useChat] context compaction failed, using truncation:', compactResult.error)
         }
       }
 
-      // Inject memory context
+      // Inject memory context (persistent memory was already loaded above,
+      // pre-budget, via renderPersistentMemory — single source with the panel)
       const memoryContext: string[] = []
       if (contextSummary) {
         memoryContext.push(`[CONTEXT SUMMARY — earlier conversation]\n${contextSummary}`)
       }
-      if (settings.memoryEnabled) {
-        try {
-          const mem = await window.electron.loadMemory()
-          const parts: string[] = []
-          if (mem.facts?.length) parts.push(`Facts: ${mem.facts.join('; ')}`)
-          if (mem.preferences?.length) parts.push(`Preferences: ${mem.preferences.join('; ')}`)
-          if (mem.projects?.length) parts.push(`Projects: ${mem.projects.join('; ')}`)
-          if (parts.length > 0) {
-            memoryContext.push(`[PERSISTENT MEMORY]\n${parts.join('\n')}`)
-          }
-        } catch (e) { console.warn('[useChat] memory load error:', e) }
+      if (persistentMemoryText) {
+        memoryContext.push(persistentMemoryText)
       }
 
       // Language priming
@@ -390,10 +389,7 @@ export function useChat({
 
         const requestMessages = [...allMessages]
         if (activeMemory && isAgentMode) {
-          requestMessages.push({
-            role: 'system',
-            content: `[URGENT WORKING MEMORY STATE]\nGoal: ${activeMemory.current_goal || 'None'}\nDone: ${activeMemory.done_steps || 'None'}\nPending: ${activeMemory.open_tasks || 'None'}`
-          })
+          requestMessages.push({ role: 'system', content: renderWorkingMemory(activeMemory) })
         }
 
         if (settings.permissionLevel === 'planning') {
