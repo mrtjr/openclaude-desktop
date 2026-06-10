@@ -3,6 +3,7 @@ import type { AppSettings, PendingApproval, TaskPlan, Conversation } from '../ty
 import { TOOLS } from '../constants/tools'
 import { resolveToolSearch, formatToolSearchResult } from '../services/toolDeferral'
 import { toolNeedsApproval, truncateToolOutput } from '../utils/toolPolicy'
+import { formatExecResult, resolveExecCwd } from '../utils/execResult'
 import { logInsight } from '../services/devInsights'
 import type { ModalKeyPool } from './useModalKeyPool'
 import type { ParallelChatResult, ParallelChatTask } from '../types/ipc'
@@ -13,14 +14,19 @@ interface UseToolExecutionOptions {
   setConversations: React.Dispatch<React.SetStateAction<Conversation[]>>
   selectedModel?: string
   modalKeyPool?: ModalKeyPool
+  /** Working folder of the active conversation's project — execute_command
+   *  runs there by default (the model can still override via args.cwd). */
+  projectCwd?: string
 }
 
-export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool }: UseToolExecutionOptions) {
+export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd }: UseToolExecutionOptions) {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
 
   // Use refs to avoid stale closures
   const activeConvIdRef = useRef(activeConvId)
   activeConvIdRef.current = activeConvId
+  const projectCwdRef = useRef(projectCwd)
+  projectCwdRef.current = projectCwd
 
   const executeToolRaw = useCallback(async (name: string, args: Record<string, any>): Promise<string> => {
     const convId = activeConvIdRef.current
@@ -36,8 +42,9 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         return formatToolSearchResult(matches)
       }
       if (name === 'execute_command') {
-        const result = await window.electron.execCommand(args.command)
-        return result.stdout || result.stderr || result.error || 'Comando executado'
+        const cwd = resolveExecCwd(args.cwd, projectCwdRef.current)
+        const result = await window.electron.execCommand(cwd ? { command: args.command, cwd } : args.command)
+        return formatExecResult(result)
       }
       if (name === 'read_file') {
         const result = await window.electron.readFile(args.path)

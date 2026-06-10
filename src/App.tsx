@@ -334,6 +334,13 @@ export default function App() {
     if (!addition) return effectiveSettings
     return { ...effectiveSettings, systemPrompt: (effectiveSettings.systemPrompt || '') + addition }
   }, [effectiveSettings, convManager.activeConv?.projectId, projManager.projects])
+  // Projects ciclo 4 (v2.12.47): the project folder is no longer prompt-only —
+  // execute_command actually runs there (default cwd, model can override).
+  const activeProjectCwd = useMemo(() => {
+    const conv = convManager.activeConv
+    if (!conv?.projectId) return undefined
+    return projManager.projects.find(p => p.id === conv.projectId)?.cwd?.trim() || undefined
+  }, [convManager.activeConv?.projectId, projManager.projects])
   // useConversationFork has its own local Message shape that omits id/timestamp;
   // our app's Message is stricter. The fork logic only reads role/content/
   // arbitrary fields via spread, so the mismatch is cosmetic — cast away.
@@ -351,6 +358,7 @@ export default function App() {
     setConversations: convManager.setConversations,
     selectedModel,
     modalKeyPool,
+    projectCwd: activeProjectCwd,
   })
 
   const chat = useChat({

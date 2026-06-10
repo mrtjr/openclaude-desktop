@@ -378,10 +378,19 @@ ipcMain.handle('abort-stream', async () => {
 })
 
 // ─── IPC: Execute command ────────────────────────────────────────────
-ipcMain.handle('exec-command', async (event, cmd) => {
+// Accepts a plain string (legacy callers) or { command, cwd } so commands can
+// run inside a project's working folder instead of the app's process cwd.
+ipcMain.handle('exec-command', async (event, payload) => {
+  const { command, cwd } = typeof payload === 'string'
+    ? { command: payload, cwd: undefined }
+    : (payload || {})
+  if (cwd && !fs.existsSync(cwd)) {
+    return { stdout: '', stderr: '', exitCode: 1, timedOut: false, error: `Pasta de trabalho não existe: ${cwd}` }
+  }
   return new Promise((resolve) => {
-    exec(cmd, {
+    exec(command, {
       shell: 'powershell.exe',
+      cwd: cwd || undefined,
       timeout: 60000,
       maxBuffer: 10 * 1024 * 1024, // 10MB
       windowsHide: true
@@ -389,7 +398,10 @@ ipcMain.handle('exec-command', async (event, cmd) => {
       resolve({
         stdout: stdout || '',
         stderr: stderr || '',
-        exitCode: err?.code ?? 0,
+        // err.code is the exit code on failure, but a string (ENOENT…) on
+        // spawn errors and absent on a timeout kill — normalize to a number.
+        exitCode: err ? (typeof err.code === 'number' ? err.code : 1) : 0,
+        timedOut: !!err?.killed,
         error: err && !stdout && !stderr ? err.message : null
       })
     })

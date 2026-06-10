@@ -21,11 +21,12 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'execute_command',
-      description: 'Execute a PowerShell command on the Windows system',
+      description: 'Execute a PowerShell command on the Windows system. Output includes stderr and the exit code on failure.',
       parameters: {
         type: 'object',
         properties: {
-          command: { type: 'string', description: 'The PowerShell command to execute' }
+          command: { type: 'string', description: 'The PowerShell command to execute' },
+          cwd: { type: 'string', description: 'Optional absolute path of the working directory to run in. Defaults to the active project folder when one is set.' }
         },
         required: ['command']
       }
