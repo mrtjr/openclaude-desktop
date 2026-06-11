@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('electron', {
   gitCommand: (params) => ipcRenderer.invoke('git-command', params),
   readFile: (path) => ipcRenderer.invoke('read-file', path),
   writeFile: (params) => ipcRenderer.invoke('write-file', params),
+  editFile: (params) => ipcRenderer.invoke('edit-file', params),
   undoLastWrite: () => ipcRenderer.invoke('undo-last-write'),
   listSnapshots: () => ipcRenderer.invoke('list-snapshots'),
 

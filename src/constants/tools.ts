@@ -51,7 +51,7 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'write_file',
-      description: 'Write content to a file',
+      description: 'Write content to a file (replaces the ENTIRE file). For changing part of an existing file, prefer edit_file.',
       parameters: {
         type: 'object',
         properties: {
@@ -59,6 +59,22 @@ export const TOOLS = [
           content: { type: 'string', description: 'The content to write' }
         },
         required: ['path', 'content']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'edit_file',
+      description: 'Make a surgical edit to an existing file by replacing an exact text snippet. old_string must appear EXACTLY ONCE in the file (include enough surrounding context to be unique). Far cheaper and safer than rewriting the whole file with write_file.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'The file path to edit' },
+          old_string: { type: 'string', description: 'The exact text to find (must be unique in the file)' },
+          new_string: { type: 'string', description: 'The text to replace it with' }
+        },
+        required: ['path', 'old_string', 'new_string']
       }
     }
   },
@@ -363,7 +379,7 @@ export const SAFE_TOOLS = new Set([
 ])
 
 export const DANGEROUS_TOOLS = new Set([
-  'execute_command', 'write_file', 'open_file_or_url', 'git_command',
+  'execute_command', 'write_file', 'edit_file', 'open_file_or_url', 'git_command',
   'browser_navigate', 'browser_click', 'browser_type', 'delegate_subtasks',
   // Computer Use — vision-based coordinate interaction
   'browser_click_at', 'browser_type_text', 'browser_key_press', 'browser_scroll',

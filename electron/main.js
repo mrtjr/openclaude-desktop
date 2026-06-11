@@ -505,27 +505,59 @@ ipcMain.handle('read-file', async (event, filePath) => {
 const SNAPSHOTS_DIR = path.join(app.getPath('userData'), 'snapshots')
 const fileSnapshots = [] // Stack: [{filePath, backupPath, timestamp}]
 
+// Back up a file before overwriting so undo_last_write can restore it. Shared
+// by write-file and edit-file. No-op when the file doesn't exist yet.
+function snapshotFile(filePath) {
+  if (!fs.existsSync(filePath)) return
+  fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true })
+  const backupName = `${Date.now()}_${path.basename(filePath)}`
+  const backupPath = path.join(SNAPSHOTS_DIR, backupName)
+  fs.copyFileSync(filePath, backupPath)
+  fileSnapshots.push({ filePath, backupPath, timestamp: Date.now() })
+  while (fileSnapshots.length > 50) {
+    const old = fileSnapshots.shift()
+    try { fs.unlinkSync(old.backupPath) } catch (e) { /* best-effort cleanup */ }
+  }
+}
+
 ipcMain.handle('write-file', async (event, { filePath, content }) => {
   try {
     if (!isPathSafe(filePath)) {
       return { error: 'Access denied: path is in a protected directory' }
     }
-    // Auto-snapshot: save backup before overwriting
-    if (fs.existsSync(filePath)) {
-      fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true })
-      const backupName = `${Date.now()}_${path.basename(filePath)}`
-      const backupPath = path.join(SNAPSHOTS_DIR, backupName)
-      fs.copyFileSync(filePath, backupPath)
-      fileSnapshots.push({ filePath, backupPath, timestamp: Date.now() })
-      // Keep max 50 snapshots
-      while (fileSnapshots.length > 50) {
-        const old = fileSnapshots.shift()
-        try { fs.unlinkSync(old.backupPath) } catch (e) { /* best-effort cleanup */ }
-      }
-    }
+    snapshotFile(filePath)
     fs.mkdirSync(path.dirname(filePath), { recursive: true })
     fs.writeFileSync(filePath, content, 'utf-8')
     return { error: null }
+  } catch (e) {
+    return { error: e.message }
+  }
+})
+
+// ─── IPC: Edit file (surgical old_string → new_string, unique match) ──
+// Lets a non-frontier model change part of a large file without regenerating
+// it whole. Reuses the same snapshot/undo as write-file.
+ipcMain.handle('edit-file', async (event, { filePath, oldString, newString }) => {
+  try {
+    if (!isPathSafe(filePath)) {
+      return { error: 'Access denied: path is in a protected directory' }
+    }
+    if (!fs.existsSync(filePath)) {
+      return { error: 'file_not_found' }
+    }
+    if (typeof oldString !== 'string' || oldString.length === 0) {
+      return { error: 'empty_old_string' }
+    }
+    const content = fs.readFileSync(filePath, 'utf-8')
+    // split/join does literal replacement (no regex escaping) and gives the
+    // occurrence count for free.
+    const parts = content.split(oldString)
+    const occurrences = parts.length - 1
+    if (occurrences === 0) return { error: 'not_found', occurrences: 0 }
+    if (occurrences > 1) return { error: 'ambiguous', occurrences }
+    snapshotFile(filePath)
+    fs.writeFileSync(filePath, parts.join(newString ?? ''), 'utf-8')
+    return { error: null, replaced: true, occurrences: 1 }
   } catch (e) {
     return { error: e.message }
   }

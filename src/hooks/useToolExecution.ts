@@ -4,6 +4,7 @@ import { TOOLS } from '../constants/tools'
 import { resolveToolSearch, formatToolSearchResult } from '../services/toolDeferral'
 import { toolNeedsApproval, truncateToolOutput, isToolError } from '../utils/toolPolicy'
 import { formatExecResult, resolveExecCwd, resolveExecTimeoutMs } from '../utils/execResult'
+import { formatEditResult } from '../utils/editResult'
 import { logInsight } from '../services/devInsights'
 import type { ModalKeyPool } from './useModalKeyPool'
 import type { ParallelChatResult, ParallelChatTask } from '../types/ipc'
@@ -54,6 +55,10 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
       if (name === 'write_file') {
         const result = await window.electron.writeFile({ filePath: args.path, content: args.content })
         return result.error ? `Erro: ${result.error}` : 'Arquivo escrito com sucesso'
+      }
+      if (name === 'edit_file') {
+        const result = await window.electron.editFile({ filePath: args.path, oldString: args.old_string, newString: args.new_string ?? '' })
+        return formatEditResult(result, args.path)
       }
       if (name === 'web_search') {
         const result = await window.electron.webSearch(args.query)

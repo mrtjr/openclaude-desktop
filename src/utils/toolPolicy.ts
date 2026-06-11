@@ -12,7 +12,7 @@ import type { PermissionLevel } from '../settingsConfig'
 
 /** Tools that 'auto_edits' mode lets through without a prompt (the file edits
  *  the user opted to auto-accept). Everything else dangerous still asks. */
-export const AUTO_EDIT_TOOLS = new Set(['write_file', 'git_command', 'undo_last_write'])
+export const AUTO_EDIT_TOOLS = new Set(['write_file', 'edit_file', 'git_command', 'undo_last_write'])
 
 /** Whether a tool call needs explicit user approval at the given permission
  *  level:

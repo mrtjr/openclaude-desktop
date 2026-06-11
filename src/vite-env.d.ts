@@ -15,6 +15,7 @@ interface Window {
     readFile: (path: string) => Promise<{ content: string | null; error: string | null }>
     getPathForFile?: (file: File) => string
     writeFile: (params: { filePath: string; content: string }) => Promise<{ error: string | null }>
+    editFile: (params: { filePath: string; oldString: string; newString: string }) => Promise<{ error: string | null; replaced?: boolean; occurrences?: number }>
     undoLastWrite: () => Promise<{ error: string | null; restored: string | null }>
     listSnapshots: () => Promise<{ filePath: string; timestamp: number; fileName: string }[]>
     listModels: () => Promise<any>
