@@ -14,7 +14,7 @@ import ProjectsBar from './components/ProjectsBar'
 import ProjectEditModal from './components/ProjectEditModal'
 import { useProjects } from './hooks/useProjects'
 import { conversationsInProject, countByProject, removeProject, projectInstructionsAddition, projectCwdAddition } from './utils/projects'
-import type { Project } from './types'
+import type { Project, Conversation } from './types'
 
 // Heavy feature panels — lazy-loaded on first use.
 // Saves ~1MB from initial bundle; each chunk loads async when user opens the modal.
@@ -325,6 +325,25 @@ export default function App() {
     if (projManager.activeProjectId === projectId) projManager.setActiveProjectId(null)
     showToast('Projeto excluído (conversas preservadas)')
   }, [projManager, convManager, showToast])
+  // Delete a conversation with an undo window (a single click used to destroy a
+  // multi-minute agent session for good). Capture the object + prior active id
+  // so Undo restores both.
+  const handleDeleteConversation = useCallback((conv: Conversation) => {
+    const prevActiveId = convManager.activeConvId
+    convManager.deleteConversation(conv.id)
+    showToast({
+      message: settings.language === 'en' ? 'Conversation deleted' : 'Conversa excluída',
+      severity: 'info',
+      duration: 7000,
+      action: {
+        label: settings.language === 'en' ? 'Undo' : 'Desfazer',
+        onClick: () => {
+          convManager.setConversations(prev => prev.some(c => c.id === conv.id) ? prev : [conv, ...prev])
+          convManager.setActiveConvId(prevActiveId)
+        },
+      },
+    })
+  }, [convManager, showToast, settings.language])
   const handleCreateProject = useCallback((name: string) => {
     const p = projManager.createProject(name)
     if (p) projManager.setActiveProjectId(p.id)
@@ -1315,7 +1334,7 @@ export default function App() {
                     <button className="conv-action-btn" onClick={(e) => { e.stopPropagation(); convManager.togglePin(conv.id) }} title={convManager.pinnedConvs.has(conv.id) ? 'Desafixar' : 'Fixar'}>
                       <Pin size={12} />
                     </button>
-                    <button className="conv-action-btn conv-delete" onClick={(e) => { e.stopPropagation(); convManager.deleteConversation(conv.id) }}>
+                    <button className="conv-action-btn conv-delete" onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv) }}>
                       <Trash2 size={12} />
                     </button>
                   </div>

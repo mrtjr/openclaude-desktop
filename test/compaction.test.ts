@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
-  flattenForCompaction, buildCompactionMessages, mergeSummary, runCompaction,
+  flattenForCompaction, clipToolResult, buildCompactionMessages, mergeSummary, runCompaction,
   SUMMARY_MAX_CHARS,
 } from '../src/services/compaction'
 
@@ -26,6 +26,31 @@ describe('flattenForCompaction', () => {
     const lines = out.split('\n')
     expect(lines[0].length).toBeLessThanOrEqual(500 + '[user]: '.length)
     expect(lines[1].length).toBeLessThanOrEqual(300 + '[tool read_file]: '.length)
+  })
+
+  it('keeps the TAIL of a long tool result (exit code/stderr live at the end)', () => {
+    const longResult = 'INICIO_DO_BUILD\n' + 'x'.repeat(3000) + '\n--- stderr ---\nfalhou\n[exit code: 1]'
+    const out = flattenForCompaction([
+      { role: 'assistant', content: '', toolCalls: [{ id: 't', name: 'execute_command', arguments: { command: 'npm run build' } }], toolResults: [{ toolCallId: 't', name: 'execute_command', result: longResult }] } as any,
+    ])
+    expect(out).toContain('INICIO_DO_BUILD')   // head preserved
+    expect(out).toContain('[exit code: 1]')    // tail preserved (was dropped before)
+    expect(out).toContain('falhou')
+    expect(out).toContain('…[corte]…')         // middle elided
+  })
+})
+
+describe('clipToolResult', () => {
+  it('returns short results unchanged', () => {
+    expect(clipToolResult('curto', 100)).toBe('curto')
+  })
+  it('keeps head + tail with an elision marker when over the cap', () => {
+    const r = 'HEAD' + 'm'.repeat(500) + 'TAIL'
+    const out = clipToolResult(r, 60)
+    expect(out.startsWith('HEAD')).toBe(true)
+    expect(out.endsWith('TAIL')).toBe(true)
+    expect(out).toContain('…[corte]…')
+    expect(out.length).toBeLessThan(r.length)
   })
 })
 

@@ -21,11 +21,25 @@ import type { Message } from '../types'
 
 export const SUMMARY_MAX_CHARS = 2000
 
+/** Clip a tool result keeping BOTH the head and the tail. execute_command
+ *  emits stdout first, then stderr, then `[exit code: N]` LAST (see
+ *  formatExecResult) — a head-only slice would drop exactly the success/
+ *  failure signal a summary must preserve. So for long results we keep the
+ *  start (what ran / beginning of output) AND the end (stderr + exit code). */
+export function clipToolResult(result: string, max: number): string {
+  if (result.length <= max) return result
+  const marker = ' …[corte]… '
+  const budget = Math.max(0, max - marker.length)
+  const head = Math.ceil(budget * 0.55)
+  const tail = budget - head
+  return result.slice(0, head) + marker + result.slice(result.length - tail)
+}
+
 /** Flatten a message slice for the summarizer, INCLUDING tool results. */
 export function flattenForCompaction(
   messages: Array<Partial<Message>>,
   maxContent = 500,
-  maxToolResult = 300,
+  maxToolResult = 1500,
 ): string {
   const lines: string[] = []
   for (const m of messages || []) {
@@ -33,7 +47,8 @@ export function flattenForCompaction(
     if (content) lines.push(`[${m.role}]: ${content}`)
     if (m.toolCalls?.length) {
       m.toolCalls.forEach((tc, i) => {
-        const result = (m.toolResults?.[i]?.result || '').slice(0, maxToolResult)
+        const raw = m.toolResults?.[i]?.result || ''
+        const result = clipToolResult(raw, maxToolResult)
         lines.push(`[tool ${tc.name}]: ${result || '(sem resultado)'}`)
       })
     }
