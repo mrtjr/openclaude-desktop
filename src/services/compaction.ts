@@ -88,6 +88,24 @@ export function mergeSummary(prev: string, next: string, maxChars = SUMMARY_MAX_
   return tail
 }
 
+export const EMERGENCY_KEEP_RECENT = 4
+
+/** Plan an emergency compaction of an in-flight agent message array (when the
+ *  provider reports a context overflow mid-turn). The first `prefixLen`
+ *  messages (system / memory / priming) are always preserved, and the last
+ *  `keepRecent` are kept verbatim for continuity; everything between is the
+ *  region to summarize. Returns null when there's nothing between the prefix
+ *  and the kept tail (compaction wouldn't free anything). Pure. */
+export function planEmergencyCompaction(
+  total: number,
+  prefixLen: number,
+  keepRecent = EMERGENCY_KEEP_RECENT,
+): { regionStart: number; regionEnd: number; tailStart: number } | null {
+  const tailStart = Math.max(prefixLen, total - keepRecent)
+  if (tailStart - prefixLen <= 0) return null
+  return { regionStart: prefixLen, regionEnd: tailStart, tailStart }
+}
+
 export interface CompactionProviderConfig {
   provider: string
   model: string

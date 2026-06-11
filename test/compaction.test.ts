@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   flattenForCompaction, clipToolResult, buildCompactionMessages, mergeSummary, runCompaction,
-  SUMMARY_MAX_CHARS,
+  planEmergencyCompaction, EMERGENCY_KEEP_RECENT, SUMMARY_MAX_CHARS,
 } from '../src/services/compaction'
 
 describe('flattenForCompaction', () => {
@@ -37,6 +37,26 @@ describe('flattenForCompaction', () => {
     expect(out).toContain('[exit code: 1]')    // tail preserved (was dropped before)
     expect(out).toContain('falhou')
     expect(out).toContain('…[corte]…')         // middle elided
+  })
+})
+
+describe('planEmergencyCompaction', () => {
+  it('summarizes the middle, preserving the prefix and the recent tail', () => {
+    // prefix=3, total=20, keepRecent=4 → region [3,16), tail starts at 16
+    const plan = planEmergencyCompaction(20, 3, 4)
+    expect(plan).toEqual({ regionStart: 3, regionEnd: 16, tailStart: 16 })
+  })
+
+  it('uses the default keepRecent', () => {
+    const plan = planEmergencyCompaction(30, 5)
+    expect(plan).toEqual({ regionStart: 5, regionEnd: 30 - EMERGENCY_KEEP_RECENT, tailStart: 30 - EMERGENCY_KEEP_RECENT })
+  })
+
+  it('returns null when there is nothing between the prefix and the kept tail', () => {
+    // prefix=5, total=8, keepRecent=4 → tailStart=max(5,4)=5, region empty
+    expect(planEmergencyCompaction(8, 5, 4)).toBeNull()
+    expect(planEmergencyCompaction(5, 5, 4)).toBeNull()
+    expect(planEmergencyCompaction(3, 5, 4)).toBeNull()
   })
 })
 

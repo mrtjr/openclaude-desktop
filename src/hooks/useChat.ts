@@ -9,7 +9,7 @@ import { classifyProviderError, humanizeProviderError } from '../utils/providerE
 import { resolveTurnUsage } from '../utils/usage'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
 import { toolCallSummary } from '../utils/toolDisplay'
-import { runCompaction, mergeSummary } from '../services/compaction'
+import { runCompaction, mergeSummary, planEmergencyCompaction } from '../services/compaction'
 import { renderWorkingMemory, renderPersistentMemory } from '../utils/memoryRender'
 import { logInsight } from '../services/devInsights'
 import { createContextEngine, getModelContextLimit, countToolSchemas, computeMessageBudget } from '../services/contextEngine'
@@ -339,6 +339,10 @@ export function useChat({
 
       let continueLoop = true
       let allMessages: any[] = [...systemMessages, ...memoryMessages, ...primingMessages, ...trimmedHistory]
+      // Fixed prefix length (system + memory + priming) — used by the
+      // emergency context-compaction below, which only ever rewrites the
+      // message region AFTER this prefix.
+      const basePrefixLen = systemMessages.length + memoryMessages.length + primingMessages.length
       const cloudStreamingSupported = ['openai', 'openrouter', 'modal', 'anthropic'].includes(finalProvider)
       const useStreaming = isNotOllama ? (cloudStreamingSupported && settings.streamingEnabled) : settings.streamingEnabled
       let steps = 0
@@ -379,6 +383,46 @@ export function useChat({
           || m.includes('does not support tool use')
           || m.includes('tool use is not supported')
           || m.includes('tool_use is not supported')
+      }
+
+      // Emergency context compaction: if the provider reports a context
+      // overflow MID-TURN (a long agent run can outgrow the window — the
+      // initial compaction only ran once, before the loop), summarize the
+      // turn's oldest messages into the running summary and retry ONCE,
+      // instead of throwing and discarding the whole turn (every tool call
+      // already executed). Best-effort: on any failure we fall through to the
+      // original throw, so worst case equals today's behavior.
+      let contextCompactionsUsed = 0
+      const MAX_CONTEXT_COMPACTIONS = 1
+      const emergencyContextCompact = async (): Promise<boolean> => {
+        if (contextCompactionsUsed >= MAX_CONTEXT_COMPACTIONS) return false
+        const plan = planEmergencyCompaction(allMessages.length, basePrefixLen)
+        if (!plan) return false
+        const region = allMessages.slice(plan.regionStart, plan.regionEnd)
+        let summary = ''
+        try {
+          const r = await runCompaction(
+            { provider: finalProvider, model: finalModel, apiKey: finalApiKey, isNotOllama, modalHostname, customBaseUrl },
+            region as any, lang,
+          )
+          summary = r.summary || ''
+        } catch { return false }
+        if (!summary) return false
+        contextCompactionsUsed++
+        contextSummary = mergeSummary(contextSummary, summary)
+        setConversations(prev => prev.map(c => c.id !== convId ? c : { ...c, contextSummary }))
+        const memContent = [
+          contextSummary ? `[CONTEXT SUMMARY — earlier conversation]\n${contextSummary}` : '',
+          persistentMemoryText,
+        ].filter(Boolean).join('\n\n')
+        allMessages = [
+          ...systemMessages,
+          ...(memContent ? [{ role: 'system', content: memContent }] : []),
+          ...primingMessages,
+          ...allMessages.slice(plan.tailStart),
+        ]
+        logInsight('context', 'compaction', { emergency: true })
+        return true
       }
 
       console.log('[useChat] Starting chat loop:', { provider: finalProvider, model: finalModel, useStreaming, messageCount: allMessages.length })
@@ -527,6 +571,15 @@ export function useChat({
               showToast(humanizeProviderError(err?.message, lang) + (lang === 'en' ? ' (retrying…)' : ' (tentando de novo…)'))
               await new Promise(r => setTimeout(r, 1500))
               steps-- // don't count the failed attempt
+              continue
+            }
+            // Context overflow mid-turn: compact and retry once before giving
+            // up (only when nothing streamed yet, so no double output).
+            if (cls.kind === 'context' && !accumulated && await emergencyContextCompact()) {
+              setIsStreaming(false)
+              setStreamingText('')
+              showToast(lang === 'en' ? 'Context overflowed — compacted, retrying…' : 'Contexto estourou — compactado, tentando de novo…')
+              steps--
               continue
             }
             throw err
@@ -679,6 +732,12 @@ export function useChat({
               logInsight('chat', 'retry', { kind: cls.kind })
               showToast(humanizeProviderError(response.error, lang) + (lang === 'en' ? ' (retrying…)' : ' (tentando de novo…)'))
               await new Promise(r => setTimeout(r, 1500))
+              steps--
+              continue
+            }
+            // Context overflow mid-turn: compact and retry once before aborting.
+            if (cls.kind === 'context' && await emergencyContextCompact()) {
+              showToast(lang === 'en' ? 'Context overflowed — compacted, retrying…' : 'Contexto estourou — compactado, tentando de novo…')
               steps--
               continue
             }
