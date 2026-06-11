@@ -49,6 +49,14 @@ describe('formatExecResult', () => {
     expect(out).not.toContain('Dica')
   })
 
+  it('reports a user-interrupted command distinctly from a timeout', () => {
+    const out = formatExecResult({ stdout: 'parcial…', stderr: '', exitCode: 1, killedByUser: true, error: null })
+    expect(out).toContain('parcial…')
+    expect(out).toContain('[comando interrompido pelo usuário]')
+    expect(out).not.toContain('tempo limite excedido')
+    expect(out).not.toContain('[exit code:')
+  })
+
   it('surfaces spawn-level errors when nothing was printed', () => {
     const out = formatExecResult({ stdout: '', stderr: '', exitCode: 1, error: 'Pasta de trabalho não existe: X:\\nope' })
     expect(out).toContain('Erro: Pasta de trabalho não existe')

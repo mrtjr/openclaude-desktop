@@ -386,6 +386,26 @@ ipcMain.handle('abort-stream', async () => {
 // `cwd` runs the command inside a project's working folder; `timeoutMs`
 // (model-requested via the timeout_s tool arg, re-clamped here as defense
 // in depth) lifts the old fixed 60s wall for builds/installs/backtests.
+
+// Commands currently in flight, so the agent Stop button (kill-commands) and
+// the timeout can kill the whole process TREE. Node's built-in `timeout`
+// option + child.kill() only hit the powershell.exe parent, leaving the
+// grandchildren it spawned (MT5 terminal64.exe, python backtest.py, npm,
+// compilers) orphaned and running on Windows.
+const activeCommands = new Set()
+
+function killProcessTree(pid) {
+  if (!pid) return
+  try {
+    if (process.platform === 'win32') {
+      // /T kills the whole subtree, /F forces. Fire-and-forget.
+      exec(`taskkill /pid ${pid} /T /F`, { windowsHide: true }, () => {})
+    } else {
+      try { process.kill(-pid, 'SIGKILL') } catch { try { process.kill(pid, 'SIGKILL') } catch {} }
+    }
+  } catch (e) { /* already exited */ }
+}
+
 ipcMain.handle('exec-command', async (event, payload) => {
   const { command, cwd, timeoutMs } = typeof payload === 'string'
     ? { command: payload, cwd: undefined, timeoutMs: undefined }
@@ -395,25 +415,55 @@ ipcMain.handle('exec-command', async (event, payload) => {
     return { stdout: '', stderr: '', exitCode: 1, timedOut: false, timeoutMs: timeout, error: `Pasta de trabalho não existe: ${cwd}` }
   }
   return new Promise((resolve) => {
-    exec(command, {
-      shell: 'powershell.exe',
-      cwd: cwd || undefined,
-      timeout,
-      maxBuffer: 10 * 1024 * 1024, // 10MB
-      windowsHide: true
-    }, (err, stdout, stderr) => {
+    let settled = false
+    let timedOut = false
+    let killedByUser = false
+    let timer = null
+    const entry = {}
+    const finish = (err, stdout, stderr) => {
+      if (timer) clearTimeout(timer)
+      activeCommands.delete(entry)
+      if (settled) return
+      settled = true
       resolve({
         stdout: stdout || '',
         stderr: stderr || '',
         // err.code is the exit code on failure, but a string (ENOENT…) on
-        // spawn errors and absent on a timeout kill — normalize to a number.
+        // spawn errors and absent on a kill — normalize to a number.
         exitCode: err ? (typeof err.code === 'number' ? err.code : 1) : 0,
-        timedOut: !!err?.killed,
+        timedOut,
+        killedByUser,
         timeoutMs: timeout,
-        error: err && !stdout && !stderr ? err.message : null
+        error: err && !stdout && !stderr
+          ? (killedByUser ? 'Comando interrompido pelo usuário' : err.message)
+          : null
       })
-    })
+    }
+    // No built-in `timeout` option — it only kills the powershell parent. A
+    // manual timer + killProcessTree takes down the whole subtree on timeout.
+    const child = exec(command, {
+      shell: 'powershell.exe',
+      cwd: cwd || undefined,
+      maxBuffer: 10 * 1024 * 1024, // 10MB
+      windowsHide: true
+    }, finish)
+    entry.child = child
+    entry.markUser = () => { killedByUser = true }
+    activeCommands.add(entry)
+    timer = setTimeout(() => { timedOut = true; killProcessTree(child.pid) }, timeout)
   })
+})
+
+// Kill every execute_command in flight (wired to the agent Stop button). Tree
+// kill so the grandchildren (MT5/python/builds) don't survive the Stop.
+ipcMain.handle('kill-commands', async () => {
+  let killed = 0
+  for (const entry of activeCommands) {
+    entry.markUser?.()
+    killProcessTree(entry.child?.pid)
+    killed++
+  }
+  return { killed }
 })
 
 // ─── IPC: Git command (sandboxed to git only) ──────────────────────
@@ -587,22 +637,29 @@ ipcMain.handle('web-search', async (event, query) => {
       }
     }
     let data = ''
+    // Every other HTTP path in this file has a timeout; web_search didn't, so
+    // a slow / half-open DuckDuckGo socket could hang the tool call forever —
+    // feeding the user's #1 error (timeout) on the 3rd most-used tool.
+    const WEB_SEARCH_TIMEOUT_MS = 15000
     const req = https.request(options, (res) => {
       // Follow redirects — drain the original response body (res.resume())
       // so the socket can be freed instead of lingering half-open.
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume()
-        https.get(res.headers.location, { headers: options.headers }, (r2) => {
+        const r2req = https.get(res.headers.location, { headers: options.headers }, (r2) => {
           let rd = ''
           r2.on('data', c => rd += c)
           r2.on('end', () => parseAndResolve(rd))
-        }).on('error', (e) => resolve({ result: null, error: e.message }))
+        })
+        r2req.on('error', (e) => resolve({ result: null, error: e.message }))
+        r2req.setTimeout(WEB_SEARCH_TIMEOUT_MS, () => { r2req.destroy(); resolve({ result: null, error: 'web search timeout' }) })
         return
       }
       res.on('data', chunk => data += chunk)
       res.on('end', () => parseAndResolve(data))
     })
     req.on('error', (e) => resolve({ result: null, error: e.message }))
+    req.setTimeout(WEB_SEARCH_TIMEOUT_MS, () => { req.destroy(); resolve({ result: null, error: 'web search timeout' }) })
     req.end()
 
     function parseAndResolve(html) {
@@ -635,7 +692,7 @@ ipcMain.handle('web-search', async (event, query) => {
         resolve({ result, error: null })
       } else {
         // Fallback to instant answer API
-        https.get(`https://api.duckduckgo.com/?q=${encodedQuery}&format=json&no_html=1`, (res2) => {
+        const fbReq = https.get(`https://api.duckduckgo.com/?q=${encodedQuery}&format=json&no_html=1`, (res2) => {
           let d = ''
           res2.on('data', c => d += c)
           res2.on('end', () => {
@@ -652,7 +709,9 @@ ipcMain.handle('web-search', async (event, query) => {
               resolve({ result: text || `Sem resultados para "${query}".`, error: null })
             } catch { resolve({ result: `Sem resultados para "${query}".`, error: null }) }
           })
-        }).on('error', () => resolve({ result: `Sem resultados para "${query}".`, error: null }))
+        })
+        fbReq.on('error', () => resolve({ result: `Sem resultados para "${query}".`, error: null }))
+        fbReq.setTimeout(WEB_SEARCH_TIMEOUT_MS, () => { fbReq.destroy(); resolve({ result: `Sem resultados para "${query}".`, error: null }) })
       }
     }
   })

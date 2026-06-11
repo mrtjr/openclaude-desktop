@@ -13,6 +13,9 @@ export interface ExecIpcResult {
   stderr?: string | null
   exitCode?: number | null
   timedOut?: boolean
+  /** The command was tree-killed because the user pressed Stop (not a timeout
+   *  and not a normal exit). */
+  killedByUser?: boolean
   /** Effective timeout the handler applied — echoed back so the timeout
    *  message can tell the model whether asking for more time is an option. */
   timeoutMs?: number
@@ -51,7 +54,9 @@ export function formatExecResult(r: ExecIpcResult): string {
   const parts: string[] = []
   if (stdout) parts.push(stdout)
   if (stderr) parts.push(`--- stderr ---\n${stderr}`)
-  if (r.timedOut) {
+  if (r.killedByUser) {
+    parts.push('[comando interrompido pelo usuário]')
+  } else if (r.timedOut) {
     // The marker line must stay byte-identical — circuitBreaker's
     // EXEC_FAILURE_MARKER matches it line-anchored. The remedy hint goes on
     // its own line so the model knows MORE TIME is requestable (and stays

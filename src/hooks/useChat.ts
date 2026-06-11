@@ -114,6 +114,10 @@ export function useChat({
       streamCleanupRef.current = null
     }
     window.electron.abortStream().catch((e: any) => console.warn('[useChat] abort error:', e))
+    // Also tree-kill any execute_command in flight — abortStream only destroys
+    // the LLM HTTP streams; without this a long build/backtest kept running
+    // (up to 600s) after the user pressed Stop, the loop frozen on its await.
+    window.electron.killCommands?.().catch((e: any) => console.warn('[useChat] kill commands error:', e))
     showToast('Agente interrompido pelo usuário.')
   }, [showToast])
 
@@ -852,6 +856,14 @@ export function useChat({
 
     const toolResults: ToolResult[] = []
     for (const tc of toolCallsRaw) {
+      // If the user pressed Stop mid-batch, don't dispatch the remaining tool
+      // calls (which can be destructive — write_file/execute_command). Still
+      // push a synthetic result for each so the tool_call_id ↔ tool_result
+      // mapping the provider requires stays consistent.
+      if (stopRequestedRef.current) {
+        toolResults.push({ toolCallId: tc.id, name: tc.function.name, result: '[CANCELADO pelo usuário]' })
+        continue
+      }
       let args: Record<string, any> = {}
       let jsonError: string | null = null
       let result = ""

@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Commands & Files
   execCommand: (cmd) => ipcRenderer.invoke('exec-command', cmd),
+  killCommands: () => ipcRenderer.invoke('kill-commands'),
   gitCommand: (params) => ipcRenderer.invoke('git-command', params),
   readFile: (path) => ipcRenderer.invoke('read-file', path),
   writeFile: (params) => ipcRenderer.invoke('write-file', params),
