@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { Bot, Check, ExternalLink, Sparkles, Loader2, ChevronRight, X } from 'lucide-react'
 import type { AppSettings } from '../Settings'
 
-type ProviderOption = 'ollama' | 'openai' | 'anthropic' | 'gemini' | 'openrouter'
+type ProviderOption = 'ollama' | 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'modal'
 
-interface ProviderInfo {
+export interface ProviderInfo {
   id: ProviderOption
   name: string
   tagline: string
@@ -12,16 +12,38 @@ interface ProviderInfo {
   keyPlaceholder: string
   keyUrl?: string
   localOnly?: boolean
+  /** Optional second field (e.g. Modal needs a hostname alongside the key). */
+  hostnameField?: keyof AppSettings
+  hostnameDefault?: string
   icon: string // emoji fallback — keeps the modal lightweight
 }
 
-const PROVIDERS: ProviderInfo[] = [
+export const PROVIDERS: ProviderInfo[] = [
   { id: 'ollama', name: 'Ollama', tagline: '100% local, privado, zero custo', keyField: null, keyPlaceholder: '', localOnly: true, icon: '🦙' },
   { id: 'anthropic', name: 'Anthropic', tagline: 'Claude — raciocínio de ponta', keyField: 'anthropicApiKey', keyPlaceholder: 'sk-ant-...', keyUrl: 'https://console.anthropic.com/settings/keys', icon: '🅰️' },
   { id: 'openai', name: 'OpenAI', tagline: 'GPT-4o, GPT-5, o-series', keyField: 'openaiApiKey', keyPlaceholder: 'sk-proj-...', keyUrl: 'https://platform.openai.com/api-keys', icon: '🟢' },
   { id: 'gemini', name: 'Gemini', tagline: 'Google — contexto gigante', keyField: 'geminiApiKey', keyPlaceholder: 'AIza...', keyUrl: 'https://aistudio.google.com/apikey', icon: '💎' },
+  { id: 'modal', name: 'Modal', tagline: 'Modelos OSS, pool paralelo (GLM, Qwen)', keyField: 'modalApiKey', keyPlaceholder: 'modalresearch_...', keyUrl: 'https://modal.com', hostnameField: 'modalHostname', hostnameDefault: 'api.us-west-2.modal.direct', icon: '🟣' },
   { id: 'openrouter', name: 'OpenRouter', tagline: '100+ modelos, 1 API', keyField: 'openrouterApiKey', keyPlaceholder: 'sk-or-...', keyUrl: 'https://openrouter.ai/keys', icon: '🔀' },
 ]
+
+/** Build the settings patch written on finish — pure so it's unit-tested. */
+export function buildOnboardingUpdates(
+  provider: ProviderInfo,
+  key: string | null,
+  hostname?: string,
+): Partial<AppSettings> {
+  const updates: Partial<AppSettings> = { provider: provider.id }
+  if (key && provider.keyField) {
+    // @ts-expect-error — dynamic assignment to the right keyField
+    updates[provider.keyField] = key
+  }
+  if (provider.hostnameField && hostname && hostname.trim()) {
+    // @ts-expect-error — dynamic assignment to the right hostnameField
+    updates[provider.hostnameField] = hostname.trim()
+  }
+  return updates
+}
 
 type Step = 'provider' | 'key' | 'done'
 
@@ -40,11 +62,13 @@ export default function OnboardingModal({ onComplete, onDismiss }: OnboardingMod
   const [step, setStep] = useState<Step>('provider')
   const [selectedProvider, setSelectedProvider] = useState<ProviderInfo | null>(null)
   const [apiKey, setApiKey] = useState('')
+  const [hostname, setHostname] = useState('')
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
 
   const handleProviderPick = (p: ProviderInfo) => {
     setSelectedProvider(p)
+    setHostname(p.hostnameDefault || '')
     if (p.localOnly) {
       finish(p, null)
     } else {
@@ -54,11 +78,7 @@ export default function OnboardingModal({ onComplete, onDismiss }: OnboardingMod
   }
 
   const finish = (provider: ProviderInfo, key: string | null) => {
-    const updates: Partial<AppSettings> = { provider: provider.id }
-    if (key && provider.keyField) {
-      // @ts-expect-error — dynamic assignment to the right keyField
-      updates[provider.keyField] = key
-    }
+    const updates = buildOnboardingUpdates(provider, key, hostname)
     localStorage.setItem('oc.onboarded', '1')
     setStep('done')
     // Brief confirmation before closing
@@ -167,6 +187,22 @@ export default function OnboardingModal({ onComplete, onDismiss }: OnboardingMod
               >
                 Obter uma key grátis <ExternalLink size={12} />
               </a>
+            )}
+
+            {selectedProvider.hostnameField && (
+              <>
+                <label className="onboarding-label" htmlFor="onb-host" style={{ marginTop: 12 }}>
+                  Hostname
+                </label>
+                <input
+                  id="onb-host"
+                  type="text"
+                  className="onboarding-input"
+                  placeholder={selectedProvider.hostnameDefault}
+                  value={hostname}
+                  onChange={e => setHostname(e.target.value)}
+                />
+              </>
             )}
 
             {testResult && (
