@@ -5,6 +5,7 @@ import { resolveToolSearch, formatToolSearchResult } from '../services/toolDefer
 import { toolNeedsApproval, truncateToolOutput, isToolError } from '../utils/toolPolicy'
 import { formatExecResult, resolveExecCwd, resolveExecTimeoutMs } from '../utils/execResult'
 import { formatEditResult } from '../utils/editResult'
+import { mergeFact } from '../utils/persistentMemory'
 import { logInsight } from '../services/devInsights'
 import type { ModalKeyPool } from './useModalKeyPool'
 import type { ParallelChatResult, ParallelChatTask } from '../types/ipc'
@@ -59,6 +60,18 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
       if (name === 'edit_file') {
         const result = await window.electron.editFile({ filePath: args.path, oldString: args.old_string, newString: args.new_string ?? '' })
         return formatEditResult(result, args.path)
+      }
+      if (name === 'remember_fact') {
+        if (!settings.memoryEnabled) {
+          return 'Memória persistente está desativada nas Configurações — nada foi salvo.'
+        }
+        const current = await window.electron.loadMemory()
+        const { memory, added, bucket } = mergeFact(current, args.category, args.content)
+        if (!added) return `Já estava na memória (${bucket}) — nada a fazer.`
+        const res = await window.electron.saveMemory(memory)
+        return res.error
+          ? `Erro ao salvar na memória: ${res.error}`
+          : `Memória atualizada (${bucket}): "${String(args.content).trim()}"`
       }
       if (name === 'web_search') {
         const result = await window.electron.webSearch(args.query)
