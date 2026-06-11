@@ -585,8 +585,12 @@ body {
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .input-hint {
-  text-align: center; font-size: 11px; color: var(--text-muted);
-  margin-top: 8px; max-width: 820px; margin-left: auto; margin-right: auto;
+  /* Flex child of .input-footer (space-between). The old centered-block
+     styling (max-width + auto side-margins) fought the flex layout and
+     jammed the token counter against the hint (the "config0/200.0k" overlap);
+     left-aligned + truncate is what space-between wants. */
+  font-size: 0.68rem; color: var(--text-muted); line-height: 1.4;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 /* ── Drag & Drop overlay ──────────────────────────────────────── */
@@ -819,11 +823,11 @@ body {
 
 /* ── Token counter ───────────────────────────────────────────── */
 .input-footer {
-  display: flex; align-items: center; justify-content: space-between;
-  max-width: 820px; margin: 8px auto 0;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  max-width: 820px; margin: 8px auto 0; padding: 0 4px;
 }
-.input-footer-right { display: flex; align-items: center; gap: 10px; }
-.token-counter { font-size: 11px; color: var(--text-muted); font-family: monospace; white-space: nowrap; transition: color 0.2s; }
+.input-footer-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.token-counter { font-size: 0.68rem; color: var(--text-muted); font-family: monospace; white-space: nowrap; transition: color 0.2s; background: var(--bg-elevated); padding: 2px 6px; border-radius: 4px; flex-shrink: 0; }
 .token-counter.warning { color: #f59e0b; }
 .token-counter.critical { color: var(--red); font-weight: 600; }
 .cost-counter { font-size: 11px; color: var(--accent); font-family: monospace; white-space: nowrap; opacity: 0.8; }
@@ -2590,27 +2594,9 @@ body .update-banner {
 .perm-chip.danger.active { background: rgba(224,92,92,0.15); border-color: #e05c5c; }
 .perm-chip.danger:hover { background: rgba(224,92,92,0.1); }
 
-/* ── Input footer ── */
-.input-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 4px;
-}
-
-.input-hint {
-  font-size: 0.68rem;
-  color: var(--text-muted);
-  line-height: 1.4;
-}
-
-.token-counter {
-  font-size: 0.68rem;
-  color: var(--text-muted);
-  background: var(--bg-elevated);
-  padding: 2px 6px;
-  border-radius: 4px;
-}
+/* (Input-footer / hint / token-counter rules consolidated into the single
+   definitions near the composer styles above — the duplicates here used to
+   override them and broke the footer layout. v2.12.64) */
 
 /* ── Light theme overrides ── */
 [data-theme="light"] .input-pill {
