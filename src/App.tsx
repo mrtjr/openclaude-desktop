@@ -83,6 +83,7 @@ import { type Artifact } from './utils/artifacts'
 import { formatDroppedFile } from './utils/attachments'
 import { runCompaction, mergeSummary } from './services/compaction'
 import { renderWorkingMemory, renderPersistentMemory } from './utils/memoryRender'
+import { collectLocalStorageBackup, buildBackup, parseBackup, applyLocalStorageBackup } from './utils/backup'
 
 // ─── App ─────────────────────────────────────────────────────────────
 export default function App() {
@@ -325,6 +326,57 @@ export default function App() {
     if (projManager.activeProjectId === projectId) projManager.setActiveProjectId(null)
     showToast('Projeto excluído (conversas preservadas)')
   }, [projManager, convManager, showToast])
+  // ─── Backup / restore (v2.12.62) ───────────────────────────────
+  const handleExportData = useCallback(async () => {
+    try {
+      const res = await window.electron.exportUserData()
+      const envelope = buildBackup(collectLocalStorageBackup(localStorage), res.files || {}, new Date().toISOString())
+      const dlg = await window.electron.saveDialog({
+        defaultName: `openclaude-backup-${new Date().toISOString().slice(0, 10)}.json`,
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      })
+      if (!dlg.filePath) return
+      const w = await window.electron.writeFile({ filePath: dlg.filePath, content: JSON.stringify(envelope, null, 2) })
+      showToast(w.error
+        ? (settings.language === 'en' ? `Export failed: ${w.error}` : `Falha ao exportar: ${w.error}`)
+        : (settings.language === 'en' ? 'Backup exported' : 'Backup exportado com sucesso'))
+    } catch (e: any) {
+      showToast((settings.language === 'en' ? 'Export failed: ' : 'Falha ao exportar: ') + (e?.message || e))
+    }
+  }, [showToast, settings.language])
+
+  const handleImportData = useCallback(async () => {
+    try {
+      const dlg = await window.electron.openFileDialog({ filters: [{ name: 'JSON', extensions: ['json'] }] })
+      if (dlg.canceled || !dlg.filePaths?.[0]) return
+      const read = await window.electron.readFile(dlg.filePaths[0])
+      if (!read.content) {
+        showToast(settings.language === 'en' ? 'Could not read the file.' : 'Não foi possível ler o arquivo.')
+        return
+      }
+      let envelope
+      try { envelope = parseBackup(read.content) } catch (e: any) { showToast(e.message); return }
+      // Restoring overwrites current data — confirm first so a misclick can't
+      // wipe the active corpus (this is the one destructive step).
+      const ok = window.confirm(settings.language === 'en'
+        ? 'Importing will REPLACE your current conversations, memory and settings with the backup. Continue?'
+        : 'Importar vai SUBSTITUIR suas conversas, memória e configurações atuais pelas do backup. Continuar?')
+      if (!ok) return
+      applyLocalStorageBackup(localStorage, envelope.localStorage)
+      const res = await window.electron.importUserData({ files: envelope.files })
+      if (res.error) {
+        showToast((settings.language === 'en' ? 'Restore failed: ' : 'Falha ao restaurar: ') + res.error)
+        return
+      }
+      showToast(settings.language === 'en'
+        ? `Backup restored (${res.restored} files). Reloading…`
+        : `Backup restaurado (${res.restored} arquivos). Recarregando…`)
+      setTimeout(() => window.location.reload(), 1200)
+    } catch (e: any) {
+      showToast((settings.language === 'en' ? 'Import failed: ' : 'Falha ao importar: ') + (e?.message || e))
+    }
+  }, [showToast, settings.language])
+
   // Delete a conversation with an undo window (a single click used to destroy a
   // multi-minute agent session for good). Capture the object + prior active id
   // so Undo restores both.
@@ -1420,6 +1472,8 @@ export default function App() {
                   onCycleTheme={cycleTheme}
                   themeLabel={themeLabel}
                   appVersion={__APP_VERSION__}
+                  onExportData={handleExportData}
+                  onImportData={handleImportData}
                 />
               )}
             </div>

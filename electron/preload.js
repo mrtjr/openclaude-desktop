@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Dropped files
   readDroppedFile: (path) => ipcRenderer.invoke('read-dropped-file', path),
+  exportUserData: () => ipcRenderer.invoke('export-user-data'),
+  importUserData: (payload) => ipcRenderer.invoke('import-user-data', payload),
   // Electron 32+ removed the non-standard File.path — this is the official
   // replacement for resolving a dragged file's absolute path.
   getPathForFile: (file) => webUtils.getPathForFile(file),

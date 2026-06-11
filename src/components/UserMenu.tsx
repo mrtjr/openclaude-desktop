@@ -26,6 +26,8 @@ import {
   Palette,
   Sun,
   Pencil,
+  Download,
+  Upload,
 } from 'lucide-react'
 
 export interface UserMenuProps {
@@ -42,6 +44,8 @@ export interface UserMenuProps {
   onCycleTheme: () => void
   themeLabel: string
   appVersion: string
+  onExportData: () => void
+  onImportData: () => void
 }
 
 const t = (language: 'pt' | 'en', pt: string, en: string) => (language === 'pt' ? pt : en)
@@ -53,7 +57,7 @@ const openExternal = (url: string) => {
 }
 
 export default function UserMenu(props: UserMenuProps) {
-  const { open, onClose, anchorRef, language, profileName, onProfileNameChange, onOpenSettings, onOpenDashboard, onOpenAccentPicker, onCycleTheme, themeLabel, appVersion } = props
+  const { open, onClose, anchorRef, language, profileName, onProfileNameChange, onOpenSettings, onOpenDashboard, onOpenAccentPicker, onCycleTheme, themeLabel, appVersion, onExportData, onImportData } = props
   const menuRef = useRef<HTMLDivElement>(null)
   const [openSub, setOpenSub] = useState<null | 'language' | 'about'>(null)
   const [editingName, setEditingName] = useState(false)
@@ -173,6 +177,18 @@ export default function UserMenu(props: UserMenuProps) {
         <Activity size={14} />
         <span>{t(language, 'Dashboard do agente', 'Agent dashboard')}</span>
         <span className="user-menu-kbd">Ctrl+⇧D</span>
+      </button>
+
+      <div className="user-menu-divider" />
+
+      {/* Backup — export/import the whole local corpus (additive, v2.12.62) */}
+      <button className="user-menu-item" role="menuitem" onClick={act(onExportData)}>
+        <Download size={14} />
+        <span>{t(language, 'Exportar dados (backup)', 'Export data (backup)')}</span>
+      </button>
+      <button className="user-menu-item" role="menuitem" onClick={act(onImportData)}>
+        <Upload size={14} />
+        <span>{t(language, 'Importar dados', 'Import data')}</span>
       </button>
 
       <div className="user-menu-divider" />

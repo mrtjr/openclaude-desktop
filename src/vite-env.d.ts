@@ -30,6 +30,8 @@ interface Window {
     saveDialog: (opts: any) => Promise<{ filePath: string | null; error: string | null }>
     openFileDialog: (opts?: any) => Promise<{ filePaths: string[]; canceled: boolean }>
     readDroppedFile: (path: string) => Promise<{ content: string | null; name?: string; error: string | null }>
+    exportUserData: () => Promise<{ files: Record<string, unknown>; error: string | null }>
+    importUserData: (payload: { files: Record<string, unknown> }) => Promise<{ restored: number; error: string | null }>
     readDocument: (filePath: string) => Promise<{ content: string | null; error: string | null }>
     minimize: () => Promise<void>
     maximize: () => Promise<void>

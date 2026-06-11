@@ -832,6 +832,43 @@ ipcMain.handle('save-dialog', async (event, { defaultName, filters }) => {
   }
 })
 
+// ─── IPC: Backup / restore (full user data export/import) ────────────
+// Additive: reads/writes the known userData JSON files. The renderer pairs
+// this with the localStorage half (see utils/backup.ts). Never touches an
+// existing flow, so it can't regress anything.
+const BACKUP_FILES = [
+  'conversations.json', 'memory.json', 'prompt-vault.json', 'rag-index.json',
+  'personas.json', 'workflows.json', 'arena-scores.json', 'agent-memory.json',
+  'analytics.json', 'audit-log.json', 'dev-insights.json', 'dev-insights-digest.json',
+]
+
+ipcMain.handle('export-user-data', async () => {
+  const files = {}
+  for (const name of BACKUP_FILES) {
+    try {
+      const p = path.join(app.getPath('userData'), name)
+      if (fs.existsSync(p)) files[name] = JSON.parse(fs.readFileSync(p, 'utf-8'))
+    } catch (e) { /* skip unreadable/corrupt file — best effort */ }
+  }
+  return { files, error: null }
+})
+
+ipcMain.handle('import-user-data', async (event, payload) => {
+  const files = (payload && payload.files) || {}
+  let restored = 0
+  try {
+    for (const name of BACKUP_FILES) {
+      if (Object.prototype.hasOwnProperty.call(files, name) && files[name] != null) {
+        atomicWriteJSON(path.join(app.getPath('userData'), name), files[name])
+        restored++
+      }
+    }
+    return { restored, error: null }
+  } catch (e) {
+    return { restored, error: e.message }
+  }
+})
+
 // ─── IPC: Read dropped file ──────────────────────────────────────────
 ipcMain.handle('read-dropped-file', async (event, filePath) => {
   try {
