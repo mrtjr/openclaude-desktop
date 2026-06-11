@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useAccentColor, ACCENT_PRESETS } from '../src/hooks/useAccentColor'
+import { useAccentColor, ACCENT_PRESETS, hexToRgb } from '../src/hooks/useAccentColor'
 
 /**
  * useAccentColor reads/writes:
@@ -17,7 +17,20 @@ function resetAccentEnv() {
   root.style.removeProperty('--accent-hover')
   root.style.removeProperty('--accent-dim')
   root.style.removeProperty('--accent-border')
+  root.style.removeProperty('--accent-rgb')
 }
+
+describe('hexToRgb', () => {
+  it('parses a 6-digit hex', () => {
+    expect(hexToRgb('#e07a5f')).toEqual([224, 122, 95])
+    expect(hexToRgb('#3b82f6')).toEqual([59, 130, 246])
+    expect(hexToRgb('000000')).toEqual([0, 0, 0]) // tolerates missing #
+  })
+  it('falls back to the terracotta triple on malformed input', () => {
+    expect(hexToRgb('nope')).toEqual([224, 122, 95])
+    expect(hexToRgb('')).toEqual([224, 122, 95])
+  })
+})
 
 describe('useAccentColor', () => {
   beforeEach(() => { resetAccentEnv() })
@@ -52,7 +65,15 @@ describe('useAccentColor', () => {
     expect(root.style.getPropertyValue('--accent-2')).toBe(ACCENT_PRESETS[0].hex2)
     expect(root.style.getPropertyValue('--accent-dim')).toMatch(/^rgba\(/)
     expect(root.style.getPropertyValue('--accent-border')).toMatch(/^rgba\(/)
+    // --accent-rgb drives every hardcoded glow/tint via rgba(var(--accent-rgb), α)
+    expect(root.style.getPropertyValue('--accent-rgb')).toBe('224, 122, 95')
     void result // silence unused
+  })
+
+  it('updates --accent-rgb when switching to a non-default accent', () => {
+    const { result } = renderHook(() => useAccentColor())
+    act(() => { result.current.setPreset('blue') })
+    expect(document.documentElement.style.getPropertyValue('--accent-rgb')).toBe('59, 130, 246')
   })
 
   it('updates tokens when switching presets', () => {

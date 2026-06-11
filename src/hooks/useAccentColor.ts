@@ -32,7 +32,7 @@ export const ACCENT_PRESETS: AccentPreset[] = [
 const STORAGE_KEY = 'openclaude-accent'
 const DEFAULT_ID = 'terracotta'
 
-function hexToRgb(hex: string): [number, number, number] {
+export function hexToRgb(hex: string): [number, number, number] {
   const m = hex.replace('#', '').match(/.{1,2}/g)
   if (!m || m.length < 3) return [224, 122, 95]
   return [parseInt(m[0], 16), parseInt(m[1], 16), parseInt(m[2], 16)]
@@ -50,6 +50,10 @@ function applyAccent(hex: string, hex2: string) {
   root.style.setProperty('--accent', hex)
   root.style.setProperty('--accent-2', hex2)
   root.style.setProperty('--accent-hover', lighten(hex, 0.12))
+  // RGB triple drives every accent glow/tint/focus-ring in index.css via
+  // rgba(var(--accent-rgb), α) — so a custom accent retints the WHOLE UI
+  // instead of leaving ~30 hardcoded terracotta highlights behind.
+  root.style.setProperty('--accent-rgb', `${r}, ${g}, ${b}`)
   root.style.setProperty('--accent-dim', `rgba(${r}, ${g}, ${b}, 0.12)`)
   root.style.setProperty('--accent-border', `rgba(${r}, ${g}, ${b}, 0.25)`)
 }
