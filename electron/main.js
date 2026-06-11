@@ -2765,7 +2765,30 @@ require('./ipc-agent-memory')(ipcMain, app)
 require('./ipc-document')(ipcMain, app, dialog)
 
 // ─── App lifecycle ───────────────────────────────────────────────────
+// Single-instance lock — this app hides to the tray on close (window.on
+// 'close' → preventDefault + hide) and has a global show hotkey, so launching
+// it again while it's running hidden would otherwise spin up a SECOND Electron
+// instance with its own window and IPC handlers. Both instances would write to
+// the same conversations.json / memory.json / vault.json with no coordination,
+// and last-writer-wins would silently clobber one window's work (e.g. a long
+// agent session). Refuse the duplicate and surface the running window instead.
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (win) {
+      if (win.isMinimized()) win.restore()
+      win.show()
+      win.focus()
+    }
+  })
+}
+
 app.whenReady().then(() => {
+  // The duplicate instance is on its way out — never create a window or touch
+  // the data files from it.
+  if (!gotSingleInstanceLock) return
   createWindow()
   createTray()
 
