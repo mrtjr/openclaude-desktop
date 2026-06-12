@@ -118,7 +118,13 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         if (convId) {
           setConversations(prev => prev.map(c => c.id !== convId ? c : { ...c, taskPlan: plan }))
         }
-        return `Task plan created: "${args.goal}" with ${plan.tasks.length} subtasks.`
+        // Inline "now execute step 1" hint so the model can act on the NEXT
+        // message instead of waiting for the separate next-turn nudge — saves
+        // a slow round-trip. (The next-turn nudge stays as a fallback.)
+        const goNow = settings.language === 'en'
+          ? ' Now execute step 1 by calling the appropriate tool in your next message — do not stop and wait.'
+          : ' Agora execute o passo 1 chamando a ferramenta apropriada na próxima mensagem — não pare e espere.'
+        return `Task plan created: "${args.goal}" with ${plan.tasks.length} subtasks.${goNow}`
       }
       if (name === 'update_task_status') {
         if (convId) {

@@ -89,12 +89,14 @@ describe('executeToolRaw — per-tool dispatch', () => {
     expect(out).toContain('read_file')
   })
 
-  it('plan_tasks and update_task_status mutate the conversation', async () => {
+  it('plan_tasks mutates the conversation and inlines a "execute now" hint', async () => {
     ;(window as any).electron = makeElectron()
     const setConversations = vi.fn()
     const { result } = setup({ setConversations })
-    await result.current.executeToolRaw('plan_tasks', { goal: 'fazer X', tasks: [{ id: 't1', title: 'a', status: 'pending' }] })
+    const out = await result.current.executeToolRaw('plan_tasks', { goal: 'fazer X', tasks: [{ id: 't1', title: 'a', status: 'pending' }] })
     expect(setConversations).toHaveBeenCalled()
+    expect(out).toContain('Task plan created: "fazer X"')
+    expect(out).toContain('Agora execute o passo 1') // inline hint (pt default)
   })
 
   it('unknown tool and thrown errors degrade gracefully', async () => {

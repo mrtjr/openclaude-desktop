@@ -116,7 +116,7 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'web_search',
-      description: 'Search the web using DuckDuckGo',
+      description: 'Search the web (DuckDuckGo). Returns the top results with title, snippet and a clickable source URL — enough to answer or cite WITHOUT navigating each link. Results are cached for 5 minutes, so do NOT repeat the same query; stop searching once you have enough to answer.',
       parameters: {
         type: 'object',
         properties: {
