@@ -3734,6 +3734,14 @@ button:focus-visible,
   max-width: 820px; margin: 2px auto; width: 100%;
   border: 1px solid var(--tool-border); border-radius: 12px;
   background: var(--tool-bg); overflow: hidden;
+  /* CRITICAL: .messages-container is a flex column. `overflow: hidden` here
+     zeroes this item's automatic flex min-size, so flex-shrink (default 1)
+     COMPRESSES the group to fit the viewport and clips its content — the user
+     then can't scroll to the rest of a long turn (the real v2.12.71 scroll
+     bug). flex-shrink: 0 keeps the group at its full content height and forces
+     the container to scroll instead. (.message has overflow:visible so it was
+     never affected — that's why only grouped turns broke.) v2.12.74 */
+  flex-shrink: 0;
   animation: message-slide-up 0.18s ease-out forwards;
 }
 .agent-steps-group.live { border-color: rgba(var(--accent-rgb), 0.35); }
