@@ -176,6 +176,9 @@ export default function App() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const isNearBottomRef = useRef(true)
+  // Last seen scrollTop — lets the scroll handler tell a user scroll-UP (which
+  // must disengage auto-stick) from the programmatic scroll-to-bottom.
+  const lastScrollTopRef = useRef(0)
 
   const { toasts, show: showToast, dismiss: dismissToast, success: toastSuccess, error: toastError } = useToast()
   // Suppress unused warnings — helpers available for future callers
@@ -654,17 +657,33 @@ export default function App() {
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = container
       const near = scrollHeight - scrollTop - clientHeight < 80
-      isNearBottomRef.current = near
-      // React bails out when the value is unchanged, so calling per
-      // scroll event is cheap.
-      setShowJumpBtn(!near)
+      // A deliberate scroll UP disengages auto-stick IMMEDIATELY (don't make
+      // the user cross the 80px threshold first) so they can read history while
+      // a long agent turn streams below. Auto-scroll only ever moves DOWN, so
+      // it never trips this branch. Scrolling back down to within 80px
+      // re-engages. This is what lets the user scroll during a live turn.
+      if (scrollTop < lastScrollTopRef.current - 4) {
+        isNearBottomRef.current = false
+      } else if (near) {
+        isNearBottomRef.current = true
+      }
+      lastScrollTopRef.current = scrollTop
+      setShowJumpBtn(!isNearBottomRef.current)
     }
-    container.addEventListener('scroll', handleScroll)
+    container.addEventListener('scroll', handleScroll, { passive: true })
     return () => container.removeEventListener('scroll', handleScroll)
   }, [])
 
   useEffect(() => {
-    if (isNearBottomRef.current) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (!isNearBottomRef.current) return
+    const c = messagesContainerRef.current
+    if (!c) return
+    // Instant (not smooth): a per-chunk smooth scrollIntoView during a fast
+    // live agent turn never finishes before the next fires, so the scroll
+    // animates forever and the user can't move it. Pinning scrollTop sticks to
+    // the bottom without an animation that fights manual scrolling.
+    c.scrollTop = c.scrollHeight
+    lastScrollTopRef.current = c.scrollTop
   }, [activeConv?.messages, chat.streamingText])
 
   // ─── Auto resize textarea ─────────────────────────────────────
