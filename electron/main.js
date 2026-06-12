@@ -774,6 +774,58 @@ ipcMain.handle('list-directory', async (event, dirPath) => {
   }
 })
 
+// ─── IPC: Search files (grep-like content search) ───────────────────
+// Lets the agent answer "where is X / which file defines Y" in ONE round-trip
+// instead of error-prone Select-String (execute_command) or reading files one
+// by one. Skips ignored dirs, binaries and large files; capped output.
+const SEARCH_IGNORE = new Set(['node_modules', '.git', 'dist', 'release', 'build', '.cache', '__pycache__', 'out', 'coverage'])
+ipcMain.handle('search-files', async (event, payload) => {
+  const { query, path: searchPath, exts, maxResults, caseSensitive } = payload || {}
+  if (!query || typeof query !== 'string') return { matches: [], error: 'query vazia' }
+  const root = searchPath || process.cwd()
+  if (!isPathSafe(root)) return { matches: [], error: 'Access denied: protected directory' }
+  const cap = Math.min(Math.max(Number(maxResults) || 100, 1), 500)
+  const needle = caseSensitive ? query : query.toLowerCase()
+  const extList = Array.isArray(exts) && exts.length ? exts.map(e => String(e).toLowerCase()) : null
+  const matches = []
+  let filesScanned = 0
+  let truncated = false
+
+  function walk(dir, depth) {
+    if (depth > 8 || matches.length >= cap) return
+    let entries
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+    for (const e of entries) {
+      if (matches.length >= cap) { truncated = true; return }
+      if (SEARCH_IGNORE.has(e.name) || e.name.startsWith('.')) continue
+      const full = path.join(dir, e.name)
+      if (e.isDirectory()) { walk(full, depth + 1); continue }
+      if (extList && !extList.some(x => e.name.toLowerCase().endsWith(x))) continue
+      let stat
+      try { stat = fs.statSync(full) } catch { continue }
+      if (stat.size > 2 * 1024 * 1024) continue // skip files > 2MB
+      let content
+      try { content = fs.readFileSync(full, 'utf-8') } catch { continue }
+      if (content.includes('\u0000')) continue // looks binary
+      filesScanned++
+      const fileLines = content.split('\n')
+      for (let i = 0; i < fileLines.length; i++) {
+        const hay = caseSensitive ? fileLines[i] : fileLines[i].toLowerCase()
+        if (hay.includes(needle)) {
+          matches.push({ file: full, line: i + 1, text: fileLines[i].slice(0, 200).trim() })
+          if (matches.length >= cap) { truncated = true; break }
+        }
+      }
+    }
+  }
+  try {
+    walk(root, 0)
+    return { matches, filesScanned, truncated, error: null }
+  } catch (e) {
+    return { matches, error: e.message }
+  }
+})
+
 // ─── IPC: Open file or URL ───────────────────────────────────────────
 ipcMain.handle('open-target', async (event, target) => {
   try {

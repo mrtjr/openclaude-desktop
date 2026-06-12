@@ -80,6 +80,23 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'search_files',
+      description: 'Search file CONTENTS for a text snippet across a directory (like grep). Use this to find where something is defined or mentioned — far faster and more reliable than Select-String via execute_command or reading files one by one. Returns matches as path:line: text.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'The literal text to search for (case-insensitive by default)' },
+          path: { type: 'string', description: 'Directory to search in (absolute). Defaults to the working directory.' },
+          glob: { type: 'string', description: 'Optional filename filter by extension, e.g. "*.ts" or "ts,tsx"' },
+          max_results: { type: 'number', description: 'Optional cap on matches (default 100, max 500)' }
+        },
+        required: ['query']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'edit_file',
       description: 'Make a surgical edit to an existing file by replacing an exact text snippet. old_string must appear EXACTLY ONCE in the file (include enough surrounding context to be unique). Far cheaper and safer than rewriting the whole file with write_file.',
       parameters: {
@@ -388,7 +405,7 @@ export const IDLE_STEP_THRESHOLD = 5
 
 // Permission sets
 export const SAFE_TOOLS = new Set([
-  'read_file', 'list_directory', 'web_search', 'browser_get_text',
+  'read_file', 'search_files', 'list_directory', 'web_search', 'browser_get_text',
   'browser_get_links', 'browser_get_forms', 'browser_screenshot', 'browser_wait',
   'update_working_memory', 'plan_tasks', 'update_task_status', 'undo_last_write',
   'remember_fact'

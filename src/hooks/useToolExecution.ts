@@ -6,6 +6,7 @@ import { toolNeedsApproval, truncateToolOutput, isToolError } from '../utils/too
 import { formatExecResult, resolveExecCwd, resolveExecTimeoutMs } from '../utils/execResult'
 import { formatEditResult } from '../utils/editResult'
 import { mergeFact } from '../utils/persistentMemory'
+import { parseSearchGlob, formatSearchResults } from '../utils/searchFiles'
 import { logInsight } from '../services/devInsights'
 import type { ModalKeyPool } from './useModalKeyPool'
 import type { ParallelChatResult, ParallelChatTask } from '../types/ipc'
@@ -60,6 +61,16 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
       if (name === 'edit_file') {
         const result = await window.electron.editFile({ filePath: args.path, oldString: args.old_string, newString: args.new_string ?? '' })
         return formatEditResult(result, args.path)
+      }
+      if (name === 'search_files') {
+        const cwd = resolveExecCwd(args.path, projectCwdRef.current)
+        const result = await window.electron.searchFiles({
+          query: args.query,
+          path: cwd,
+          exts: parseSearchGlob(args.glob),
+          maxResults: Number(args.max_results) || undefined,
+        })
+        return formatSearchResults(result, String(args.query ?? ''))
       }
       if (name === 'remember_fact') {
         if (!settings.memoryEnabled) {
