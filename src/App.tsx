@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react'
 import 'highlight.js/styles/github-dark.css'
-import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder, Wrench } from 'lucide-react'
+import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, ArrowDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder, Wrench } from 'lucide-react'
 import { loadSettings, type AppSettings } from './settingsConfig'
 import type { Persona } from './PersonaEngine'
 // Small / hot-path components — eager
@@ -8,6 +8,8 @@ import CommandPalette from './components/CommandPalette'
 import Toasts from './components/Toasts'
 import OnboardingModal from './components/OnboardingModal'
 import ChatMessage from './components/ChatMessage'
+import AgentStepsGroup from './components/AgentStepsGroup'
+import { groupMessages } from './utils/messageGroups'
 import { useStableCallback } from './hooks/useStableCallback'
 import { ThinkingTimer } from './components/ThinkingTimer'
 import ProjectsBar from './components/ProjectsBar'
@@ -106,6 +108,12 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings>(loadSettings)
   const [placeholderIdx, setPlaceholderIdx] = useState(0)
   const [collapsedTools, setCollapsedTools] = useState<Set<string>>(new Set())
+  // Step-group keys the user toggled away from their default state (live
+  // groups default open, finished groups default collapsed) — v2.12.71.
+  const [toggledStepGroups, setToggledStepGroups] = useState<Set<string>>(new Set())
+  // "Voltar ao fim" pill: visible when the user scrolled up — during 3-min
+  // agent turns they read history while the turn streams below (v2.12.71).
+  const [showJumpBtn, setShowJumpBtn] = useState(false)
   // Message typed mid-turn, waiting for the conversation to idle (v2.12.52 —
   // the composer no longer locks for the whole 3–10 min turn). convId pins
   // the queue to the conversation it was typed in.
@@ -645,7 +653,11 @@ export default function App() {
     if (!container) return
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = container
-      isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 80
+      const near = scrollHeight - scrollTop - clientHeight < 80
+      isNearBottomRef.current = near
+      // React bails out when the value is unchanged, so calling per
+      // scroll event is cheap.
+      setShowJumpBtn(!near)
     }
     container.addEventListener('scroll', handleScroll)
     return () => container.removeEventListener('scroll', handleScroll)
@@ -892,6 +904,13 @@ export default function App() {
       return next
     })
   })
+  const handleToggleStepGroup = useStableCallback((key: string) => {
+    setToggledStepGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key); else next.add(key)
+      return next
+    })
+  })
   const handleRegenerate = useStableCallback(() => regenerateResponse())
   const handleDeleteMessage = useStableCallback(deleteMessage)
   const handleBranchFrom = useStableCallback((msgId: string) => {
@@ -1059,6 +1078,34 @@ export default function App() {
   }, [settings, showToast])
 
   const displayModel = getDisplayModel(settings, selectedModel)
+
+  // ─── Agent-turn grouping (v2.12.71) ─────────────────────────────
+  // Consecutive tool-step messages render as one compact collapsible
+  // block instead of N full message rows. Memoized on the messages
+  // array identity, so per-chunk streaming re-renders reuse it.
+  const renderItems = useMemo(
+    () => (activeConv ? groupMessages(activeConv.messages) : []),
+    [activeConv?.messages],
+  )
+  // The tail group of a running turn stays open (live progress);
+  // finished groups collapse to the summary line.
+  const lastRenderItem = renderItems[renderItems.length - 1]
+  const liveGroupKey = isActiveConvLoading && lastRenderItem?.kind === 'steps' ? lastRenderItem.key : null
+  // When a turn finishes, drop any toggle override on the group that was
+  // live — the toggle semantics flip with the default (live=open,
+  // done=collapsed), so a "collapse while live" override would otherwise
+  // re-EXPAND the group the moment the turn ends.
+  const prevLiveGroupKeyRef = useRef<string | null>(null)
+  useEffect(() => {
+    const prev = prevLiveGroupKeyRef.current
+    prevLiveGroupKeyRef.current = liveGroupKey
+    if (prev && prev !== liveGroupKey) {
+      setToggledStepGroups(s => {
+        if (!s.has(prev)) return s
+        const next = new Set(s); next.delete(prev); return next
+      })
+    }
+  }, [liveGroupKey])
 
   // ─── Render ────────────────────────────────────────────────────
   return (
@@ -1532,10 +1579,24 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              activeConv.messages.map(msg => (
+              renderItems.map(item => item.kind === 'steps' ? (
+                <AgentStepsGroup
+                  key={item.key}
+                  msgs={item.msgs}
+                  groupKey={item.key}
+                  language={settings.language}
+                  live={item.key === liveGroupKey}
+                  expanded={item.key === liveGroupKey ? !toggledStepGroups.has(item.key) : toggledStepGroups.has(item.key)}
+                  onToggleExpanded={handleToggleStepGroup}
+                  mathReady={mathReady}
+                  showThinking={settings.showThinking !== false}
+                  collapsedTools={collapsedTools}
+                  onToggleCollapse={handleToggleToolCollapse}
+                />
+              ) : (
                 <ChatMessage
-                  key={msg.id}
-                  msg={msg}
+                  key={item.msg.id}
+                  msg={item.msg}
                   language={settings.language}
                   showThinking={settings.showThinking !== false}
                   mathReady={mathReady}
@@ -1587,6 +1648,23 @@ export default function App() {
             )}
             <div ref={messagesEndRef} />
           </div>
+
+          {/* Jump to bottom — appears when scrolled up; pulses while the
+              turn streams below the fold (v2.12.71) */}
+          {showJumpBtn && activeConv && activeConv.messages.length > 0 && (
+            <button
+              className={`jump-to-bottom ${isActiveConvLoading ? 'streaming' : ''}`}
+              onClick={() => {
+                isNearBottomRef.current = true
+                setShowJumpBtn(false)
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+              }}
+              title={settings.language === 'en' ? 'Jump to latest' : 'Ir para o fim'}
+            >
+              <ArrowDown size={14} />
+              {isActiveConvLoading && <span>{settings.language === 'en' ? 'New activity' : 'Atividade nova'}</span>}
+            </button>
+          )}
 
           {/* Task Plan Panel */}
           {activeConv?.taskPlan && (
