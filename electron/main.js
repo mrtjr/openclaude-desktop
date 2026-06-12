@@ -1270,6 +1270,9 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
     // froze the UI forever. touch() only on real content; on stall we destroy
     // the request so the renderer gets done+error instead of a stuck cursor.
     let stallWatchdog = null
+    // Socket idle budget currently in effect — 'connect' at first, tightened
+    // to 'stream' once headers arrive. The timeout message reads it at fire time.
+    let idleBudgetMs = 0
     const sendDone = (error) => {
       if (doneSent) return
       doneSent = true
@@ -1284,6 +1287,7 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
       // budget (token gaps in SSE are short; see provider-timeouts.js). The
       // original 'timeout' listener stays attached, so this just lowers the value.
       const streamIdleMs = providerTimeoutMs(provider, 'stream')
+      idleBudgetMs = streamIdleMs // the 'timeout' listener below reads this at fire time
       req.setTimeout(streamIdleMs)
       stallWatchdog = createStallWatchdog(streamIdleMs, () => {
         const msg = `Stream travado: provider parou de enviar conteúdo por ${Math.round(streamIdleMs / 1000)}s (só keep-alive)`
@@ -1392,9 +1396,10 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
 
     req.on('error', (err) => { sendDone(err.message); resolve({ ok: false, error: err.message }) })
     // Start on the generous 'connect' budget (Modal cold start); the res
-    // callback above tightens it to 'stream' once headers arrive.
-    const reqTimeoutMs = providerTimeoutMs(provider, 'connect')
-    req.setTimeout(reqTimeoutMs, () => { req.destroy(); sendDone(`Provider request timeout after ${reqTimeoutMs / 1000}s`) })
+    // callback above tightens it to 'stream' once headers arrive and updates
+    // idleBudgetMs so the message reports the budget that actually fired.
+    idleBudgetMs = providerTimeoutMs(provider, 'connect')
+    req.setTimeout(idleBudgetMs, () => { req.destroy(); sendDone(`Provider request timeout after ${idleBudgetMs / 1000}s`) })
     activeProviderStream = req
     req.write(body)
     req.end()

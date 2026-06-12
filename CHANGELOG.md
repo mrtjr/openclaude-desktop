@@ -7,6 +7,20 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.13.2] — 2026-06-12
+
+### Fixed — Mais dois buracos da mesma família do congelamento (varredura pós-2.13.1)
+
+- **Invoke que resolve com `{error}` sem chunk `done`**: o handler
+  `provider-chat-stream` tem early-returns que RESOLVEM a promise do invoke com
+  `{error}` antes de qualquer chunk (baseUrl custom inválida; provider sem
+  suporte a streaming, ex. Gemini). O renderer só tinha `.catch` — a promise do
+  stream nunca assentava e a UI congelava igual ao bug do 2.13.1. Agora o
+  `.then` rejeita quando o invoke resolve com `{error}`.
+- **Mensagem de timeout enganosa**: quando o idle de socket disparava na fase
+  `stream` (90s/150s), a mensagem reportava o budget de `connect` (120s/300s).
+  O budget vigente agora é lido na hora do disparo.
+
 ## [2.13.1] — 2026-06-12
 
 ### Fixed — Stream congelado mid-resposta (keep-alive resetava o timeout)

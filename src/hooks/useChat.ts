@@ -538,7 +538,13 @@ export function useChat({
                   model: finalModel, messages: requestMessages, tools: toolsForRequest,
                   temperature: settings.temperature, max_tokens: settings.maxTokens
                 })
-            streamCall.catch((err: any) => { cleanup(); streamCleanupRef.current = null; reject(err) })
+            // O handler do main RESOLVE com {error} (não rejeita) em early-returns
+            // que acontecem antes de qualquer chunk `done` (ex.: baseUrl custom
+            // inválida, provider sem streaming). Sem este .then a promise acima
+            // nunca assenta e a UI congela no cursor piscando.
+            streamCall
+              .then((res: any) => { if (res?.error) { cleanup(); streamCleanupRef.current = null; reject(new Error(res.error)) } })
+              .catch((err: any) => { cleanup(); streamCleanupRef.current = null; reject(err) })
           })
           } catch (err: any) {
             // Tools-unsupported auto-recovery. Some providers (OpenRouter
