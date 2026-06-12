@@ -1621,6 +1621,31 @@ ipcMain.handle('browser-navigate', async (event, url) => {
     }
   } catch { /* keep whatever we already captured */ }
 
+  // Bonus: collect the top interactive elements in the SAME settle window so
+  // the model can click/type on its NEXT turn without a separate get_links/
+  // get_forms round-trip. Guarded — if it fails, navigate still returns text.
+  let elements = null
+  try {
+    if (bw && !bw.isDestroyed()) {
+      elements = await bw.webContents.executeJavaScript(`
+        (() => {
+          const links = Array.from(document.querySelectorAll('a[href]'))
+            .map(a => ({ text: (a.innerText || a.title || '').trim().substring(0, 60), href: a.href }))
+            .filter(l => l.text && l.href.startsWith('http'))
+            .slice(0, 12);
+          const fields = Array.from(document.querySelectorAll('input, textarea, select, button[type="submit"]'))
+            .slice(0, 12)
+            .map((el, i) => {
+              let s = el.id ? '#' + el.id : el.name ? '[name="' + el.name + '"]' : '';
+              if (!s) { el.setAttribute('data-oc-sel', 'ocn' + i); s = '[data-oc-sel="ocn' + i + '"]'; }
+              return { tag: el.tagName.toLowerCase(), type: el.type || '', placeholder: el.placeholder || '', selector: s };
+            });
+          return { links, fields };
+        })()
+      `)
+    }
+  } catch { /* elements are a bonus; navigate still returns text */ }
+
   const outcome = resolveNavOutcome({ error: navError, timedOut, finalUrl, textLength: text.length })
   if (!outcome.ok) return { error: outcome.note }
   return {
@@ -1628,6 +1653,7 @@ ipcMain.handle('browser-navigate', async (event, url) => {
     url: finalUrl,
     title,
     text,
+    ...(elements ? { elements } : {}),
     ...(outcome.partial ? { partial: true, note: outcome.note } : {}),
   }
 })

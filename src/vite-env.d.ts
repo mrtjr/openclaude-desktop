@@ -54,7 +54,7 @@ interface Window {
     loadMcpServers: () => Promise<{ servers: { name: string; command: string }[] }>
     // Browser automation (Electron BrowserWindow nativo)
     browserLaunch: (opts?: { visible?: boolean }) => Promise<{ success?: boolean; tabId?: string; error?: string }>
-    browserNavigate: (url: string) => Promise<{ success?: boolean; url?: string; title?: string; text?: string; error?: string }>
+    browserNavigate: (url: string) => Promise<{ success?: boolean; url?: string; title?: string; text?: string; error?: string; partial?: boolean; note?: string; elements?: { links?: { text: string; href: string }[]; fields?: { tag: string; type: string; placeholder: string; selector: string }[] } }>
     browserScreenshot: () => Promise<{ success?: boolean; base64?: string; mime?: string; width?: number; height?: number; size?: number; error?: string }>
     browserGetText: (opts?: { selector?: string; maxLength?: number }) => Promise<{ success?: boolean; text?: string; error?: string }>
     browserClick: (selector: string) => Promise<{ success?: boolean; tag?: string; text?: string; error?: string; candidates?: { selector: string; text: string; tag: string }[] }>

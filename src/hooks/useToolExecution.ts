@@ -8,7 +8,7 @@ import { formatEditResult } from '../utils/editResult'
 import { mergeFact } from '../utils/persistentMemory'
 import { parseSearchGlob, formatSearchResults } from '../utils/searchFiles'
 import { paginateFileContent } from '../utils/readFile'
-import { formatClickResult } from '../utils/browserResult'
+import { formatClickResult, formatNavResult } from '../utils/browserResult'
 import { logInsight } from '../services/devInsights'
 import type { ModalKeyPool } from './useModalKeyPool'
 import type { ParallelChatResult, ParallelChatTask } from '../types/ipc'
@@ -144,10 +144,7 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         // when it timed out / hit a redirect but still captured a usable page —
         // surface that to the model so it knows the page may be incomplete
         // instead of silently treating partial content as a full load.
-        const fmtNav = (r: any) =>
-          `Navigated to: ${r.title}\nURL: ${r.url}` +
-          (r.partial ? `\n⚠️ Partial load: ${r.note}` : '') +
-          `\n\nPage content:\n${r.text || '(empty)'}`
+        const fmtNav = (r: any) => formatNavResult(r)
         try {
           const nav = await window.electron.browserNavigate(args.url)
           if (nav.error) {
