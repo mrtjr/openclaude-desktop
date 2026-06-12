@@ -1676,7 +1676,19 @@ ipcMain.handle('browser-click', async (event, selector) => {
     const result = await bw.webContents.executeJavaScript(`
       (() => {
         const el = document.querySelector(${JSON.stringify(selector)});
-        if (!el) return { error: 'Element not found: ${selector.replace(/'/g, "\\'")}' };
+        if (!el) {
+          // Not found — return a few clickable candidates so the model can
+          // re-click correctly in the SAME next turn, instead of spending a
+          // round-trip on get_forms/get_links just to discover what exists.
+          const cands = Array.from(document.querySelectorAll('a[href], button, input, select, [role="button"], [onclick]'))
+            .slice(0, 8)
+            .map((c, i) => {
+              let s = c.id ? '#' + c.id : c.name ? '[name="' + c.name + '"]' : '';
+              if (!s) { c.setAttribute('data-oc-sel', 'occ' + i); s = '[data-oc-sel="occ' + i + '"]'; }
+              return { selector: s, text: (c.innerText || c.value || c.title || '').trim().substring(0, 50), tag: c.tagName.toLowerCase() };
+            });
+          return { error: 'Element not found: ${selector.replace(/'/g, "\\'")}', candidates: cands };
+        }
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         el.click();
         return { success: true, tag: el.tagName, text: el.innerText?.substring(0, 100) };
@@ -1755,14 +1767,22 @@ ipcMain.handle('browser-get-forms', async () => {
   if (!bw) return { error: 'No active browser tab' }
   try {
     const forms = await bw.webContents.executeJavaScript(`
-      Array.from(document.querySelectorAll('input, textarea, select, button[type="submit"]')).slice(0, 50).map(el => ({
-        tag: el.tagName.toLowerCase(),
-        type: el.type || '',
-        name: el.name || el.id || '',
-        placeholder: el.placeholder || '',
-        selector: el.id ? '#' + el.id : el.name ? '[name="' + el.name + '"]' : '',
-        value: el.value?.substring(0, 50) || '',
-      })).filter(f => f.selector)
+      Array.from(document.querySelectorAll('input, textarea, select, button[type="submit"]')).slice(0, 50).map((el, i) => {
+        // Elements with a natural id/name keep their selector UNCHANGED. Those
+        // without one (common in SPAs) used to be dropped — forcing the model
+        // onto the slow vision path (screenshot + click_at). Tag them with a
+        // stable data attribute so they still get a usable selector.
+        let selector = el.id ? '#' + el.id : el.name ? '[name="' + el.name + '"]' : '';
+        if (!selector) { el.setAttribute('data-oc-sel', 'oc' + i); selector = '[data-oc-sel="oc' + i + '"]'; }
+        return {
+          tag: el.tagName.toLowerCase(),
+          type: el.type || '',
+          name: el.name || el.id || '',
+          placeholder: el.placeholder || '',
+          selector: selector,
+          value: el.value ? el.value.substring(0, 50) : '',
+        };
+      })
     `)
     return { success: true, forms }
   } catch (e) { return { error: e.message } }

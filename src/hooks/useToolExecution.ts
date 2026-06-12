@@ -8,6 +8,7 @@ import { formatEditResult } from '../utils/editResult'
 import { mergeFact } from '../utils/persistentMemory'
 import { parseSearchGlob, formatSearchResults } from '../utils/searchFiles'
 import { paginateFileContent } from '../utils/readFile'
+import { formatClickResult } from '../utils/browserResult'
 import { logInsight } from '../services/devInsights'
 import type { ModalKeyPool } from './useModalKeyPool'
 import type { ParallelChatResult, ParallelChatTask } from '../types/ipc'
@@ -162,8 +163,7 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
       }
       if (name === 'browser_click') {
         const result = await window.electron.browserClick(args.selector)
-        if (result.error) return `Click error: ${result.error}`
-        return `Clicked: ${args.selector}${result.text ? ` (${result.text})` : ''}`
+        return formatClickResult(result, args.selector)
       }
       if (name === 'browser_type') {
         const result = await window.electron.browserType({

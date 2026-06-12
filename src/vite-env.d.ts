@@ -57,7 +57,7 @@ interface Window {
     browserNavigate: (url: string) => Promise<{ success?: boolean; url?: string; title?: string; text?: string; error?: string }>
     browserScreenshot: () => Promise<{ success?: boolean; base64?: string; mime?: string; width?: number; height?: number; size?: number; error?: string }>
     browserGetText: (opts?: { selector?: string; maxLength?: number }) => Promise<{ success?: boolean; text?: string; error?: string }>
-    browserClick: (selector: string) => Promise<{ success?: boolean; tag?: string; text?: string; error?: string }>
+    browserClick: (selector: string) => Promise<{ success?: boolean; tag?: string; text?: string; error?: string; candidates?: { selector: string; text: string; tag: string }[] }>
     browserType: (params: { selector: string; text: string; pressEnter?: boolean }) => Promise<{ success?: boolean; error?: string }>
     browserEvaluate: (code: string) => Promise<{ success?: boolean; result?: string; error?: string }>
     browserWait: (params: { selector: string; timeout?: number }) => Promise<{ success?: boolean; found?: boolean; error?: string }>
