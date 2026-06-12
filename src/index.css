@@ -3798,3 +3798,17 @@ button:focus-visible,
   0% { opacity: 0.7; transform: scale(1); }
   70%, 100% { opacity: 0; transform: scale(1.18); }
 }
+
+/* Inside a grouped agent turn, the per-step args/result must NOT be their own
+   scroll boxes — otherwise the mouse wheel gets TRAPPED in a nested box and the
+   user can't scroll past it to reach the rest of a long (50+ step) turn. The
+   whole group scrolls as one via the messages container instead. Tool results
+   are already capped (~4000 chars by truncateToolOutput), so letting them
+   expand is fine. Single (ungrouped) messages keep their capped scroll boxes,
+   so this is scoped — no regression there. (v2.12.73) */
+.agent-steps-group .tool-call-args,
+.agent-steps-group .tool-result pre,
+.agent-steps-group .tool-result-search {
+  max-height: none;
+  overflow-y: visible;
+}
