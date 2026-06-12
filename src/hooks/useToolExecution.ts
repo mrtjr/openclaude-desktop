@@ -7,6 +7,7 @@ import { formatExecResult, resolveExecCwd, resolveExecTimeoutMs } from '../utils
 import { formatEditResult } from '../utils/editResult'
 import { mergeFact } from '../utils/persistentMemory'
 import { parseSearchGlob, formatSearchResults } from '../utils/searchFiles'
+import { isRiskyDesktopAction } from '../utils/desktopPolicy'
 import { paginateFileContent } from '../utils/readFile'
 import { formatClickResult, formatNavResult } from '../utils/browserResult'
 import { logInsight } from '../services/devInsights'
@@ -103,6 +104,18 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
       if (name === 'open_file_or_url') {
         const result = await window.electron.openTarget(args.target)
         return result.error ? `Erro: ${result.error}` : `Aberto: ${args.target}`
+      }
+      if (name === 'computer_open_app') {
+        const r = await window.electron.orionRunAction({ type: 'open_app', params: { app: args.app } })
+        return r.error ? `Erro ao abrir "${args.app}": ${r.error}` : `Aberto: ${args.app}`
+      }
+      if (name === 'computer_type_text') {
+        const r = await window.electron.orionRunAction({ type: 'type_text', params: { text: args.text } })
+        return r.error ? `Erro ao digitar: ${r.error}` : `Texto digitado.`
+      }
+      if (name === 'computer_press_keys') {
+        const r = await window.electron.orionRunAction({ type: 'key_press', params: { key: args.keys } })
+        return r.error ? `Erro ao enviar teclas: ${r.error}` : `Teclas enviadas: ${args.keys}`
       }
       if (name === 'git_command') {
         const result = await window.electron.gitCommand({ command: args.command, cwd: args.cwd })
@@ -339,7 +352,10 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
   const executeTool = useCallback(async (name: string, args: Record<string, any>): Promise<string> => {
     const convId = activeConvIdRef.current
     const level = settings.permissionLevel || 'ask'
-    const needsApproval = toolNeedsApproval(level, name)
+    // Risky desktop actions (open app, Ctrl/Alt shortcuts, Alt+F4…) ALWAYS
+    // confirm first — even in bypass mode — because they act on the user's real
+    // machine. Common desktop actions (plain typing/navigation) run free.
+    const needsApproval = toolNeedsApproval(level, name) || isRiskyDesktopAction(name, args)
 
     if (needsApproval) {
       const approved = await requestApproval(name, args)

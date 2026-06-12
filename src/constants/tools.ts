@@ -354,6 +354,48 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'computer_open_app',
+      description: 'Open an application or file on the Windows desktop (the user\'s real machine), e.g. "notepad", "calc", "explorer", or a full path. Controls the actual OS, not the in-app browser.',
+      parameters: {
+        type: 'object',
+        properties: {
+          app: { type: 'string', description: 'Application name or path to open (e.g. "notepad", "C:/path/app.exe")' }
+        },
+        required: ['app']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'computer_type_text',
+      description: 'Type text into whatever window/field currently has focus on the Windows desktop. BLIND action — you cannot see the screen yet, so only use it when you are sure the right field is focused (e.g. right after opening an app). Use computer_press_keys for special keys.',
+      parameters: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'The text to type at the current cursor' }
+        },
+        required: ['text']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'computer_press_keys',
+      description: 'Send a keyboard shortcut/key to the focused window on the Windows desktop, in SendKeys format. Examples: "{ENTER}", "{TAB}", "{ESC}", "^s" (Ctrl+S), "^c" (Ctrl+C), "%{F4}" (Alt+F4). BLIND action. Risky combos (Ctrl/Alt, Delete, Alt+F4) always ask for confirmation first.',
+      parameters: {
+        type: 'object',
+        properties: {
+          keys: { type: 'string', description: 'Keys in SendKeys format (^ = Ctrl, % = Alt, + = Shift; named keys in braces)' }
+        },
+        required: ['keys']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'git_command',
       description: 'Run a git command in a specified directory. Supports: status, diff, log, add, commit, branch, checkout, stash. Use for version control awareness.',
       parameters: {
@@ -415,6 +457,7 @@ export const SAFE_TOOLS = new Set([
 
 export const DANGEROUS_TOOLS = new Set([
   'execute_command', 'write_file', 'edit_file', 'open_file_or_url', 'git_command',
+  'computer_open_app', 'computer_type_text', 'computer_press_keys',
   'browser_navigate', 'browser_click', 'browser_type', 'delegate_subtasks',
   // Computer Use — vision-based coordinate interaction
   'browser_click_at', 'browser_type_text', 'browser_key_press', 'browser_scroll',
