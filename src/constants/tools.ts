@@ -37,11 +37,13 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'read_file',
-      description: 'Read the contents of a file',
+      description: 'Read the contents of a file. For LARGE files, pass offset + limit to read a specific line range (the result tells you the total line count and how to continue) instead of getting a blindly-truncated middle.',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'The file path to read' }
+          path: { type: 'string', description: 'The file path to read' },
+          offset: { type: 'number', description: 'Optional 1-based start line to read from' },
+          limit: { type: 'number', description: 'Optional number of lines to read from offset' }
         },
         required: ['path']
       }

@@ -7,6 +7,7 @@ import { formatExecResult, resolveExecCwd, resolveExecTimeoutMs } from '../utils
 import { formatEditResult } from '../utils/editResult'
 import { mergeFact } from '../utils/persistentMemory'
 import { parseSearchGlob, formatSearchResults } from '../utils/searchFiles'
+import { paginateFileContent } from '../utils/readFile'
 import { logInsight } from '../services/devInsights'
 import type { ModalKeyPool } from './useModalKeyPool'
 import type { ParallelChatResult, ParallelChatTask } from '../types/ipc'
@@ -52,7 +53,8 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
       }
       if (name === 'read_file') {
         const result = await window.electron.readFile(args.path)
-        return result.content || result.error || ''
+        if (result.content == null) return result.error || ''
+        return paginateFileContent(result.content, args.offset, args.limit)
       }
       if (name === 'write_file') {
         const result = await window.electron.writeFile({ filePath: args.path, content: args.content })
