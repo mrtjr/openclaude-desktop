@@ -7,7 +7,7 @@ const https = require('https')
 
 const os = require('os')
 const { atomicWriteJSON, readJSONWithFallback } = require('./atomic-write')
-const { providerTimeoutMs } = require('./provider-timeouts')
+const { providerTimeoutMs, createStallWatchdog } = require('./provider-timeouts')
 const { cachedSystem, withCachedTools } = require('./anthropic-cache')
 const { resolveNavOutcome } = require('./browser-nav')
 const { planScreenshot, SHOT_JPEG_QUALITY } = require('./screenshot-util')
@@ -1264,9 +1264,16 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
     const reqOptions = { hostname, ...(port ? { port } : {}), path: apiPath, method: 'POST', headers: { ...headers, 'Content-Length': Buffer.byteLength(body) } }
 
     let doneSent = false
+    // Content-level stall watchdog — armed once headers arrive. The socket
+    // idle timeout below resets on ANY bytes, so a provider that stalls but
+    // keeps sending SSE keep-alives (OpenRouter comments, Anthropic pings)
+    // froze the UI forever. touch() only on real content; on stall we destroy
+    // the request so the renderer gets done+error instead of a stuck cursor.
+    let stallWatchdog = null
     const sendDone = (error) => {
       if (doneSent) return
       doneSent = true
+      if (stallWatchdog) stallWatchdog.stop()
       activeProviderStream = null
       try { event.sender.send('ollama-stream-chunk', { done: true, ...(error ? { error } : {}) }) } catch (e) { console.error('[provider-stream] sendDone error:', e) }
     }
@@ -1276,7 +1283,14 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
       // window so a mid-stream stall is caught sooner than the generous connect
       // budget (token gaps in SSE are short; see provider-timeouts.js). The
       // original 'timeout' listener stays attached, so this just lowers the value.
-      req.setTimeout(providerTimeoutMs(provider, 'stream'))
+      const streamIdleMs = providerTimeoutMs(provider, 'stream')
+      req.setTimeout(streamIdleMs)
+      stallWatchdog = createStallWatchdog(streamIdleMs, () => {
+        const msg = `Stream travado: provider parou de enviar conteúdo por ${Math.round(streamIdleMs / 1000)}s (só keep-alive)`
+        req.destroy()
+        sendDone(msg)
+        resolve({ ok: false, error: msg })
+      })
       // Stateful UTF-8 decode — without it a multi-byte char split across two
       // TCP packets becomes U+FFFD mid-stream (silent, intermittent, and most
       // likely on long Modal streams in Portuguese).
@@ -1318,6 +1332,9 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
             if (provider === 'anthropic') {
               // Normalize Anthropic SSE events to OpenAI chunk format
               const evType = parsed.type
+              // Any real event resets the stall watchdog — but NOT 'ping',
+              // which is exactly the keep-alive a stalled stream keeps sending.
+              if (evType !== 'ping' && stallWatchdog) stallWatchdog.touch()
               if (evType === 'message_start') {
                 const u = parsed.message?.usage
                 if (u) {
@@ -1360,6 +1377,9 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
               // OpenAI-compatible SSE — pass through directly.
               // With stream_options.include_usage the final chunk has
               // `choices: []` + a `usage` field; useChat picks it up.
+              // Keep-alives here are SSE comments (`: OPENROUTER PROCESSING`)
+              // that never reach JSON.parse, so every parsed chunk is content.
+              if (stallWatchdog) stallWatchdog.touch()
               event.sender.send('ollama-stream-chunk', parsed)
               if (parsed.choices?.[0]?.finish_reason) sendDone()
             }

@@ -7,6 +7,28 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.13.1] — 2026-06-12
+
+### Fixed — Stream congelado mid-resposta (keep-alive resetava o timeout)
+
+A entrega da resposta podia congelar para sempre com o cursor piscando: o guarda
+de mid-stream era o **idle timeout de socket** (`req.setTimeout`), que reseta com
+*qualquer* byte — inclusive keep-alives SSE (`: OPENROUTER PROCESSING`,
+`data: {"type":"ping"}` da Anthropic). Provider travava a geração mas seguia
+pingando → timeout nunca disparava → turno preso sem erro nem retry.
+
+- Novo `createStallWatchdog` em `electron/provider-timeouts.js`: timer em nível
+  de **conteúdo**, resetado só por eventos SSE reais (deltas de texto/tool/usage);
+  pings da Anthropic explicitamente não contam. Comentários SSE já nem chegam ao
+  parser.
+- No stall (mesmo budget da fase `stream`: 90s, Modal 150s), o main destrói a
+  request e emite `done` com erro — o renderer rejeita, destrava a UI e o turno
+  termina com mensagem clara em vez de congelar.
+- O idle de socket continua valendo para silêncio total na conexão; o watchdog
+  cobre o caso "socket vivo, geração morta".
+- 4 testes novos com fake timers (estouro, reset por touch, stop definitivo,
+  dispara no máximo 1x).
+
 ## [2.12.46] — 2026-06-06
 
 ### Fixed — Auditoria (ciclo 2): `isSmallModel` cobre todos os tamanhos ≤14B

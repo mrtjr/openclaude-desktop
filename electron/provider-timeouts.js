@@ -29,4 +29,40 @@ function providerTimeoutMs(provider, phase = 'connect') {
   return provider === 'modal' ? 300000 : 120000
 }
 
-module.exports = { providerTimeoutMs }
+// ─── Content-level stall watchdog ────────────────────────────────────
+//
+// The socket idle timeout above resets on ANY bytes — including SSE
+// keep-alives (`: OPENROUTER PROCESSING` comments, Anthropic
+// `data: {"type":"ping"}` events). A provider that stalls generation but
+// keeps pinging never trips it, and the UI freezes mid-stream on a blinking
+// cursor forever. This watchdog counts only *content*: the stream caller
+// calls touch() when a real SSE event arrives (text/tool/usage deltas) and
+// skips keep-alives. If no content lands within timeoutMs, onStall fires
+// once so the caller can destroy the request and unblock the renderer.
+function createStallWatchdog(timeoutMs, onStall) {
+  let timer = null
+  let stopped = false
+  const arm = () => {
+    timer = setTimeout(() => {
+      if (stopped) return
+      stopped = true
+      onStall()
+    }, timeoutMs)
+    // Don't hold the process open for a watchdog (no-op in renderers/tests).
+    if (timer && typeof timer.unref === 'function') timer.unref()
+  }
+  arm()
+  return {
+    touch() {
+      if (stopped) return
+      clearTimeout(timer)
+      arm()
+    },
+    stop() {
+      stopped = true
+      clearTimeout(timer)
+    },
+  }
+}
+
+module.exports = { providerTimeoutMs, createStallWatchdog }
