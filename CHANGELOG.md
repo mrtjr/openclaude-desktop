@@ -7,6 +7,27 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.13.3] — 2026-06-12
+
+### Fixed — "Travou de novo" que não era travamento: progresso invisível agora é visível
+
+Diagnóstico via Dev Insights + netstat: o "congelamento" relatado após o 2.13.2
+era o stream VIVO (conexão ESTABLISHED com o Modal, turno de 12+ min) — mas o
+GLM-5.1 estava raciocinando (`delta.reasoning_content`) ou montando uma tool
+call grande (`delta.tool_calls`), e a UI só renderiza `delta.content`. Minutos
+de progresso real com um cursor parado piscando.
+
+- Novo `utils/streamPhase.ts`: redutor puro que deriva a fase invisível dos
+  deltas (raciocínio vLLM/DeepSeek `reasoning_content`, OpenRouter `reasoning`,
+  argumentos de tool) com contador acumulado de chars.
+- Indicador vivo na UI: "raciocinando… 3,4k chars" / "montando write_file…
+  12,1k chars" — junto ao cursor na bolha de streaming E na fase de espera
+  (raciocínio antes do primeiro token). O contador subindo é o sinal de vida.
+  Atualização com throttle de 300ms para não re-renderizar a cada delta.
+- Anthropic extended thinking (`thinking_delta`) agora é encaminhado como
+  `reasoning_content` — mesmo indicador, antes era descartado em silêncio.
+- 9 testes novos do redutor/formatadores.
+
 ## [2.13.2] — 2026-06-12
 
 ### Fixed — Mais dois buracos da mesma família do congelamento (varredura pós-2.13.1)

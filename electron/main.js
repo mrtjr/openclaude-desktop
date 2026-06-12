@@ -1351,6 +1351,11 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
                 const delta = parsed.delta
                 if (delta?.type === 'text_delta') {
                   event.sender.send('ollama-stream-chunk', { choices: [{ delta: { content: delta.text }, finish_reason: null }] })
+                } else if (delta?.type === 'thinking_delta' && typeof delta.thinking === 'string') {
+                  // Extended thinking → normaliza para o campo OpenAI-compat que
+                  // o indicador de fase invisível já entende (streamPhase.ts).
+                  // Não vai para o texto visível — só alimenta o sinal de vida.
+                  event.sender.send('ollama-stream-chunk', { choices: [{ delta: { reasoning_content: delta.thinking }, finish_reason: null }] })
                 } else if (delta?.type === 'input_json_delta') {
                   const idx = parsed.index
                   if (anthropicToolAccum[idx]) anthropicToolAccum[idx].argsStr += delta.partial_json

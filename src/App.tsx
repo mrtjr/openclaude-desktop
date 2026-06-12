@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react'
 import 'highlight.js/styles/github-dark.css'
-import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, ArrowDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder, Wrench } from 'lucide-react'
+import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, ArrowDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder, Wrench, BrainCircuit } from 'lucide-react'
 import { loadSettings, type AppSettings } from './settingsConfig'
 import type { Persona } from './PersonaEngine'
 // Small / hot-path components — eager
@@ -44,6 +44,7 @@ const SettingsModal = lazy(() => import('./Settings'))
 import type { Message } from './types'
 import { PLACEHOLDER_HINTS, SUGGESTIONS } from './constants/prompts'
 import { formatMarkdown, getRelativeTime, groupByBucket, bucketLabel } from './utils/formatting'
+import { streamPhaseLabel } from './utils/streamPhase'
 
 // ─── Custom hooks ───────────────────────────────────────────────────
 import { useProviderConfig, getDisplayModel } from './hooks/useProviderConfig'
@@ -1636,6 +1637,14 @@ export default function App() {
                 <div className="message-content">
                   <div className="message-text" dangerouslySetInnerHTML={{ __html: formatMarkdown(chat.streamingText, false) }} />
                   <span className="streaming-cursor" />
+                  {/* Fase invisível (raciocínio/tool args): sem isto o cursor fica
+                      parado por MINUTOS em modelos de raciocínio e o usuário acha
+                      que travou. O contador subindo é o sinal de vida. */}
+                  {chat.streamingPhase && (
+                    <div className="streaming-phase">
+                      <BrainCircuit size={11} className="pulse" /> {streamPhaseLabel(chat.streamingPhase)}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1649,7 +1658,14 @@ export default function App() {
                 <div className="message-content">
                   <div className="agent-status-container">
                     <div className="typing-indicator"><span></span><span></span><span></span></div>
-                    <ThinkingTimer suppressHint={!!chat.runningTool} />
+                    <ThinkingTimer suppressHint={!!chat.runningTool || !!chat.streamingPhase} />
+                    {/* Raciocínio ANTES do primeiro token visível cai neste branch
+                        (isStreaming, mas streamingText ainda vazio). */}
+                    {chat.streamingPhase && (
+                      <span className="streaming-phase">
+                        <BrainCircuit size={11} className="pulse" /> {streamPhaseLabel(chat.streamingPhase)}
+                      </span>
+                    )}
                     {chat.runningTool && (
                       <span className="running-tool" title={chat.runningTool.detail}>
                         <Wrench size={10} /> {chat.runningTool.name}{chat.runningTool.detail ? <span className="running-tool-detail"> · {chat.runningTool.detail}</span> : null}

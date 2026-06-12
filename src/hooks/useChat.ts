@@ -9,6 +9,7 @@ import { classifyProviderError, humanizeProviderError } from '../utils/providerE
 import { resolveTurnUsage } from '../utils/usage'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
 import { toolCallSummary } from '../utils/toolDisplay'
+import { nextStreamPhase, type StreamPhase } from '../utils/streamPhase'
 import { runCompaction, mergeSummary, planEmergencyCompaction } from '../services/compaction'
 import { renderWorkingMemory, renderPersistentMemory } from '../utils/memoryRender'
 import { logInsight } from '../services/devInsights'
@@ -61,6 +62,9 @@ export function useChat({
   const [streamingText, setStreamingText] = useState('')
   const [agentSteps, setAgentSteps] = useState(0)
   const [streamingConvId, setStreamingConvId] = useState<string | null>(null)
+  // Fase invisível do stream (raciocínio / montagem de tool call) — ver
+  // utils/streamPhase.ts. Alimenta o indicador de vida quando não há texto.
+  const [streamingPhase, setStreamingPhase] = useState<StreamPhase>(null)
   // Tool currently executing (name + arg summary) — the live status the user
   // sees during long tool runs (execute_command can run up to 600s; before
   // this the UI showed only generic dots + "Passo N" the whole time).
@@ -106,7 +110,7 @@ export function useChat({
     sendingRef.current = false
     setIsLoading(false)
     setIsStreaming(false)
-    setStreamingText('')
+    setStreamingText(''); setStreamingPhase(null)
     setStreamingConvId(null)
     setRunningTool(null)
     if (streamCleanupRef.current) {
@@ -477,8 +481,21 @@ export function useChat({
           // or Anthropic message_start/message_delta). Null when the provider
           // doesn't support it (e.g. Ollama local, Gemini stream path).
           let streamUsage: { prompt_tokens: number; completion_tokens: number } | null = null
+          // Fase invisível (raciocínio/tool args) — acumulada em variável local
+          // e empurrada para o estado com throttle: deltas chegam dezenas de
+          // vezes por segundo e cada setState re-renderiza o App inteiro.
+          let phase: StreamPhase = null
+          let lastPhasePush = 0
+          const pushPhase = (next: StreamPhase, force: boolean) => {
+            phase = next
+            const now = Date.now()
+            if (!force && now - lastPhasePush < 300) return
+            lastPhasePush = now
+            setStreamingPhase(next)
+          }
           setIsStreaming(true)
-          setStreamingText('')
+          setStreamingText(''); setStreamingPhase(null)
+          setStreamingPhase(null)
 
           try {
           await new Promise<void>((resolve, reject) => {
@@ -505,6 +522,12 @@ export function useChat({
               }
               const delta = chunk.choices?.[0]?.delta
               if (delta) {
+                const nextPhase = nextStreamPhase(phase, delta)
+                if (nextPhase !== undefined) {
+                  // Força o push quando o TIPO muda (apareceu/sumiu/trocou) para
+                  // o indicador não atrasar 300ms nessas transições.
+                  pushPhase(nextPhase, (nextPhase?.kind) !== (phase?.kind))
+                }
                 if (delta.content) {
                   accumulated += delta.content
                   // Sanitize reasoning leaks in real-time
@@ -558,7 +581,7 @@ export function useChat({
               markNoTools(finalProvider, finalModel)
               toolsDisabledForThisTurn = true
               setIsStreaming(false)
-              setStreamingText('')
+              setStreamingText(''); setStreamingPhase(null)
               showToast(lang === 'en'
                 ? `"${finalModel}" doesn't support tool use — retrying without tools.`
                 : `"${finalModel}" não suporta tool use — refazendo sem ferramentas.`)
@@ -573,7 +596,7 @@ export function useChat({
               transientRetriesUsed++
               logInsight('chat', 'retry', { kind: cls.kind })
               setIsStreaming(false)
-              setStreamingText('')
+              setStreamingText(''); setStreamingPhase(null)
               showToast(humanizeProviderError(err?.message, lang) + (lang === 'en' ? ' (retrying…)' : ' (tentando de novo…)'))
               await new Promise(r => setTimeout(r, 1500))
               steps-- // don't count the failed attempt
@@ -583,7 +606,7 @@ export function useChat({
             // up (only when nothing streamed yet, so no double output).
             if (cls.kind === 'context' && !accumulated && await emergencyContextCompact()) {
               setIsStreaming(false)
-              setStreamingText('')
+              setStreamingText(''); setStreamingPhase(null)
               showToast(lang === 'en' ? 'Context overflowed — compacted, retrying…' : 'Contexto estourou — compactado, tentando de novo…')
               steps--
               continue
@@ -592,7 +615,7 @@ export function useChat({
           }
 
           setIsStreaming(false)
-          setStreamingText('')
+          setStreamingText(''); setStreamingPhase(null)
 
           // If the user pressed Stop during the stream, bail out before we
           // dispatch any of the partial tool calls that accumulated. Without
@@ -848,7 +871,7 @@ export function useChat({
       onProviderErrorRef.current?.(e.message || 'Unknown error')
       try { logInsight('error', classifyProviderError(e.message).kind, { provider: finalProvider, model: finalModel }) } catch { /* telemetry best-effort */ }
       setIsStreaming(false)
-      setStreamingText('')
+      setStreamingText(''); setStreamingPhase(null)
       const errMsg: Message = {
         id: generateId(), role: 'assistant',
         content: humanizeProviderError(e.message, settings.language || 'pt'), timestamp: new Date()
@@ -860,7 +883,7 @@ export function useChat({
       sendingRef.current = false
       setIsLoading(false)
       setIsStreaming(false)
-      setStreamingText('')
+      setStreamingText(''); setStreamingPhase(null)
       setStreamingConvId(null)
       setRunningTool(null)
       // Per-STEP response latency, decoupled from total agent-run length: a
@@ -986,6 +1009,7 @@ export function useChat({
     isStreaming,
     streamingText,
     streamingConvId,
+    streamingPhase,
     agentSteps,
     runningTool,
     stopAgent,

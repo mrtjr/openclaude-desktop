@@ -890,6 +890,14 @@ body .update-banner {
   font-family: monospace; color: var(--text-secondary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* Fase invisível do stream — raciocínio/montagem de tool call (v2.13.3).
+   O contador de chars subindo é o que diz "está vivo" durante gerações longas. */
+.streaming-phase {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-top: 4px; font-size: 11.5px; color: var(--text-secondary);
+  font-variant-numeric: tabular-nums; /* contador não "dança" ao subir */
+}
+.streaming-phase .pulse { color: var(--accent); }
 /* Queued-message pill above the composer (v2.12.52) */
 .queued-pill {
   display: flex; align-items: center; gap: 7px; margin: 0 4px 6px;
