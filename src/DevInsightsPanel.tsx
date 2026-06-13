@@ -107,6 +107,37 @@ export default function DevInsightsPanel({ isOpen, onClose, language }: Props) {
               <Section title={pt ? 'Tools' : 'Tools'} rec={digest.toolUsage} />
               <Section title={pt ? 'Provedores' : 'Providers'} rec={digest.providerMix} />
               <Section title={pt ? 'Modelos' : 'Models'} rec={digest.modelMix} />
+              <Section title={pt ? 'Versões' : 'Versions'} rec={digest.versionMix} />
+              {digest.turns.started > 0 && (
+                <div style={sectionStyle}>
+                  <h3 style={{ fontSize: 13, opacity: 0.7, margin: '0 0 6px' }}>{pt ? 'Turnos' : 'Turns'}</h3>
+                  <div style={rowStyle}><span>{pt ? 'iniciados' : 'started'}</span><strong>{digest.turns.started}</strong></div>
+                  <div style={rowStyle}><span>{pt ? 'completos' : 'completed'}</span><strong>{digest.turns.completed}</strong></div>
+                  <div style={rowStyle}><span>{pt ? 'abortados' : 'aborted'}</span><strong>{digest.turns.aborted}</strong></div>
+                  <div style={rowStyle}><span>{pt ? 'com erro' : 'errored'}</span><strong>{digest.turns.errored}</strong></div>
+                  <div style={rowStyle}>
+                    <span>{pt ? 'zumbis (sem desfecho)' : 'zombies (no outcome)'}</span>
+                    <strong style={digest.turns.zombies > 0 ? { color: 'var(--error, #e5484d)' } : undefined}>{digest.turns.zombies}</strong>
+                  </div>
+                </div>
+              )}
+              {digest.streamShare.samples > 0 && (() => {
+                const s = digest.streamShare
+                const total = s.waitMs + s.reasoningMs + s.toolMs + s.contentMs
+                const pct = (ms: number) => total > 0 ? `${Math.round((ms / total) * 100)}%` : '0%'
+                return (
+                  <div style={sectionStyle}>
+                    <h3 style={{ fontSize: 13, opacity: 0.7, margin: '0 0 6px' }}>
+                      {pt ? 'Perfil de geração (onde foi o tempo)' : 'Generation profile (where time went)'}
+                    </h3>
+                    <div style={rowStyle}><span>{pt ? 'espera 1º token' : 'first-token wait'}</span><strong>{pct(s.waitMs)}</strong></div>
+                    <div style={rowStyle}><span>{pt ? 'raciocínio' : 'reasoning'}</span><strong>{pct(s.reasoningMs)}</strong></div>
+                    <div style={rowStyle}><span>{pt ? 'montagem de tool' : 'tool assembly'}</span><strong>{pct(s.toolMs)}</strong></div>
+                    <div style={rowStyle}><span>{pt ? 'texto' : 'text'}</span><strong>{pct(s.contentMs)}</strong></div>
+                    <div style={rowStyle}><span>{pt ? 'montagens de tool 5+ min' : '5+ min tool assemblies'}</span><strong>{s.longToolAssemblies}</strong></div>
+                  </div>
+                )
+              })()}
               <div style={sectionStyle}>
                 <h3 style={{ fontSize: 13, opacity: 0.7, margin: '0 0 6px' }}>{pt ? 'Atrito' : 'Friction'}</h3>
                 <div style={rowStyle}><span>circuit-breaks</span><strong>{f.circuitBreaks}</strong></div>

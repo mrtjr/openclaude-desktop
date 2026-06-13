@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { nextStreamPhase, formatCharCount, streamPhaseLabel, type StreamPhase } from '../src/utils/streamPhase'
+import { nextStreamPhase, formatCharCount, streamPhaseLabel, classifyDelta, createPhaseProfiler, type StreamPhase } from '../src/utils/streamPhase'
 
 describe('nextStreamPhase — raciocínio (reasoning_content / reasoning)', () => {
   it('entra na fase reasoning e acumula chars entre deltas', () => {
@@ -61,5 +61,46 @@ describe('formatCharCount / streamPhaseLabel', () => {
     expect(streamPhaseLabel({ kind: 'reasoning', chars: 3421 })).toBe('raciocinando… 3,4k chars')
     expect(streamPhaseLabel({ kind: 'tool', tool: 'write_file', chars: 12100 })).toBe('montando write_file… 12,1k chars')
     expect(streamPhaseLabel({ kind: 'tool', chars: 10 })).toBe('montando tool call… 10 chars')
+  })
+})
+
+describe('classifyDelta', () => {
+  it('classifica com precedência tool > reasoning > content', () => {
+    expect(classifyDelta({ tool_calls: [{ function: { name: 'x' } }], reasoning_content: 'a', content: 'b' })).toBe('tool')
+    expect(classifyDelta({ reasoning_content: 'pensando' })).toBe('reasoning')
+    expect(classifyDelta({ reasoning: 'or-style' })).toBe('reasoning')
+    expect(classifyDelta({ content: 'olá' })).toBe('content')
+  })
+
+  it('delta vazio/irrelevante → null', () => {
+    expect(classifyDelta({})).toBeNull()
+    expect(classifyDelta({ content: '' })).toBeNull()
+    expect(classifyDelta({ role: 'assistant' })).toBeNull()
+    expect(classifyDelta(null)).toBeNull()
+  })
+})
+
+describe('createPhaseProfiler — onde foi o tempo', () => {
+  it('mede espera do 1º token e atribui intervalos ao delta que chegou', () => {
+    const p = createPhaseProfiler(1000)
+    p.onDelta('reasoning', 5000)  // espera: 4000ms
+    p.onDelta('reasoning', 7000)  // +2000 raciocínio
+    p.onDelta('tool', 10000)      // +3000 tool (intervalo termina num delta de tool)
+    p.onDelta('content', 11000)   // +1000 texto
+    const prof = p.finish(11500)  // cauda de 500ms → última fase (content)
+    expect(prof).toEqual({ waitMs: 4000, reasoningMs: 2000, toolMs: 3000, contentMs: 1500, totalMs: 10500 })
+  })
+
+  it('deltas não-classificáveis são absorvidos pelo próximo delta real', () => {
+    const p = createPhaseProfiler(0)
+    p.onDelta('content', 100)
+    p.onDelta(null, 200)         // chunk de usage/role — ignorado
+    p.onDelta('content', 300)    // absorve o intervalo todo (200ms)
+    expect(p.finish(300)).toEqual({ waitMs: 100, reasoningMs: 0, toolMs: 0, contentMs: 200, totalMs: 300 })
+  })
+
+  it('stream sem nenhum delta classificável: tudo vira espera', () => {
+    const p = createPhaseProfiler(0)
+    expect(p.finish(9000)).toEqual({ waitMs: 9000, reasoningMs: 0, toolMs: 0, contentMs: 0, totalMs: 9000 })
   })
 })

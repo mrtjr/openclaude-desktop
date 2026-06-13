@@ -7,6 +7,31 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.14.0] — 2026-06-12
+
+### Added — Dev Insights ciclo 1: lifecycle de turno, perfil de geração e versões
+
+Evolução da telemetria (opção 1 de 5 do plano de melhoria): antes os eventos
+eram um fluxo achatado — impossível responder "o turno terminou?", "onde foi
+o tempo?", "qual versão introduziu o problema?". O diagnóstico do falso
+travamento (v2.13.3) exigiu arqueologia manual de eventos + netstat; agora o
+digest responde sozinho.
+
+- **Correlação por turno**: todo evento durante um turno ganha `turn` (id),
+  `step` (passo do loop agêntico) e `v` (versão do app) automaticamente.
+- **Desfecho explícito**: `chat/complete` agora carrega `outcome`
+  (ok/error/aborted). Turno sem complete = **zumbi** (app fechado no meio,
+  crash ou stream preso) — contado no digest com nota de alerta.
+- **Perfil de geração** (`chat/stream_profile` por passo): onde foi o tempo —
+  espera do 1º token, raciocínio, montagem de tool call, texto. O caso "13 min
+  montando um write_file" vira linha de digest ("montagem de tool consome X%")
+  com nota sugerindo a tool de edição por trecho quando domina (≥40%).
+- **Mix de versões**: turnos por versão do app — mede o efeito de cada release.
+- Painel Dev Insights e relatório .md ganham as seções Turnos, Perfil de
+  geração e Versões (zumbis destacados em vermelho).
+- Novos puros/testáveis: `classifyDelta` + `createPhaseProfiler` em
+  streamPhase.ts; 16 testes novos (553 no total).
+
 ## [2.13.4] — 2026-06-12
 
 ### Fixed — Corretor ortográfico sem sugestões (faltava o menu de contexto)

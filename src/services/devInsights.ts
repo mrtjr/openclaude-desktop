@@ -39,13 +39,56 @@ export interface InsightsDigest {
   }
   /** Turn latency over the window (ms), from 'chat'/'complete' events. */
   latency: { count: number; avgMs: number; p95Ms: number }
+  /** Ciclo de vida dos turnos (v2.14.0). Zumbi = começou e nunca registrou
+   *  desfecho — app fechado no meio, crash ou stream preso. */
+  turns: { started: number; completed: number; aborted: number; errored: number; zombies: number }
+  /** Onde foi o tempo de geração (somas em ms dos 'chat'/'stream_profile').
+   *  longToolAssemblies conta passos com 5+ min só montando uma tool call. */
+  streamShare: { samples: number; waitMs: number; reasoningMs: number; toolMs: number; contentMs: number; longToolAssemblies: number }
+  /** Turnos por versão do app — mede o efeito de cada release. */
+  versionMix: Record<string, number>
   /** Auto-generated, human/AI-readable prioritisation hints. */
   notes: string[]
 }
 
+// Turno mais recente sem desfecho só vira zumbi depois desta idade (pode
+// ainda estar rodando); os anteriores ao último turno são zumbis na hora —
+// o app roda um turno por vez (sendingRef), então um novo turno prova que
+// o anterior morreu sem registrar desfecho.
+const ZOMBIE_AGE_MS = 2 * 60 * 60 * 1000
+const LONG_TOOL_ASSEMBLY_MS = 5 * 60 * 1000
+
 // ─── In-memory buffer ───────────────────────────────────────────────
 const buffer: InsightEvent[] = []
 let enabled = true
+
+// ─── Contexto de turno (correlação) — v2.14.0 ───────────────────────
+// Antes os eventos eram um fluxo achatado: impossível responder "o turno
+// terminou?", "em que passo deu erro?", "qual versão introduziu isso?".
+// Enquanto um turno está ativo, todo evento ganha automaticamente:
+//   m.turn — id curto correlacionando turno → tools → desfecho
+//   m.step — passo do loop agêntico em que o evento ocorreu
+//   m.v    — versão do app (mede o efeito de cada ciclo de release)
+// Turno SEM evento 'chat/complete' = zumbi (app fechado no meio, crash ou
+// stream preso — foi exatamente o buraco do diagnóstico do ciclo v2.13.x).
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
+let turnCtx: { id: string; step: number } | null = null
+
+/** Inicia o contexto de correlação de um turno; devolve o id gerado. */
+export function beginInsightTurn(): string {
+  turnCtx = { id: Math.random().toString(36).slice(2, 10), step: 0 }
+  return turnCtx.id
+}
+
+/** Avança o passo do loop agêntico (chamar a cada iteração). */
+export function bumpInsightStep(): void {
+  if (turnCtx) turnCtx.step++
+}
+
+/** Encerra o contexto (depois de logar o 'chat/complete'). */
+export function endInsightTurn(): void {
+  turnCtx = null
+}
 
 /** Mirror the user's `analyticsEnabled` setting — when off, nothing is recorded. */
 export function setInsightsEnabled(on: boolean): void {
@@ -72,7 +115,12 @@ export function logInsight(
   meta?: Record<string, unknown>,
 ): void {
   if (!enabled) return
-  buffer.push({ t: Date.now(), c: category, a: String(action), m: sanitizeMeta(meta) })
+  // Contexto de turno entra por baixo do meta explícito (explícito vence).
+  const ctx: Record<string, unknown> = {}
+  if (APP_VERSION) ctx.v = APP_VERSION
+  if (turnCtx) { ctx.turn = turnCtx.id; ctx.step = turnCtx.step }
+  const merged = Object.keys(ctx).length ? { ...ctx, ...meta } : meta
+  buffer.push({ t: Date.now(), c: category, a: String(action), m: sanitizeMeta(merged) })
 }
 
 /** Remove and return all buffered events (called by the flush hook). */
@@ -92,6 +140,26 @@ function bump(rec: Record<string, number>, key: string): void {
 
 function buildNotes(d: Omit<InsightsDigest, 'notes'>): string[] {
   const notes: string[] = []
+  // Zumbis primeiro: é o sinal mais grave (turno morreu sem registrar nada).
+  if (d.turns.zombies > 0) {
+    notes.push(`${d.turns.zombies} turno(s) zumbi — começaram e nunca registraram desfecho (app fechado no meio, crash ou stream preso).`)
+  }
+  // Perfil de geração: onde o tempo realmente foi (≥3 amostras para não
+  // tirar conclusão de um turno só).
+  const gen = d.streamShare.reasoningMs + d.streamShare.toolMs + d.streamShare.contentMs
+  if (d.streamShare.samples >= 3 && gen > 0) {
+    const toolPct = Math.round((d.streamShare.toolMs / gen) * 100)
+    const reasonPct = Math.round((d.streamShare.reasoningMs / gen) * 100)
+    if (toolPct >= 40) {
+      notes.push(`Montagem de tool call consome ${toolPct}% do tempo de geração — candidata: tool de edição por trecho em vez de write_file inteiro.`)
+    }
+    if (reasonPct >= 50) {
+      notes.push(`Raciocínio consome ${reasonPct}% do tempo de geração — avaliar limite de thinking ou modelo mais direto para tarefas simples.`)
+    }
+  }
+  if (d.streamShare.longToolAssemblies >= 2) {
+    notes.push(`${d.streamShare.longToolAssemblies} passo(s) com 5+ min só montando tool call — turnos "parados" que parecem travamento.`)
+  }
   const topError = Object.entries(d.errorsByKind).sort((a, b) => b[1] - a[1])[0]
   if (topError && topError[1] >= 3) {
     notes.push(`Erro mais frequente: "${topError[0]}" (${topError[1]}×) — bom candidato a próximo ciclo.`)
@@ -138,8 +206,14 @@ export function summarizeInsights(
   const toolUsage: Record<string, number> = {}
   const providerMix: Record<string, number> = {}
   const modelMix: Record<string, number> = {}
+  const versionMix: Record<string, number> = {}
   const friction = { circuitBreaks: 0, retries: 0, toolDenials: 0, emptyReplies: 0, contextCompactions: 0 }
   const latencies: number[] = []
+  // turnos com id → ciclo de vida; sem id (eventos legados) → só contagens.
+  const turnMap = new Map<string, { startT: number; outcome: string | null }>()
+  let turnsStarted = 0
+  const legacyOutcomes: string[] = []
+  const streamShare = { samples: 0, waitMs: 0, reasoningMs: 0, toolMs: 0, contentMs: 0, longToolAssemblies: 0 }
 
   for (const e of recent) {
     switch (e.c) {
@@ -151,11 +225,27 @@ export function summarizeInsights(
         break
       case 'chat':
         if (e.a === 'turn') {
+          turnsStarted++
           bump(providerMix, String(e.m?.provider ?? 'unknown'))
           bump(modelMix, String(e.m?.model ?? 'unknown'))
+          if (typeof e.m?.v === 'string') bump(versionMix, e.m.v)
+          if (typeof e.m?.turn === 'string') turnMap.set(e.m.turn, { startT: e.t, outcome: null })
         } else if (e.a === 'retry') friction.retries++
         else if (e.a === 'empty_reply') friction.emptyReplies++
-        else if (e.a === 'complete' && typeof e.m?.ms === 'number') latencies.push(e.m.ms)
+        else if (e.a === 'complete') {
+          if (typeof e.m?.ms === 'number') latencies.push(e.m.ms)
+          const outcome = typeof e.m?.outcome === 'string' ? e.m.outcome : 'ok'
+          const id = typeof e.m?.turn === 'string' ? e.m.turn : null
+          const tracked = id ? turnMap.get(id) : undefined
+          if (tracked) tracked.outcome = outcome
+          else legacyOutcomes.push(outcome) // legado ou início fora da janela
+        } else if (e.a === 'stream_profile') {
+          streamShare.samples++
+          for (const k of ['waitMs', 'reasoningMs', 'toolMs', 'contentMs'] as const) {
+            if (typeof e.m?.[k] === 'number') streamShare[k] += e.m[k] as number
+          }
+          if (typeof e.m?.toolMs === 'number' && e.m.toolMs >= LONG_TOOL_ASSEMBLY_MS) streamShare.longToolAssemblies++
+        }
         break
       case 'tool':
         if (e.a === 'use') bump(toolUsage, String(e.m?.name ?? 'unknown'))
@@ -170,6 +260,22 @@ export function summarizeInsights(
     }
   }
 
+  // Desfechos: turnos rastreados por id + contagens legadas (sem id).
+  const turns = { started: turnsStarted, completed: 0, aborted: 0, errored: 0, zombies: 0 }
+  const countOutcome = (o: string) => {
+    if (o === 'aborted') turns.aborted++
+    else if (o === 'error') turns.errored++
+    else turns.completed++
+  }
+  const lastStartT = Math.max(0, ...[...turnMap.values()].map(t => t.startT))
+  for (const t of turnMap.values()) {
+    if (t.outcome) countOutcome(t.outcome)
+    // Sem desfecho: zumbi se um turno mais novo existe (o app roda um por
+    // vez — turno novo prova que este morreu) ou se já passou da idade.
+    else if (t.startT < lastStartT || now - t.startT > ZOMBIE_AGE_MS) turns.zombies++
+  }
+  for (const o of legacyOutcomes) countOutcome(o)
+
   const base = {
     generatedAt: now,
     windowDays,
@@ -181,6 +287,9 @@ export function summarizeInsights(
     modelMix,
     friction,
     latency: computeLatency(latencies),
+    turns,
+    streamShare,
+    versionMix,
   }
   return { ...base, notes: buildNotes(base) }
 }
@@ -209,11 +318,30 @@ export function formatInsightsReport(d: InsightsDigest): string {
     for (const [k, v] of entries) lines.push(`- ${k}: ${v}`)
     lines.push(``)
   }
+  if (d.turns.started > 0) {
+    lines.push(
+      `## Turnos`,
+      `- iniciados: ${d.turns.started} · completos: ${d.turns.completed} · abortados: ${d.turns.aborted} · com erro: ${d.turns.errored} · zumbis: ${d.turns.zombies}`,
+      ``,
+    )
+  }
+  if (d.streamShare.samples > 0) {
+    const s = d.streamShare
+    const total = s.waitMs + s.reasoningMs + s.toolMs + s.contentMs
+    const pct = (ms: number) => total > 0 ? `${Math.round((ms / total) * 100)}%` : '0%'
+    lines.push(
+      `## Perfil de geração (onde foi o tempo)`,
+      `- amostras: ${s.samples} · espera 1º token: ${pct(s.waitMs)} · raciocínio: ${pct(s.reasoningMs)} · montagem de tool: ${pct(s.toolMs)} · texto: ${pct(s.contentMs)}`,
+      `- montagens de tool com 5+ min: ${s.longToolAssemblies}`,
+      ``,
+    )
+  }
   section('Erros por categoria', d.errorsByKind)
   section('Uso de features', d.featureUsage)
   section('Uso de tools', d.toolUsage)
   section('Provedores', d.providerMix)
   section('Modelos', d.modelMix)
+  section('Versões', d.versionMix)
   lines.push(
     `## Atrito`,
     `- circuit-breaks: ${d.friction.circuitBreaks}`,

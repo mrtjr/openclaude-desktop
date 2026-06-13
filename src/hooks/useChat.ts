@@ -9,10 +9,10 @@ import { classifyProviderError, humanizeProviderError } from '../utils/providerE
 import { resolveTurnUsage } from '../utils/usage'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
 import { toolCallSummary } from '../utils/toolDisplay'
-import { nextStreamPhase, type StreamPhase } from '../utils/streamPhase'
+import { nextStreamPhase, classifyDelta, createPhaseProfiler, type StreamPhase } from '../utils/streamPhase'
 import { runCompaction, mergeSummary, planEmergencyCompaction } from '../services/compaction'
 import { renderWorkingMemory, renderPersistentMemory } from '../utils/memoryRender'
-import { logInsight } from '../services/devInsights'
+import { logInsight, beginInsightTurn, bumpInsightStep, endInsightTurn } from '../services/devInsights'
 import { createContextEngine, getModelContextLimit, countToolSchemas, computeMessageBudget } from '../services/contextEngine'
 import type { ProviderConfig } from './useProviderConfig'
 
@@ -167,6 +167,12 @@ export function useChat({
     stopRequestedRef.current = false
 
     const { provider: finalProvider, model: finalModel, apiKey: finalApiKey, isNotOllama, modalHostname, customBaseUrl } = providerConfig
+
+    // Correlação Dev Insights: daqui até o endInsightTurn() no finally, todo
+    // logInsight ganha turn/step/v automaticamente. O desfecho vai no meta
+    // do 'chat/complete'; turno sem complete = zumbi no digest.
+    beginInsightTurn()
+    let turnOutcome: 'ok' | 'error' | 'aborted' = 'ok'
 
     // Session analytics tracker
     const sessionTracker = {
@@ -435,6 +441,7 @@ export function useChat({
       while (continueLoop && steps < safetyLimit) {
         if (stopRequestedRef.current) break
         steps++
+        bumpInsightStep()
         sessionTracker.agentSteps = steps
         setAgentSteps(steps)
         const stepStartTime = Date.now()
@@ -486,6 +493,8 @@ export function useChat({
           // vezes por segundo e cada setState re-renderiza o App inteiro.
           let phase: StreamPhase = null
           let lastPhasePush = 0
+          // Perfil de tempo por fase (Dev Insights): espera/raciocínio/tool/texto.
+          const phaseProfiler = createPhaseProfiler(Date.now())
           const pushPhase = (next: StreamPhase, force: boolean) => {
             phase = next
             const now = Date.now()
@@ -522,6 +531,7 @@ export function useChat({
               }
               const delta = chunk.choices?.[0]?.delta
               if (delta) {
+                phaseProfiler.onDelta(classifyDelta(delta), Date.now())
                 const nextPhase = nextStreamPhase(phase, delta)
                 if (nextPhase !== undefined) {
                   // Força o push quando o TIPO muda (apareceu/sumiu/trocou) para
@@ -569,6 +579,9 @@ export function useChat({
               .then((res: any) => { if (res?.error) { cleanup(); streamCleanupRef.current = null; reject(new Error(res.error)) } })
               .catch((err: any) => { cleanup(); streamCleanupRef.current = null; reject(err) })
           })
+          // Stream concluído: registra onde foi o tempo deste passo (espera /
+          // raciocínio / montagem de tool / texto) — alimenta o digest.
+          logInsight('chat', 'stream_profile', { ...phaseProfiler.finish(Date.now()) })
           } catch (err: any) {
             // Tools-unsupported auto-recovery. Some providers (OpenRouter
             // especially) only expose a tool-capable endpoint for some
@@ -867,6 +880,7 @@ export function useChat({
       }
     } catch (e: any) {
       console.error('[useChat] Error in sendMessage:', e)
+      turnOutcome = 'error'
       sessionTracker.errors++
       onProviderErrorRef.current?.(e.message || 'Unknown error')
       try { logInsight('error', classifyProviderError(e.message).kind, { provider: finalProvider, model: finalModel }) } catch { /* telemetry best-effort */ }
@@ -893,7 +907,11 @@ export function useChat({
       const avgRT = sessionTracker.responseTimes.length > 0
         ? Math.round(sessionTracker.responseTimes.reduce((a, b) => a + b, 0) / sessionTracker.responseTimes.length)
         : 0
-      logInsight('chat', 'complete', { ms: avgRT, totalMs: Date.now() - sessionTracker.startTime, steps: sessionTracker.agentSteps })
+      // Desfecho do turno: 'aborted' (Stop do usuário) vence 'error' — o abort
+      // derruba o stream e o erro resultante é consequência, não causa.
+      if (stopRequestedRef.current) turnOutcome = 'aborted'
+      logInsight('chat', 'complete', { ms: avgRT, totalMs: Date.now() - sessionTracker.startTime, steps: sessionTracker.agentSteps, outcome: turnOutcome })
+      endInsightTurn()
 
       // Save session analytics
       if (settings.analyticsEnabled !== false) {

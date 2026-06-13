@@ -6,12 +6,16 @@ import {
   setInsightsEnabled,
   summarizeInsights,
   formatInsightsReport,
+  beginInsightTurn,
+  bumpInsightStep,
+  endInsightTurn,
   type InsightCategory,
   type InsightEvent,
 } from '../src/services/devInsights'
 
 beforeEach(() => {
   setInsightsEnabled(true)
+  endInsightTurn()
   drainInsights()
 })
 
@@ -112,5 +116,122 @@ describe('summarizeInsights', () => {
     expect(d.errorsByKind).toEqual({})
     expect(d.friction.circuitBreaks).toBe(0)
     expect(d.latency).toEqual({ count: 0, avgMs: 0, p95Ms: 0 })
+    expect(d.turns).toEqual({ started: 0, completed: 0, aborted: 0, errored: 0, zombies: 0 })
+    expect(d.streamShare.samples).toBe(0)
+  })
+})
+
+describe('contexto de turno (correlação turn/step)', () => {
+  it('anexa turn e step a todo evento enquanto o turno está ativo', () => {
+    const id = beginInsightTurn()
+    bumpInsightStep()
+    logInsight('tool', 'use', { name: 'web_search' })
+    bumpInsightStep()
+    logInsight('tool', 'use', { name: 'write_file' })
+    endInsightTurn()
+    logInsight('feature', 'open', { feature: 'rag' }) // fora do turno
+    const [e1, e2, e3] = drainInsights()
+    expect(e1.m).toMatchObject({ turn: id, step: 1, name: 'web_search' })
+    expect(e2.m).toMatchObject({ turn: id, step: 2, name: 'write_file' })
+    expect(e3.m?.turn).toBeUndefined()
+  })
+
+  it('meta explícito vence o contexto em caso de colisão de chave', () => {
+    beginInsightTurn()
+    logInsight('chat', 'complete', { step: 99 })
+    endInsightTurn()
+    const [e] = drainInsights()
+    expect(e.m?.step).toBe(99)
+  })
+})
+
+describe('summarizeInsights — ciclo de vida dos turnos', () => {
+  const now = 1_700_000_000_000
+  const at = (minAgo: number) => now - minAgo * 60_000
+  const turn = (id: string, minAgo: number): InsightEvent =>
+    ({ t: at(minAgo), c: 'chat', a: 'turn', m: { provider: 'modal', model: 'glm', turn: id } })
+  const complete = (id: string, outcome: string, minAgo: number): InsightEvent =>
+    ({ t: at(minAgo), c: 'chat', a: 'complete', m: { ms: 100, turn: id, outcome } })
+
+  it('conta desfechos por turno: ok, error, aborted', () => {
+    const d = summarizeInsights([
+      turn('a', 50), complete('a', 'ok', 45),
+      turn('b', 40), complete('b', 'error', 35),
+      turn('c', 30), complete('c', 'aborted', 25),
+    ], 30 as any, now)
+    expect(d.turns).toEqual({ started: 3, completed: 1, errored: 1, aborted: 1, zombies: 0 })
+  })
+
+  it('turno sem complete vira zumbi quando um turno mais novo existe', () => {
+    const d = summarizeInsights([
+      turn('morto', 90),            // nunca completou…
+      turn('novo', 10), complete('novo', 'ok', 5), // …e um turno posterior prova que morreu
+    ], 30, now)
+    expect(d.turns.zombies).toBe(1)
+    expect(d.notes.some((n) => /zumbi/.test(n))).toBe(true)
+  })
+
+  it('o turno mais recente sem desfecho NÃO é zumbi (pode estar rodando)', () => {
+    const d = summarizeInsights([turn('ativo', 10)], 30, now)
+    expect(d.turns.zombies).toBe(0)
+  })
+
+  it('…mas vira zumbi depois de 2h sem desfecho', () => {
+    const d = summarizeInsights([turn('esquecido', 130)], 30, now)
+    expect(d.turns.zombies).toBe(1)
+  })
+
+  it('complete legado (sem turn/outcome) conta como completo', () => {
+    const d = summarizeInsights([
+      { t: at(20), c: 'chat', a: 'turn', m: { provider: 'x', model: 'y' } },
+      { t: at(15), c: 'chat', a: 'complete', m: { ms: 50 } },
+    ], 30, now)
+    expect(d.turns.started).toBe(1)
+    expect(d.turns.completed).toBe(1)
+    expect(d.turns.zombies).toBe(0)
+  })
+
+  it('agrega versionMix a partir de m.v nos eventos de turno', () => {
+    const d = summarizeInsights([
+      { t: at(20), c: 'chat', a: 'turn', m: { provider: 'x', model: 'y', v: '2.14.0', turn: 'a' } },
+      { t: at(10), c: 'chat', a: 'turn', m: { provider: 'x', model: 'y', v: '2.14.0', turn: 'b' } },
+      { t: at(5), c: 'chat', a: 'turn', m: { provider: 'x', model: 'y', v: '2.13.4', turn: 'c' } },
+    ], 30, now)
+    expect(d.versionMix).toEqual({ '2.14.0': 2, '2.13.4': 1 })
+  })
+})
+
+describe('summarizeInsights — perfil de geração (stream_profile)', () => {
+  const now = 1_700_000_000_000
+  const profile = (m: Record<string, number>): InsightEvent =>
+    ({ t: now - 60_000, c: 'chat', a: 'stream_profile', m })
+
+  it('soma os buckets e conta montagens longas de tool call', () => {
+    const d = summarizeInsights([
+      profile({ waitMs: 1000, reasoningMs: 2000, toolMs: 400_000, contentMs: 1000, totalMs: 404_000 }),
+      profile({ waitMs: 500, reasoningMs: 1500, toolMs: 100, contentMs: 3000, totalMs: 5100 }),
+    ], 30, now)
+    expect(d.streamShare.samples).toBe(2)
+    expect(d.streamShare.toolMs).toBe(400_100)
+    expect(d.streamShare.longToolAssemblies).toBe(1) // só a de 400s passa de 5 min
+  })
+
+  it('nota quando a montagem de tool domina o tempo de geração (≥3 amostras)', () => {
+    const events = Array.from({ length: 3 }, () =>
+      profile({ waitMs: 100, reasoningMs: 1000, toolMs: 8000, contentMs: 1000, totalMs: 10_100 }))
+    const d = summarizeInsights(events, 30, now)
+    expect(d.notes.some((n) => /tool call/i.test(n) && /80%/.test(n))).toBe(true)
+  })
+
+  it('relatório .md inclui as seções de turnos e perfil', () => {
+    const d = summarizeInsights([
+      { t: now - 1000, c: 'chat', a: 'turn', m: { provider: 'x', model: 'y', turn: 'a' } },
+      { t: now - 500, c: 'chat', a: 'complete', m: { ms: 10, turn: 'a', outcome: 'ok' } },
+      profile({ waitMs: 100, reasoningMs: 200, toolMs: 300, contentMs: 400, totalMs: 1000 }),
+    ], 30, now)
+    const md = formatInsightsReport(d)
+    expect(md).toContain('## Turnos')
+    expect(md).toContain('zumbis: 0')
+    expect(md).toContain('## Perfil de geração')
   })
 })

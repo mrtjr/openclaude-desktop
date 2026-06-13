@@ -56,6 +56,61 @@ export function nextStreamPhase(prev: StreamPhase, delta: any): StreamPhase | un
   return undefined
 }
 
+// ─── Perfil de fases (Dev Insights v2.14.0) ─────────────────────────
+//
+// Mede ONDE foi o tempo de um stream: espera do 1º token, raciocínio,
+// montagem de tool call e texto visível. É o dado que faltou no diagnóstico
+// do "falso travamento" (13 min montando um write_file invisível) — agora o
+// digest mostra isso por agregado em vez de exigir arqueologia de eventos.
+
+export type DeltaKind = 'reasoning' | 'tool' | 'content'
+
+/** Classifica um delta OpenAI-compat no bucket de fase a que pertence.
+ *  Mesma precedência do nextStreamPhase (tool > reasoning > content). */
+export function classifyDelta(delta: any): DeltaKind | null {
+  if (!delta || typeof delta !== 'object') return null
+  if (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0) return 'tool'
+  if ((typeof delta.reasoning_content === 'string' && delta.reasoning_content) ||
+      (typeof delta.reasoning === 'string' && delta.reasoning)) return 'reasoning'
+  if (typeof delta.content === 'string' && delta.content.length > 0) return 'content'
+  return null
+}
+
+export interface StreamProfile {
+  waitMs: number       // request → primeiro delta classificável
+  reasoningMs: number
+  toolMs: number
+  contentMs: number
+  totalMs: number
+}
+
+/** Acumulador de tempo por fase. Cada intervalo entre deltas é atribuído ao
+ *  bucket do delta que ACABOU de chegar (o tempo foi gasto produzindo-o);
+ *  deltas não-classificáveis (usage, role) são absorvidos pelo próximo real.
+ *  Puro: o relógio entra por parâmetro — testável com tempos fixos. */
+export function createPhaseProfiler(startedAt: number) {
+  let firstAt: number | null = null
+  let lastAt = startedAt
+  let lastKind: DeltaKind | null = null
+  const acc = { reasoningMs: 0, toolMs: 0, contentMs: 0 }
+  const key = (k: DeltaKind): 'reasoningMs' | 'toolMs' | 'contentMs' =>
+    k === 'reasoning' ? 'reasoningMs' : k === 'tool' ? 'toolMs' : 'contentMs'
+  return {
+    onDelta(kind: DeltaKind | null, now: number): void {
+      if (!kind) return
+      if (firstAt === null) { firstAt = now; lastAt = now; lastKind = kind; return }
+      acc[key(kind)] += now - lastAt
+      lastAt = now
+      lastKind = kind
+    },
+    finish(now: number): StreamProfile {
+      // Cauda após o último delta (ex.: espera pelo [DONE]) vai para a última fase.
+      if (lastKind && now > lastAt) acc[key(lastKind)] += now - lastAt
+      return { waitMs: (firstAt ?? now) - startedAt, ...acc, totalMs: now - startedAt }
+    },
+  }
+}
+
 /** "850" / "3,4k" — contador compacto para o indicador (pt-BR). */
 export function formatCharCount(n: number): string {
   if (n < 1000) return String(n)
