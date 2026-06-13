@@ -7,6 +7,26 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.23.0] — 2026-06-13
+
+### Added — Troca rápida de modelo/provider no chat (estilo Claude)
+
+Atende ao pedido do usuário: alternar entre **Modal** e **Ollama** (e qualquer
+provider configurado) **direto no chat**, sem abrir Configurações. Antes, o
+seletor só listava modelos quando o provider era Ollama; para Modal ele apenas
+abria as Configurações — trocar de provider exigia navegar no menu.
+
+- **Switcher unificado** no seletor de modelo (acima do composer): um clique
+  abre um dropdown agrupado por provider, estilo Claude, com **check no ativo**.
+- Lista cada **modelo Ollama local** + o **modelo configurado** de cada provider
+  cloud que tenha credencial (Modal, Anthropic, OpenAI, OpenRouter, Gemini,
+  Custom). O provider atual sempre aparece, mesmo sem credencial.
+- Selecionar troca na hora e **persiste** (provider em settings; modelo Ollama
+  em localStorage) — reusa os padrões existentes, o chat já lê via
+  `useProviderConfig`. Rodapé com "Configurar providers…" para o resto.
+- Lógica pura/testável em `utils/modelSwitcher.ts` (`buildSwitchOptions` +
+  `groupSwitchOptions`); 7 testes novos (602 no total).
+
 ## [2.22.0] — 2026-06-13
 
 ### Added — Auto-recuperação de stream travado (stall) em vez de matar o turno

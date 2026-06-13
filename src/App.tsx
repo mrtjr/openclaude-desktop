@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react'
 import 'highlight.js/styles/github-dark.css'
-import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, ArrowDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder, Wrench, BrainCircuit } from 'lucide-react'
+import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, ArrowDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder, Wrench, BrainCircuit, Check } from 'lucide-react'
 import { loadSettings, type AppSettings } from './settingsConfig'
 import type { Persona } from './PersonaEngine'
 // Small / hot-path components — eager
@@ -45,6 +45,7 @@ import type { Message } from './types'
 import { PLACEHOLDER_HINTS, SUGGESTIONS } from './constants/prompts'
 import { formatMarkdown, getRelativeTime, groupByBucket, bucketLabel } from './utils/formatting'
 import { streamPhaseLabel } from './utils/streamPhase'
+import { buildSwitchOptions, groupSwitchOptions, type SwitchOption } from './utils/modelSwitcher'
 
 // ─── Custom hooks ───────────────────────────────────────────────────
 import { useProviderConfig, getDisplayModel } from './hooks/useProviderConfig'
@@ -1099,6 +1100,25 @@ export default function App() {
 
   const displayModel = getDisplayModel(settings, selectedModel)
 
+  // Troca rápida de modelo/provider direto no chat (v2.23.0). Reaproveita os
+  // padrões de persistência existentes: provider em settings, modelo Ollama em
+  // selectedModel + localStorage.
+  const switchOptions = useMemo(() => buildSwitchOptions(settings, models, selectedModel), [settings, models, selectedModel])
+  const switchTo = useCallback((opt: SwitchOption) => {
+    if (opt.provider === 'ollama') {
+      setSelectedModel(opt.model)
+      localStorage.setItem('openclaude-model', opt.model)
+    }
+    if (opt.provider !== settings.provider) {
+      setSettings(prev => {
+        const next = { ...prev, provider: opt.provider as AppSettings['provider'] }
+        localStorage.setItem('openclaude-settings', JSON.stringify(next))
+        return next
+      })
+    }
+    setShowModelDropdown(false)
+  }, [settings.provider])
+
   // ─── Agent-turn grouping (v2.12.71) ─────────────────────────────
   // Consecutive tool-step messages render as one compact collapsible
   // block instead of N full message rows. Memoized on the messages
@@ -1545,31 +1565,38 @@ export default function App() {
               )}
             </div>
 
+            {/* Troca rápida de modelo/provider no chat (v2.23.0) — alterna
+                entre Modal, Ollama e qualquer provider configurado em 1 clique,
+                estilo Claude, sem abrir Configurações. */}
             <div className="model-selector">
-              {settings.provider !== 'ollama' ? (
-                <button className="model-btn" onClick={() => setShowSettings(true)}>
-                  <Globe size={14} />
-                  <span className="model-name" style={{ textTransform: 'capitalize' }}>{settings.provider}: {displayModel}</span>
-                  <SettingsIcon size={12} />
-                </button>
-              ) : (
-                <>
-                  <button className="model-btn" onClick={() => setShowModelDropdown(!showModelDropdown)}>
-                    <Bot size={14} />
-                    <span className="model-name">{selectedModel}</span>
-                    <ChevronDown size={12} />
-                  </button>
-                  {showModelDropdown && (
-                    <div className="model-dropdown">
-                      {models.map(m => (
-                        <button key={m} className={`model-option ${m === selectedModel ? 'active' : ''}`}
-                          onClick={() => { setSelectedModel(m); localStorage.setItem('openclaude-model', m); setShowModelDropdown(false) }}>
-                          {m}
+              <button className="model-btn" onClick={() => setShowModelDropdown(!showModelDropdown)}
+                      title={settings.provider === 'ollama' ? 'Trocar modelo/provider' : `${settings.provider}: ${displayModel}`}>
+                {settings.provider === 'ollama' ? <Bot size={14} /> : <Globe size={14} />}
+                <span className="model-name">{settings.provider === 'ollama' ? selectedModel : `${settings.provider}: ${displayModel}`}</span>
+                <ChevronDown size={12} />
+              </button>
+              {showModelDropdown && (
+                <div className="model-dropdown">
+                  {groupSwitchOptions(switchOptions).map(({ group, items }) => (
+                    <div key={group} className="model-group">
+                      <div className="model-group-label">{group}</div>
+                      {items.map(opt => (
+                        <button key={opt.provider + ':' + opt.model}
+                          className={`model-option ${opt.active ? 'active' : ''}`}
+                          onClick={() => switchTo(opt)}>
+                          {opt.local ? <Bot size={12} className="model-option-icon" /> : <Globe size={12} className="model-option-icon" />}
+                          <span className="model-option-label">{opt.label}</span>
+                          {opt.active && <Check size={13} className="model-option-check" />}
                         </button>
                       ))}
                     </div>
-                  )}
-                </>
+                  ))}
+                  <button className="model-option model-option-settings"
+                    onClick={() => { setShowModelDropdown(false); setShowSettings(true) }}>
+                    <SettingsIcon size={12} className="model-option-icon" />
+                    <span className="model-option-label">Configurar providers…</span>
+                  </button>
+                </div>
               )}
             </div>
           </div>

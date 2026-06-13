@@ -353,6 +353,17 @@ body {
 }
 .model-option:hover { background: rgba(255,255,255,0.05); color: var(--text-primary); }
 .model-option.active { color: var(--accent); }
+/* Switcher rápido de modelo/provider (v2.23.0) — grupos estilo Claude */
+.model-option { display: flex; align-items: center; gap: 8px; }
+.model-option-icon { flex-shrink: 0; opacity: 0.7; }
+.model-option-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-option-check { flex-shrink: 0; color: var(--accent); }
+.model-group + .model-group { border-top: 1px solid var(--border); }
+.model-group-label {
+  padding: 6px 12px 3px; font-size: 10.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); opacity: 0.6;
+}
+.model-option-settings { border-top: 1px solid var(--border); opacity: 0.85; }
 
 /* ── Chat ─────────────────────────────────────────────────────── */
 .chat-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-primary); position: relative; }
