@@ -46,8 +46,15 @@ export interface InsightsDigest {
    *  desfecho — app fechado no meio, crash ou stream preso. */
   turns: { started: number; completed: number; aborted: number; errored: number; zombies: number }
   /** Onde foi o tempo de geração (somas em ms dos 'chat'/'stream_profile').
-   *  longToolAssemblies conta passos com 5+ min só montando uma tool call. */
-  streamShare: { samples: number; waitMs: number; reasoningMs: number; toolMs: number; contentMs: number; longToolAssemblies: number }
+   *  longToolAssemblies conta passos com 5+ min só montando uma tool call.
+   *  toolMsByName atribui o tempo de montagem à FERRAMENTA real (v2.20.0) —
+   *  via join stream_profile↔tool/use por (turn,step); 'unattributed' para
+   *  passos sem par 1:1. Antes o digest assumia write_file por engano. */
+  streamShare: {
+    samples: number; waitMs: number; reasoningMs: number; toolMs: number; contentMs: number
+    longToolAssemblies: number
+    toolMsByName: Record<string, number>
+  }
   /** Turnos por versão do app — mede o efeito de cada release. */
   versionMix: Record<string, number>
   /** Comparativo entre as duas versões mais recentes com amostra suficiente
@@ -224,7 +231,7 @@ export function compareVersionSegments(events: InsightEvent[], now: number): Ver
   const metricsFor = (v: string): VersionMetrics => {
     let turns = 0, errors = 0, zombies = 0, aborted = 0, retries = 0
     const lat: number[] = []
-    const share = { reasoningMs: 0, toolMs: 0, contentMs: 0 }
+    const share = { waitMs: 0, reasoningMs: 0, toolMs: 0, contentMs: 0 }
     const errorsByKind: Record<string, number> = {}
     for (const e of events) {
       if (vOf(e) !== v) continue
@@ -241,20 +248,22 @@ export function compareVersionSegments(events: InsightEvent[], now: number): Ver
           if (typeof e.m?.ms === 'number') lat.push(e.m.ms)
           if (e.m?.outcome === 'aborted') aborted++
         } else if (e.a === 'stream_profile') {
-          for (const k of ['reasoningMs', 'toolMs', 'contentMs'] as const) {
+          for (const k of ['waitMs', 'reasoningMs', 'toolMs', 'contentMs'] as const) {
             if (typeof e.m?.[k] === 'number') share[k] += e.m[k] as number
           }
         }
       }
     }
-    const gen = share.reasoningMs + share.toolMs + share.contentMs
+    // Denominador HONESTO (v2.20.0): inclui a espera de 1º token, igual ao
+    // formatInsightsReport e ao painel — antes excluía waitMs e inflava o tool.
+    const total = share.waitMs + share.reasoningMs + share.toolMs + share.contentMs
     const per = (n: number) => (turns > 0 ? Math.round((n / turns) * 100) / 100 : 0)
     return {
       v, turns, errors, errorRate: per(errors), zombies, zombieRate: per(zombies),
       aborted, retries, retryRate: per(retries),
       avgLatencyMs: lat.length ? Math.round(lat.reduce((a, b) => a + b, 0) / lat.length) : 0,
-      toolSharePct: gen > 0 ? Math.round((share.toolMs / gen) * 100) : 0,
-      reasoningSharePct: gen > 0 ? Math.round((share.reasoningMs / gen) * 100) : 0,
+      toolSharePct: total > 0 ? Math.round((share.toolMs / total) * 100) : 0,
+      reasoningSharePct: total > 0 ? Math.round((share.reasoningMs / total) * 100) : 0,
       errorsByKind,
     }
   }
@@ -355,6 +364,22 @@ function bump(rec: Record<string, number>, key: string): void {
   rec[key] = (rec[key] || 0) + 1
 }
 
+/** Soma um valor arbitrário (não só +1) — usado para agregar ms por tool. */
+function bump2(rec: Record<string, number>, key: string, amount: number): void {
+  rec[key] = (rec[key] || 0) + amount
+}
+
+/** Ferramenta que mais consumiu tempo de montagem. Ignora 'unattributed' na
+ *  escolha do nome (mas ele entra no total para honestidade). Null se vazio. */
+function dominantAssemblyTool(byName: Record<string, number>): { name: string; ms: number } | null {
+  let best: { name: string; ms: number } | null = null
+  for (const [name, ms] of Object.entries(byName)) {
+    if (name === 'unattributed') continue
+    if (!best || ms > best.ms) best = { name, ms }
+  }
+  return best
+}
+
 export function buildFindings(d: Omit<InsightsDigest, 'notes' | 'findings'>): Finding[] {
   const findings: Finding[] = []
   const add = (id: string, severity: FindingSeverity, title: string, evidence: string, recommendation: string, bonus = 0, drill?: DrillSelector) =>
@@ -398,29 +423,55 @@ export function buildFindings(d: Omit<InsightsDigest, 'notes' | 'findings'>): Fi
     }
   }
 
-  // ── Avisos ──
-  const gen = d.streamShare.reasoningMs + d.streamShare.toolMs + d.streamShare.contentMs
-  if (d.streamShare.samples >= 3 && gen > 0) {
-    const toolPct = Math.round((d.streamShare.toolMs / gen) * 100)
-    const reasonPct = Math.round((d.streamShare.reasoningMs / gen) * 100)
-    if (toolPct >= 40) {
-      add('tool-assembly-dominant', 'warning', 'Montagem de tool call domina a geração',
-        `montagem de tool call consome ${toolPct}% do tempo de geração (${d.streamShare.samples} amostras)`,
-        'Candidata: tool de edição por trecho em vez de write_file inteiro.',
-        toolPct - 40, { type: 'action', c: 'chat', a: 'stream_profile' })
+  // ── Perfil de geração (v2.20.0: denominador HONESTO inclui a espera) ──
+  // Antes o share era calculado sobre gen = reasoning+tool+content, EXCLUINDO
+  // waitMs — isso escondia que a espera de 1º token (cold start) costuma ser
+  // o MAIOR sorvedouro absoluto de wall-clock. Agora rankeamos sobre o total.
+  const s = d.streamShare
+  const total = s.waitMs + s.reasoningMs + s.toolMs + s.contentMs
+  if (s.samples >= 3 && total > 0) {
+    const pct = (ms: number) => Math.round((ms / total) * 100)
+    const waitPct = pct(s.waitMs)
+    const toolPct = pct(s.toolMs)
+    const reasonPct = pct(s.reasoningMs)
+    const waitIsTop = s.waitMs >= s.toolMs && s.waitMs >= s.reasoningMs && s.waitMs >= s.contentMs
+    // Cold-start: maior fatia E pelo menos 40% do wall-clock → crítico.
+    if (waitIsTop && waitPct >= 40) {
+      add('cold-start-wait-dominant', 'critical', 'Espera de 1º token domina o tempo (cold start)',
+        `espera pelo 1º token = ${waitPct}% do wall-clock de stream (${Math.round(s.waitMs / 1000)}s em ${s.samples} amostras) — maior fatia, acima da montagem de tool (${toolPct}%)`,
+        'Cold start de GPU do provider (Modal). Conserto é server-side: configurar keep-warm / min_containers no endpoint para evitar re-subir o container entre passos agênticos. Do lado do app, só dá para mascarar a percepção (já feito com o timer/indicador).',
+        waitPct, { type: 'action', c: 'chat', a: 'stream_profile' })
     }
-    if (reasonPct >= 50) {
-      add('reasoning-dominant', 'warning', 'Raciocínio domina a geração',
-        `raciocínio consome ${reasonPct}% do tempo de geração`,
+    // Montagem de tool relevante → nomear a FERRAMENTA real (não chutar write_file).
+    if (toolPct >= 30) {
+      const dom = dominantAssemblyTool(s.toolMsByName)
+      const named = dom && dom.ms > 0 && dom.name !== 'unattributed'
+      const sharePhrase = named
+        ? `${dom.name} responde por ${Math.round((dom.ms / s.toolMs) * 100)}% da montagem`
+        : 'montagem não atribuída a uma ferramenta única'
+      add('tool-assembly-dominant', 'warning', 'Montagem de tool call pesa no tempo',
+        `montagem de tool = ${toolPct}% do wall-clock; ${sharePhrase} (${s.samples} amostras${s.samples < 20 ? ', amostra pequena — direcional' : ''})`,
+        named && dom.name === 'execute_command'
+          ? 'O modelo emite comandos/scripts gigantes token-a-token no execute_command. Reduzir: orientar a escrever scripts longos em arquivo (write_file/edit_file) e rodar o arquivo, em vez de inlinar o script no comando.'
+          : named
+            ? `Reduzir o tamanho dos argumentos gerados para ${dom.name}.`
+            : 'Aumentar a amostra para atribuir a montagem a uma ferramenta específica antes de agir.',
+        toolPct, { type: 'action', c: 'chat', a: 'stream_profile' })
+    }
+    if (reasonPct >= 40) {
+      add('reasoning-dominant', 'warning', 'Raciocínio pesa no tempo',
+        `raciocínio = ${reasonPct}% do wall-clock de stream`,
         'Avaliar limite de thinking ou modelo mais direto para tarefas simples.',
-        reasonPct - 50, { type: 'action', c: 'chat', a: 'stream_profile' })
+        reasonPct, { type: 'action', c: 'chat', a: 'stream_profile' })
     }
   }
-  if (d.streamShare.longToolAssemblies >= 2) {
+  if (s.longToolAssemblies >= 2) {
+    const dom = dominantAssemblyTool(s.toolMsByName)
+    const who = dom && dom.name !== 'unattributed' ? ` (sobretudo ${dom.name})` : ''
     add('long-tool-assemblies', 'warning', 'Montagens de tool call muito longas',
-      `${d.streamShare.longToolAssemblies} passo(s) com 5+ min só montando tool call`,
-      'Turnos "parados" que parecem travamento — reforça a tool de edição por trecho.',
-      d.streamShare.longToolAssemblies * 3, { type: 'long-tool-assemblies' })
+      `${s.longToolAssemblies} passo(s) com 5+ min só montando uma tool call${who}`,
+      'Turnos "parados" que parecem travamento. Se for execute_command, mover scripts longos para arquivo e executar; se for write_file, usar edit_file.',
+      s.longToolAssemblies * 3, { type: 'long-tool-assemblies' })
   }
   const topError = Object.entries(d.errorsByKind).sort((a, b) => b[1] - a[1])[0]
   if (topError && topError[1] >= 3) {
@@ -512,7 +563,22 @@ export function summarizeInsights(
   const turnMap = new Map<string, { startT: number; outcome: string | null }>()
   let turnsStarted = 0
   const legacyOutcomes: string[] = []
-  const streamShare = { samples: 0, waitMs: 0, reasoningMs: 0, toolMs: 0, contentMs: 0, longToolAssemblies: 0 }
+  const streamShare = { samples: 0, waitMs: 0, reasoningMs: 0, toolMs: 0, contentMs: 0, longToolAssemblies: 0, toolMsByName: {} as Record<string, number> }
+
+  // Mapa (turn|step) → ferramentas usadas naquele passo, para atribuir o
+  // toolMs de cada stream_profile à tool real (join por turn+step, ambos
+  // auto-injetados em todo evento desde a v2.14.0). Passo com !=1 tool/use
+  // cai em 'unattributed' — mais honesto que a média global anterior.
+  const toolsByStep = new Map<string, string[]>()
+  const stepKey = (turn: unknown, step: unknown) => `${turn ?? '?'}|${step ?? '?'}`
+  for (const e of recent) {
+    if (e.c === 'tool' && e.a === 'use' && typeof e.m?.turn === 'string') {
+      const k = stepKey(e.m.turn, e.m.step)
+      const arr = toolsByStep.get(k) || []
+      arr.push(String(e.m?.name ?? 'unknown'))
+      toolsByStep.set(k, arr)
+    }
+  }
 
   for (const e of recent) {
     switch (e.c) {
@@ -543,7 +609,14 @@ export function summarizeInsights(
           for (const k of ['waitMs', 'reasoningMs', 'toolMs', 'contentMs'] as const) {
             if (typeof e.m?.[k] === 'number') streamShare[k] += e.m[k] as number
           }
-          if (typeof e.m?.toolMs === 'number' && e.m.toolMs >= LONG_TOOL_ASSEMBLY_MS) streamShare.longToolAssemblies++
+          const toolMs = typeof e.m?.toolMs === 'number' ? e.m.toolMs : 0
+          if (toolMs >= LONG_TOOL_ASSEMBLY_MS) streamShare.longToolAssemblies++
+          if (toolMs > 0) {
+            // Atribui o tempo de montagem à ferramenta do passo (join turn+step).
+            const peers = typeof e.m?.turn === 'string' ? toolsByStep.get(stepKey(e.m.turn, e.m.step)) : undefined
+            const name = peers && peers.length === 1 ? peers[0] : 'unattributed'
+            bump2(streamShare.toolMsByName, name, toolMs)
+          }
         }
         break
       case 'tool':
@@ -653,8 +726,13 @@ export function formatInsightsReport(d: InsightsDigest): string {
       `## Perfil de geração (onde foi o tempo)`,
       `- amostras: ${s.samples} · espera 1º token: ${pct(s.waitMs)} · raciocínio: ${pct(s.reasoningMs)} · montagem de tool: ${pct(s.toolMs)} · texto: ${pct(s.contentMs)}`,
       `- montagens de tool com 5+ min: ${s.longToolAssemblies}`,
-      ``,
     )
+    const byName = Object.entries(s.toolMsByName).sort((a, b) => b[1] - a[1])
+    if (byName.length) {
+      const tShare = (ms: number) => s.toolMs > 0 ? `${Math.round((ms / s.toolMs) * 100)}%` : '0%'
+      lines.push(`- montagem por ferramenta: ${byName.map(([n, ms]) => `${n} ${tShare(ms)}`).join(' · ')}`)
+    }
+    lines.push(``)
   }
   section('Erros por categoria', d.errorsByKind)
   section('Uso de features', d.featureUsage)

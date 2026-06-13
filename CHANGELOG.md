@@ -7,6 +7,39 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.20.0] — 2026-06-13
+
+### Fixed — Dev Insights mentia no diagnóstico de latência (1ª rodada guiada por dados reais)
+
+Com dados reais acumulados, o próprio digest revelou que **sua conclusão
+principal estava errada**. O finding de topo dizia "montagem de tool consome
+76% → use edit_file em vez de write_file", mas a telemetria mostrava write_file
+com **0 usos**; e o maior sorvedouro de tempo nem era montagem de tool. Decisão
+validada por painel multi-agente + verificação adversarial contra o arquivo de
+eventos cru.
+
+- **Denominador honesto**: `buildFindings` e `compareVersionSegments` calculavam
+  o share de tempo excluindo a espera de 1º token (`gen = reasoning+tool+content`),
+  escondendo que o **cold start do provider é o maior custo** — agora rankeiam
+  sobre o wall-clock total (wait+reasoning+tool+content), igual ao .md e ao painel
+  (que já estavam certos e se contradiziam com os findings).
+- **Finding novo `cold-start-wait-dominant` (crítico)**: dispara quando a espera
+  é a maior fatia; nos dados reais = **52% (2790s)**. Recomendação marcada como
+  server-side (keep-warm / min_containers no Modal) — diagnóstico, não conserto
+  no escuro.
+- **Atribuição por ferramenta**: `streamShare.toolMsByName` junta
+  `stream_profile`↔`tool/use` por (turn,step) — chaves auto-injetadas desde a
+  v2.14.0 — e atribui a montagem à tool REAL. Nos dados reais: **execute_command
+  = 70%** da montagem (o modelo emite scripts gigantes inline), write_file
+  ausente. Passos sem par 1:1 caem em `unattributed` (honesto, não inventa).
+- Findings `tool-assembly-dominant` e `long-tool-assemblies` reescritos para
+  nomear a tool real e recomendar mover scripts longos do execute_command para
+  arquivo — a frase hardcoded sobre write_file/edit_file só aparece quando os
+  dados a sustentam.
+- Painel e relatório .md ganham a quebra "montagem por ferramenta".
+- 4 testes novos (585 no total). Validação extra sobre a telemetria real:
+  o digest deixou de citar write_file e passou a apontar cold-start + execute_command.
+
 ## [2.19.0] — 2026-06-12
 
 ### Changed — Fazer o modelo USAR o edit_file (steering + coaching + medição)

@@ -239,6 +239,19 @@ export default function DevInsightsPanel({ isOpen, onClose, language, providerCo
                     <div style={rowStyle}><span>{pt ? 'montagem de tool' : 'tool assembly'}</span><strong>{pct(s.toolMs)}</strong></div>
                     <div style={rowStyle}><span>{pt ? 'texto' : 'text'}</span><strong>{pct(s.contentMs)}</strong></div>
                     <div style={rowStyle}><span>{pt ? 'montagens de tool 5+ min' : '5+ min tool assemblies'}</span><strong>{s.longToolAssemblies}</strong></div>
+                    {Object.keys(s.toolMsByName || {}).length > 0 && (
+                      <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed rgba(127,127,127,0.18)' }}>
+                        <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 2 }}>
+                          {pt ? 'montagem por ferramenta' : 'assembly by tool'}
+                        </div>
+                        {Object.entries(s.toolMsByName).sort((a, b) => b[1] - a[1]).map(([n, ms]) => (
+                          <div key={n} style={rowStyle}>
+                            <span style={{ fontFamily: n === 'unattributed' ? undefined : 'monospace' }}>{n}</span>
+                            <strong>{s.toolMs > 0 ? `${Math.round((ms / s.toolMs) * 100)}%` : '0%'}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )
               })()}

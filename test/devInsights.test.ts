@@ -218,11 +218,44 @@ describe('summarizeInsights — perfil de geração (stream_profile)', () => {
     expect(d.streamShare.longToolAssemblies).toBe(1) // só a de 400s passa de 5 min
   })
 
-  it('nota quando a montagem de tool domina o tempo de geração (≥3 amostras)', () => {
+  it('denominador HONESTO: share inclui a espera (wait), não só geração', () => {
+    // wait domina (60%): antes era excluído do denominador e escondido.
     const events = Array.from({ length: 3 }, () =>
-      profile({ waitMs: 100, reasoningMs: 1000, toolMs: 8000, contentMs: 1000, totalMs: 10_100 }))
+      profile({ waitMs: 6000, reasoningMs: 1000, toolMs: 2000, contentMs: 1000, totalMs: 10_000 }))
     const d = summarizeInsights(events, 30, now)
-    expect(d.notes.some((n) => /tool call/i.test(n) && /80%/.test(n))).toBe(true)
+    const f = d.findings.find((x) => x.id === 'cold-start-wait-dominant')!
+    expect(f).toBeTruthy()
+    expect(f.severity).toBe('critical')
+    expect(f.evidence).toMatch(/60%/)
+    expect(f.recommendation).toMatch(/keep-warm|min_containers|server-side/i)
+  })
+
+  it('atribui a montagem à ferramenta REAL via join turn+step (não chuta write_file)', () => {
+    // 3 passos: stream_profile com toolMs alto + tool/use=execute_command no
+    // mesmo (turn,step). A montagem deve ser atribuída a execute_command.
+    const events: InsightEvent[] = []
+    for (let i = 0; i < 3; i++) {
+      events.push({ t: now - (100 - i) * 1000, c: 'chat', a: 'stream_profile', m: { waitMs: 100, reasoningMs: 200, toolMs: 9000, contentMs: 200, turn: 't1', step: i } })
+      events.push({ t: now - (100 - i) * 1000 + 1, c: 'tool', a: 'use', m: { name: 'execute_command', ok: true, turn: 't1', step: i } })
+    }
+    const d = summarizeInsights(events, 30, now)
+    expect(d.streamShare.toolMsByName.execute_command).toBe(27000)
+    expect(d.streamShare.toolMsByName.write_file).toBeUndefined()
+    const f = d.findings.find((x) => x.id === 'tool-assembly-dominant')!
+    expect(f.evidence).toMatch(/execute_command/)
+    expect(f.recommendation).toMatch(/script|arquivo/i)
+    expect(f.recommendation).not.toMatch(/edit_file inteiro|write_file inteiro/)
+  })
+
+  it('passo com !=1 tool/use cai em unattributed (honesto, não inventa)', () => {
+    const events: InsightEvent[] = [
+      { t: now - 5000, c: 'chat', a: 'stream_profile', m: { toolMs: 5000, turn: 't1', step: 1 } },
+      // dois tool/use no mesmo passo → ambíguo
+      { t: now - 4999, c: 'tool', a: 'use', m: { name: 'execute_command', turn: 't1', step: 1 } },
+      { t: now - 4998, c: 'tool', a: 'use', m: { name: 'read_file', turn: 't1', step: 1 } },
+    ]
+    const d = summarizeInsights(events, 30, now)
+    expect(d.streamShare.toolMsByName.unattributed).toBe(5000)
   })
 
   it('relatório .md inclui as seções de turnos e perfil', () => {
