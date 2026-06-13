@@ -108,6 +108,46 @@ export default function DevInsightsPanel({ isOpen, onClose, language }: Props) {
               <Section title={pt ? 'Provedores' : 'Providers'} rec={digest.providerMix} />
               <Section title={pt ? 'Modelos' : 'Models'} rec={digest.modelMix} />
               <Section title={pt ? 'Versões' : 'Versions'} rec={digest.versionMix} />
+              {digest.comparison && (() => {
+                const { current: cur, previous: prev, newErrorKinds, resolvedErrorKinds } = digest.comparison
+                // lowerIsBetter=true → queda fica verde, alta vermelha; null = neutro.
+                const Delta = ({ label, before, after, unit = '', lowerIsBetter = true as boolean | null }:
+                  { label: string; before: number; after: number; unit?: string; lowerIsBetter?: boolean | null }) => {
+                  const changed = after !== before
+                  const better = lowerIsBetter === null || !changed ? null : (after < before) === lowerIsBetter
+                  const color = better === null ? undefined : better ? 'var(--success, #46a758)' : 'var(--error, #e5484d)'
+                  return (
+                    <div style={rowStyle}>
+                      <span>{label}</span>
+                      <strong style={color ? { color } : undefined}>{before}{unit} → {after}{unit}</strong>
+                    </div>
+                  )
+                }
+                return (
+                  <div style={sectionStyle}>
+                    <h3 style={{ fontSize: 13, opacity: 0.7, margin: '0 0 6px' }}>
+                      {pt ? `O que mudou (${prev.v} → ${cur.v})` : `What changed (${prev.v} → ${cur.v})`}
+                    </h3>
+                    <Delta label={pt ? `turnos na amostra` : `turns in sample`} before={prev.turns} after={cur.turns} lowerIsBetter={null} />
+                    <Delta label={pt ? 'erros/turno' : 'errors/turn'} before={prev.errorRate} after={cur.errorRate} />
+                    <Delta label={pt ? 'zumbis/turno' : 'zombies/turn'} before={prev.zombieRate} after={cur.zombieRate} />
+                    <Delta label={pt ? 'retries/turno' : 'retries/turn'} before={prev.retryRate} after={cur.retryRate} />
+                    <Delta label={pt ? 'latência média' : 'avg latency'} before={prev.avgLatencyMs} after={cur.avgLatencyMs} unit="ms" />
+                    <Delta label={pt ? 'montagem de tool' : 'tool assembly'} before={prev.toolSharePct} after={cur.toolSharePct} unit="%" lowerIsBetter={null} />
+                    <Delta label={pt ? 'raciocínio' : 'reasoning'} before={prev.reasoningSharePct} after={cur.reasoningSharePct} unit="%" lowerIsBetter={null} />
+                    {newErrorKinds.length > 0 && (
+                      <p style={{ fontSize: 12, margin: '6px 0 0', color: 'var(--error, #e5484d)' }}>
+                        {pt ? 'erros novos: ' : 'new errors: '}{newErrorKinds.join(', ')}
+                      </p>
+                    )}
+                    {resolvedErrorKinds.length > 0 && (
+                      <p style={{ fontSize: 12, margin: '6px 0 0', color: 'var(--success, #46a758)' }}>
+                        {pt ? 'erros resolvidos: ' : 'resolved errors: '}{resolvedErrorKinds.join(', ')}
+                      </p>
+                    )}
+                  </div>
+                )
+              })()}
               {digest.turns.started > 0 && (
                 <div style={sectionStyle}>
                   <h3 style={{ fontSize: 13, opacity: 0.7, margin: '0 0 6px' }}>{pt ? 'Turnos' : 'Turns'}</h3>

@@ -47,8 +47,118 @@ export interface InsightsDigest {
   streamShare: { samples: number; waitMs: number; reasoningMs: number; toolMs: number; contentMs: number; longToolAssemblies: number }
   /** Turnos por versão do app — mede o efeito de cada release. */
   versionMix: Record<string, number>
+  /** Comparativo entre as duas versões mais recentes com amostra suficiente
+   *  (v2.15.0) — "o que mudou desde a release anterior". Null sem dados. */
+  comparison: VersionComparison | null
   /** Auto-generated, human/AI-readable prioritisation hints. */
   notes: string[]
+}
+
+// ─── Comparativo entre versões (v2.15.0) ────────────────────────────
+//
+// "O que mudou desde a versão anterior?" — métricas NORMALIZADAS POR TURNO
+// (o volume de uso difere entre versões; contagens absolutas enganam),
+// segmentadas pelo `m.v` que todo evento carrega desde a v2.14.0. Eventos
+// legados sem versão caem no balde 'pré-2.14.0', dando baseline imediato.
+// Sem persistência extra: é função pura sobre os mesmos eventos do digest.
+
+export interface VersionMetrics {
+  v: string
+  turns: number
+  errors: number
+  /** Erros por turno (um turno pode logar mais de um erro). */
+  errorRate: number
+  zombies: number
+  zombieRate: number
+  aborted: number
+  retries: number
+  retryRate: number
+  avgLatencyMs: number
+  /** % do tempo de geração em montagem de tool / raciocínio (stream_profile). */
+  toolSharePct: number
+  reasoningSharePct: number
+  errorsByKind: Record<string, number>
+}
+
+export interface VersionComparison {
+  /** As DUAS versões mais recentes (por último evento) com ≥3 turnos cada. */
+  current: VersionMetrics
+  previous: VersionMetrics
+  /** Tipos de erro que estrearam na atual / sumiram desde a anterior. */
+  newErrorKinds: string[]
+  resolvedErrorKinds: string[]
+}
+
+const MIN_TURNS_FOR_COMPARISON = 3
+const LEGACY_VERSION_LABEL = 'pré-2.14.0'
+
+export function compareVersionSegments(events: InsightEvent[], now: number): VersionComparison | null {
+  const vOf = (e: InsightEvent) => (typeof e.m?.v === 'string' ? e.m.v : LEGACY_VERSION_LABEL)
+
+  // Ordena versões por último evento visto (a "atual" é a mais recente).
+  const lastSeen = new Map<string, number>()
+  for (const e of events) {
+    const v = vOf(e)
+    if (e.t > (lastSeen.get(v) ?? 0)) lastSeen.set(v, e.t)
+  }
+  if (lastSeen.size < 2) return null
+  const ordered = [...lastSeen.entries()].sort((a, b) => b[1] - a[1]).map(([v]) => v)
+
+  // Estado global para zumbis: completes por id e o início de turno mais novo
+  // (um turno novo prova que o anterior sem desfecho morreu — app serial).
+  const completedIds = new Set<string>()
+  let lastTurnStartT = 0
+  for (const e of events) {
+    if (e.c !== 'chat') continue
+    if (e.a === 'complete' && typeof e.m?.turn === 'string') completedIds.add(e.m.turn)
+    else if (e.a === 'turn' && e.t > lastTurnStartT) lastTurnStartT = e.t
+  }
+
+  const metricsFor = (v: string): VersionMetrics => {
+    let turns = 0, errors = 0, zombies = 0, aborted = 0, retries = 0
+    const lat: number[] = []
+    const share = { reasoningMs: 0, toolMs: 0, contentMs: 0 }
+    const errorsByKind: Record<string, number> = {}
+    for (const e of events) {
+      if (vOf(e) !== v) continue
+      if (e.c === 'error') {
+        errors++
+        bump(errorsByKind, e.a)
+      } else if (e.c === 'chat') {
+        if (e.a === 'turn') {
+          turns++
+          const id = typeof e.m?.turn === 'string' ? e.m.turn : null
+          if (id && !completedIds.has(id) && (e.t < lastTurnStartT || now - e.t > ZOMBIE_AGE_MS)) zombies++
+        } else if (e.a === 'retry') retries++
+        else if (e.a === 'complete') {
+          if (typeof e.m?.ms === 'number') lat.push(e.m.ms)
+          if (e.m?.outcome === 'aborted') aborted++
+        } else if (e.a === 'stream_profile') {
+          for (const k of ['reasoningMs', 'toolMs', 'contentMs'] as const) {
+            if (typeof e.m?.[k] === 'number') share[k] += e.m[k] as number
+          }
+        }
+      }
+    }
+    const gen = share.reasoningMs + share.toolMs + share.contentMs
+    const per = (n: number) => (turns > 0 ? Math.round((n / turns) * 100) / 100 : 0)
+    return {
+      v, turns, errors, errorRate: per(errors), zombies, zombieRate: per(zombies),
+      aborted, retries, retryRate: per(retries),
+      avgLatencyMs: lat.length ? Math.round(lat.reduce((a, b) => a + b, 0) / lat.length) : 0,
+      toolSharePct: gen > 0 ? Math.round((share.toolMs / gen) * 100) : 0,
+      reasoningSharePct: gen > 0 ? Math.round((share.reasoningMs / gen) * 100) : 0,
+      errorsByKind,
+    }
+  }
+
+  // Par mais recente com amostra mínima — taxa sobre 1–2 turnos engana.
+  const eligible = ordered.map(metricsFor).filter(m => m.turns >= MIN_TURNS_FOR_COMPARISON)
+  if (eligible.length < 2) return null
+  const [current, previous] = eligible
+  const newErrorKinds = Object.keys(current.errorsByKind).filter(k => !(k in previous.errorsByKind))
+  const resolvedErrorKinds = Object.keys(previous.errorsByKind).filter(k => !(k in current.errorsByKind))
+  return { current, previous, newErrorKinds, resolvedErrorKinds }
 }
 
 // Turno mais recente sem desfecho só vira zumbi depois desta idade (pode
@@ -140,6 +250,24 @@ function bump(rec: Record<string, number>, key: string): void {
 
 function buildNotes(d: Omit<InsightsDigest, 'notes'>): string[] {
   const notes: string[] = []
+  // Comparativo de versões: regressões e melhoras desde a release anterior.
+  if (d.comparison) {
+    const { current: cur, previous: prev, newErrorKinds, resolvedErrorKinds } = d.comparison
+    if (prev.errorRate > 0 && cur.errorRate <= prev.errorRate * 0.5) {
+      notes.push(`Desde a ${prev.v}: taxa de erro caiu de ${prev.errorRate} para ${cur.errorRate}/turno na ${cur.v} — o ciclo funcionou.`)
+    } else if (cur.errors >= 2 && cur.errorRate >= prev.errorRate * 1.5 && prev.turns >= MIN_TURNS_FOR_COMPARISON) {
+      notes.push(`⚠ Taxa de erro subiu de ${prev.errorRate} para ${cur.errorRate}/turno na ${cur.v} vs ${prev.v} — possível regressão.`)
+    }
+    if (newErrorKinds.length > 0) {
+      notes.push(`⚠ Erro(s) novo(s) na ${cur.v}: ${newErrorKinds.join(', ')} — não existiam na ${prev.v}.`)
+    }
+    if (resolvedErrorKinds.length > 0) {
+      notes.push(`Resolvido(s) desde a ${prev.v}: ${resolvedErrorKinds.join(', ')} — sumiram na ${cur.v}.`)
+    }
+    if (prev.zombies > 0 && cur.zombies === 0) {
+      notes.push(`Zumbis zerados na ${cur.v} (eram ${prev.zombies} na ${prev.v}).`)
+    }
+  }
   // Zumbis primeiro: é o sinal mais grave (turno morreu sem registrar nada).
   if (d.turns.zombies > 0) {
     notes.push(`${d.turns.zombies} turno(s) zumbi — começaram e nunca registraram desfecho (app fechado no meio, crash ou stream preso).`)
@@ -290,6 +418,7 @@ export function summarizeInsights(
     turns,
     streamShare,
     versionMix,
+    comparison: compareVersionSegments(recent, now),
   }
   return { ...base, notes: buildNotes(base) }
 }
@@ -316,6 +445,24 @@ export function formatInsightsReport(d: InsightsDigest): string {
     if (entries.length === 0) return
     lines.push(`## ${title}`)
     for (const [k, v] of entries) lines.push(`- ${k}: ${v}`)
+    lines.push(``)
+  }
+  if (d.comparison) {
+    const { current: cur, previous: prev, newErrorKinds, resolvedErrorKinds } = d.comparison
+    const row = (label: string, before: number | string, after: number | string, unit = '') =>
+      `- ${label}: ${before}${unit} → ${after}${unit}`
+    lines.push(
+      `## O que mudou (${prev.v} → ${cur.v})`,
+      `- turnos na amostra: ${prev.turns} → ${cur.turns}`,
+      row('erros/turno', prev.errorRate, cur.errorRate),
+      row('zumbis/turno', prev.zombieRate, cur.zombieRate),
+      row('retries/turno', prev.retryRate, cur.retryRate),
+      row('latência média', prev.avgLatencyMs, cur.avgLatencyMs, 'ms'),
+      row('montagem de tool', prev.toolSharePct, cur.toolSharePct, '%'),
+      row('raciocínio', prev.reasoningSharePct, cur.reasoningSharePct, '%'),
+    )
+    if (newErrorKinds.length) lines.push(`- erros novos: ${newErrorKinds.join(', ')}`)
+    if (resolvedErrorKinds.length) lines.push(`- erros resolvidos: ${resolvedErrorKinds.join(', ')}`)
     lines.push(``)
   }
   if (d.turns.started > 0) {

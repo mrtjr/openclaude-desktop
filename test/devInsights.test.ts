@@ -9,6 +9,7 @@ import {
   beginInsightTurn,
   bumpInsightStep,
   endInsightTurn,
+  compareVersionSegments,
   type InsightCategory,
   type InsightEvent,
 } from '../src/services/devInsights'
@@ -233,5 +234,103 @@ describe('summarizeInsights — perfil de geração (stream_profile)', () => {
     expect(md).toContain('## Turnos')
     expect(md).toContain('zumbis: 0')
     expect(md).toContain('## Perfil de geração')
+  })
+})
+
+describe('compareVersionSegments — o que mudou entre versões', () => {
+  const now = 1_700_000_000_000
+  const at = (minAgo: number) => now - minAgo * 60_000
+  // Gera um "uso" completo de uma versão: turnos com desfecho + erros + perfis.
+  const usage = (v: string | null, baseMinAgo: number, opts: { turns: number; errors?: string[]; toolMs?: number; contentMs?: number; ms?: number }): InsightEvent[] => {
+    const events: InsightEvent[] = []
+    const vm = v ? { v } : {}
+    for (let i = 0; i < opts.turns; i++) {
+      const id = `${v ?? 'legacy'}-${i}`
+      const t0 = baseMinAgo - i * 2
+      events.push({ t: at(t0), c: 'chat', a: 'turn', m: { ...vm, provider: 'modal', model: 'glm', turn: id } })
+      events.push({ t: at(t0 - 1), c: 'chat', a: 'complete', m: { ...vm, ms: opts.ms ?? 100, turn: id, outcome: 'ok' } })
+      if (opts.toolMs != null) {
+        events.push({ t: at(t0 - 1), c: 'chat', a: 'stream_profile', m: { ...vm, waitMs: 0, reasoningMs: 0, toolMs: opts.toolMs, contentMs: opts.contentMs ?? 1000 } })
+      }
+    }
+    for (const kind of opts.errors ?? []) {
+      events.push({ t: at(baseMinAgo - 1), c: 'error', a: kind, m: { ...vm } })
+    }
+    return events
+  }
+
+  it('normaliza por turno e detecta melhora na taxa de erro', () => {
+    const events = [
+      ...usage('2.13.0', 200, { turns: 4, errors: ['timeout', 'timeout', 'timeout', 'timeout'] }),
+      ...usage('2.14.0', 100, { turns: 4, errors: ['timeout'] }),
+    ]
+    const c = compareVersionSegments(events, now)!
+    expect(c.current.v).toBe('2.14.0')
+    expect(c.previous.v).toBe('2.13.0')
+    expect(c.previous.errorRate).toBe(1)      // 4 erros / 4 turnos
+    expect(c.current.errorRate).toBe(0.25)    // 1 erro / 4 turnos
+  })
+
+  it('aponta erros novos e resolvidos entre as versões', () => {
+    const events = [
+      ...usage('2.13.0', 200, { turns: 3, errors: ['timeout'] }),
+      ...usage('2.14.0', 100, { turns: 3, errors: ['context'] }),
+    ]
+    const c = compareVersionSegments(events, now)!
+    expect(c.newErrorKinds).toEqual(['context'])
+    expect(c.resolvedErrorKinds).toEqual(['timeout'])
+  })
+
+  it('eventos sem versão caem no balde pré-2.14.0 (baseline imediato)', () => {
+    const events = [
+      ...usage(null, 200, { turns: 3, errors: ['timeout', 'timeout', 'timeout'] }),
+      ...usage('2.14.0', 100, { turns: 3 }),
+    ]
+    const c = compareVersionSegments(events, now)!
+    expect(c.previous.v).toBe('pré-2.14.0')
+    expect(c.previous.errorRate).toBe(1)
+    expect(c.current.errorRate).toBe(0)
+  })
+
+  it('exige ≥3 turnos por versão — amostra pequena não compara', () => {
+    const events = [
+      ...usage('2.13.0', 200, { turns: 3 }),
+      ...usage('2.14.0', 100, { turns: 2 }), // atual com amostra insuficiente
+    ]
+    expect(compareVersionSegments(events, now)).toBeNull()
+    expect(compareVersionSegments(usage('2.14.0', 100, { turns: 5 }), now)).toBeNull() // 1 versão só
+  })
+
+  it('compara o share de montagem de tool entre versões', () => {
+    const events = [
+      ...usage('2.14.0', 200, { turns: 3, toolMs: 9000, contentMs: 1000 }),
+      ...usage('2.15.0', 100, { turns: 3, toolMs: 1000, contentMs: 9000 }),
+    ]
+    const c = compareVersionSegments(events, now)!
+    expect(c.previous.toolSharePct).toBe(90)
+    expect(c.current.toolSharePct).toBe(10)
+  })
+
+  it('digest integra o comparativo + nota de melhora; relatório tem a seção', () => {
+    const events = [
+      ...usage('2.13.0', 200, { turns: 4, errors: ['timeout', 'timeout', 'timeout', 'timeout'] }),
+      ...usage('2.14.0', 100, { turns: 4, errors: [] }),
+    ]
+    const d = summarizeInsights(events, 30, now)
+    expect(d.comparison?.current.v).toBe('2.14.0')
+    expect(d.notes.some((n) => /taxa de erro caiu/.test(n))).toBe(true)
+    expect(d.notes.some((n) => /Resolvido/.test(n) && /timeout/.test(n))).toBe(true)
+    const md = formatInsightsReport(d)
+    expect(md).toContain('## O que mudou (2.13.0 → 2.14.0)')
+    expect(md).toContain('erros/turno: 1 → 0')
+  })
+
+  it('nota de regressão quando a taxa de erro sobe ≥50%', () => {
+    const events = [
+      ...usage('2.13.0', 200, { turns: 4, errors: ['timeout'] }),
+      ...usage('2.14.0', 100, { turns: 4, errors: ['timeout', 'timeout', 'timeout'] }),
+    ]
+    const d = summarizeInsights(events, 30, now)
+    expect(d.notes.some((n) => /regressão/.test(n))).toBe(true)
   })
 })

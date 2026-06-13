@@ -7,6 +7,28 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.15.0] — 2026-06-12
+
+### Added — Dev Insights ciclo 2: digest comparativo ("o que mudou desde a versão anterior")
+
+Opção 2 do plano de evolução. Como desde o v2.14.0 todo evento carrega a
+versão do app, a comparação sai pura dos próprios eventos — sem snapshots
+persistidos, sem IPC novo.
+
+- **`compareVersionSegments`**: segmenta os eventos pelas duas versões mais
+  recentes com amostra suficiente (≥3 turnos cada) e compara métricas
+  **normalizadas por turno** (volumes de uso diferem entre versões): erros,
+  zumbis e retries por turno, latência média, share de montagem de tool e de
+  raciocínio. Eventos legados sem versão caem no balde `pré-2.14.0` — baseline
+  imediato.
+- **Erros novos × resolvidos**: tipos de erro que estrearam na versão atual e
+  os que sumiram desde a anterior.
+- **Notas comparativas**: "taxa de erro caiu de X para Y/turno — o ciclo
+  funcionou", "⚠ possível regressão", "erro novo na vX", "zumbis zerados".
+- Painel ganha a seção "O que mudou (vA → vB)" com verde/vermelho por direção
+  da métrica; relatório .md ganha a seção equivalente.
+- 7 testes novos (560 no total).
+
 ## [2.14.0] — 2026-06-12
 
 ### Added — Dev Insights ciclo 1: lifecycle de turno, perfil de geração e versões
