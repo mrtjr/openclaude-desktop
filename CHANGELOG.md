@@ -7,6 +7,21 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.13.4] — 2026-06-12
+
+### Fixed — Corretor ortográfico sem sugestões (faltava o menu de contexto)
+
+O Chromium sublinhava a palavra errada no composer, mas botão direito não
+abria nada: o Electron NÃO cria menu de contexto sozinho — o app precisa
+montá-lo no evento `context-menu` com `params.dictionarySuggestions`.
+
+- Menu de contexto na janela principal: até 6 sugestões de correção (clicou,
+  `replaceMisspelling` troca a palavra), "Adicionar ao dicionário", e as ações
+  de edição padrão (Recortar/Copiar/Colar/Selecionar tudo) em campos editáveis
+  + Copiar em texto selecionado fora deles.
+- Dicionários fixados em pt-BR + en-US (`setSpellCheckerLanguages`) — antes
+  dependia do locale do SO; inglês junto evita falso-positivo em termo técnico.
+
 ## [2.13.3] — 2026-06-12
 
 ### Fixed — "Travou de novo" que não era travamento: progresso invisível agora é visível

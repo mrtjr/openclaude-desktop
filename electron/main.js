@@ -157,6 +157,40 @@ function createWindow() {
     }
   })
 
+  // ─── Menu de contexto + correção ortográfica ─────────────────
+  // O Chromium SUBLINHA a palavra errada, mas o menu com as sugestões não
+  // vem de fábrica no Electron: sem este handler o botão direito não faz
+  // nada e o usuário vê o erro sem ter como aceitar uma correção. (Hover/
+  // clique esquerdo não mostram sugestão em navegador nenhum — o padrão da
+  // plataforma é botão direito.)
+  win.webContents.session.setSpellCheckerLanguages(['pt-BR', 'en-US'])
+  win.webContents.on('context-menu', (_e, params) => {
+    const items = []
+    if (params.misspelledWord) {
+      const suggestions = (params.dictionarySuggestions || []).slice(0, 6)
+      for (const s of suggestions) {
+        items.push({ label: s, click: () => win.webContents.replaceMisspelling(s) })
+      }
+      if (!suggestions.length) items.push({ label: '(sem sugestões)', enabled: false })
+      items.push({ type: 'separator' })
+      items.push({
+        label: `Adicionar "${params.misspelledWord}" ao dicionário`,
+        click: () => win.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord),
+      })
+    }
+    if (params.isEditable) {
+      if (items.length) items.push({ type: 'separator' })
+      items.push({ role: 'cut', label: 'Recortar', enabled: params.editFlags.canCut })
+      items.push({ role: 'copy', label: 'Copiar', enabled: params.editFlags.canCopy })
+      items.push({ role: 'paste', label: 'Colar', enabled: params.editFlags.canPaste })
+      items.push({ role: 'selectAll', label: 'Selecionar tudo' })
+    } else if (params.selectionText && params.selectionText.trim()) {
+      if (items.length) items.push({ type: 'separator' })
+      items.push({ role: 'copy', label: 'Copiar' })
+    }
+    if (items.length) Menu.buildFromTemplate(items).popup()
+  })
+
   // ─── Window controls ────────────────────────────────────────
   ipcMain.handle('window-minimize', () => win.minimize())
   ipcMain.handle('window-maximize', () => {
