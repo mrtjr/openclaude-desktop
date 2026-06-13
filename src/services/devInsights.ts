@@ -54,6 +54,14 @@ export interface InsightsDigest {
     samples: number; waitMs: number; reasoningMs: number; toolMs: number; contentMs: number
     longToolAssemblies: number
     toolMsByName: Record<string, number>
+    /** Correlação espera↔execução local anterior (v2.21.0): a espera de 1º
+     *  token é maior DEPOIS de uma execução de tool longa? Se sim, o container
+     *  Modal esfria durante a execução local (cold-start client-fixable via
+     *  keep-warm); se não, é idle puro do provider (server-side). */
+    coldStart: {
+      afterLong: { n: number; waitMs: number }   // passos após execução local longa
+      afterShort: { n: number; waitMs: number }  // passos após execução curta/ausente
+    }
   }
   /** Turnos por versão do app — mede o efeito de cada release. */
   versionMix: Record<string, number>
@@ -283,6 +291,9 @@ export function compareVersionSegments(events: InsightEvent[], now: number): Ver
 // o anterior morreu sem registrar desfecho.
 const ZOMBIE_AGE_MS = 2 * 60 * 60 * 1000
 const LONG_TOOL_ASSEMBLY_MS = 5 * 60 * 1000
+// Execução local (tool) acima disto provavelmente deixou o container Modal
+// esfriar — usado para correlacionar com a espera do passo seguinte (v2.21.0).
+const LONG_LOCAL_EXEC_MS = 30 * 1000
 
 // ─── In-memory buffer ───────────────────────────────────────────────
 const buffer: InsightEvent[] = []
@@ -439,8 +450,26 @@ export function buildFindings(d: Omit<InsightsDigest, 'notes' | 'findings'>): Fi
     if (waitIsTop && waitPct >= 40) {
       add('cold-start-wait-dominant', 'critical', 'Espera de 1º token domina o tempo (cold start)',
         `espera pelo 1º token = ${waitPct}% do wall-clock de stream (${Math.round(s.waitMs / 1000)}s em ${s.samples} amostras) — maior fatia, acima da montagem de tool (${toolPct}%)`,
-        'Cold start de GPU do provider (Modal). Conserto é server-side: configurar keep-warm / min_containers no endpoint para evitar re-subir o container entre passos agênticos. Do lado do app, só dá para mascarar a percepção (já feito com o timer/indicador).',
+        'Cold start de GPU do Modal. Fix server-side no endpoint: min_containers=1 (mantém 1 container quente) e/ou aumentar scaledown_window/container_idle_timeout para não desligar entre passos. Custo: 1 GPU ociosa. Ver também o achado cold-start-after-local-exec para saber se parte é client-fixable.',
         waitPct, { type: 'action', c: 'chat', a: 'stream_profile' })
+    }
+    // v2.21.0: a espera cresce DEPOIS de execução local longa? Então o container
+    // esfria DURANTE a execução de tools — parte do cold start é client-fixable
+    // (keep-warm durante a execução). Bifurcação limpa, ao contrário da montagem.
+    const cs = s.coldStart
+    if (cs.afterLong.n >= 2 && cs.afterShort.n >= 2) {
+      const avgLong = Math.round(cs.afterLong.waitMs / cs.afterLong.n / 1000)
+      const avgShort = Math.round(cs.afterShort.waitMs / cs.afterShort.n / 1000)
+      if (avgLong >= 20 && cs.afterLong.waitMs / cs.afterLong.n >= (cs.afterShort.waitMs / cs.afterShort.n) * 1.5) {
+        add('cold-start-after-local-exec', 'critical', 'Cold start ligado à execução local (client-fixable)',
+          `espera média ${avgLong}s após execução de tool longa vs ${avgShort}s após curta — o container Modal esfria DURANTE a execução local entre passos`,
+          'Parte do cold start é client-fixable: manter o endpoint quente (keep-warm/ping leve) enquanto uma tool longa roda localmente, para o container não desligar antes do próximo passo. Validável — medir o efeito no próximo digest.',
+          waitPct + 5, { type: 'action', c: 'chat', a: 'stream_profile' })
+      } else {
+        add('cold-start-provider-idle', 'info', 'Cold start independe da execução local',
+          `espera média ${avgLong}s após execução longa ≈ ${avgShort}s após curta — não correlaciona com a execução local`,
+          'Cold start é idle puro do Modal, não há gap local a fechar — fix é server-side (min_containers/scaledown_window).')
+      }
     }
     // Montagem de tool relevante → nomear a FERRAMENTA real (não chutar write_file).
     if (toolPct >= 30) {
@@ -451,10 +480,13 @@ export function buildFindings(d: Omit<InsightsDigest, 'notes' | 'findings'>): Fi
         : 'montagem não atribuída a uma ferramenta única'
       add('tool-assembly-dominant', 'warning', 'Montagem de tool call pesa no tempo',
         `montagem de tool = ${toolPct}% do wall-clock; ${sharePhrase} (${s.samples} amostras${s.samples < 20 ? ', amostra pequena — direcional' : ''})`,
+        // IMPORTANTE: mover o script para arquivo NÃO reduz o tempo — são os
+        // mesmos tokens em write_file.content. Só MENOS tokens (comandos
+        // menores; editar em vez de regenerar) ou provider mais rápido reduzem.
         named && dom.name === 'execute_command'
-          ? 'O modelo emite comandos/scripts gigantes token-a-token no execute_command. Reduzir: orientar a escrever scripts longos em arquivo (write_file/edit_file) e rodar o arquivo, em vez de inlinar o script no comando.'
+          ? 'O modelo gera argumentos gigantes no execute_command token-a-token. Mover para arquivo NÃO ajuda (mesmos tokens). Reduzir tempo só com MENOS tokens: comandos menores, ou editar conteúdo existente (edit_file) em vez de regenerá-lo. Caso contrário é limite de velocidade do provider.'
           : named
-            ? `Reduzir o tamanho dos argumentos gerados para ${dom.name}.`
+            ? `Reduzir o nº de tokens gerados como argumento para ${dom.name} (não realocá-los).`
             : 'Aumentar a amostra para atribuir a montagem a uma ferramenta específica antes de agir.',
         toolPct, { type: 'action', c: 'chat', a: 'stream_profile' })
     }
@@ -470,7 +502,7 @@ export function buildFindings(d: Omit<InsightsDigest, 'notes' | 'findings'>): Fi
     const who = dom && dom.name !== 'unattributed' ? ` (sobretudo ${dom.name})` : ''
     add('long-tool-assemblies', 'warning', 'Montagens de tool call muito longas',
       `${s.longToolAssemblies} passo(s) com 5+ min só montando uma tool call${who}`,
-      'Turnos "parados" que parecem travamento. Se for execute_command, mover scripts longos para arquivo e executar; se for write_file, usar edit_file.',
+      'Turnos "parados" que parecem travamento. A redução só vem de gerar MENOS tokens (conteúdo menor; edit_file para editar em vez de regenerar) — realocar os mesmos tokens para outra ferramenta não muda o tempo.',
       s.longToolAssemblies * 3, { type: 'long-tool-assemblies' })
   }
   const topError = Object.entries(d.errorsByKind).sort((a, b) => b[1] - a[1])[0]
@@ -563,7 +595,11 @@ export function summarizeInsights(
   const turnMap = new Map<string, { startT: number; outcome: string | null }>()
   let turnsStarted = 0
   const legacyOutcomes: string[] = []
-  const streamShare = { samples: 0, waitMs: 0, reasoningMs: 0, toolMs: 0, contentMs: 0, longToolAssemblies: 0, toolMsByName: {} as Record<string, number> }
+  const streamShare = {
+    samples: 0, waitMs: 0, reasoningMs: 0, toolMs: 0, contentMs: 0, longToolAssemblies: 0,
+    toolMsByName: {} as Record<string, number>,
+    coldStart: { afterLong: { n: 0, waitMs: 0 }, afterShort: { n: 0, waitMs: 0 } },
+  }
 
   // Mapa (turn|step) → ferramentas usadas naquele passo, para atribuir o
   // toolMs de cada stream_profile à tool real (join por turn+step, ambos
@@ -616,6 +652,13 @@ export function summarizeInsights(
             const peers = typeof e.m?.turn === 'string' ? toolsByStep.get(stepKey(e.m.turn, e.m.step)) : undefined
             const name = peers && peers.length === 1 ? peers[0] : 'unattributed'
             bump2(streamShare.toolMsByName, name, toolMs)
+          }
+          // Correlação cold-start: a espera deste passo vs a duração da execução
+          // local do passo ANTERIOR (prevToolMs, anexado pelo useChat).
+          if (typeof e.m?.waitMs === 'number' && typeof e.m?.prevToolMs === 'number') {
+            const bucket = e.m.prevToolMs >= LONG_LOCAL_EXEC_MS ? streamShare.coldStart.afterLong : streamShare.coldStart.afterShort
+            bucket.n++
+            bucket.waitMs += e.m.waitMs
           }
         }
         break

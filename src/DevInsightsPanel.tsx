@@ -30,7 +30,7 @@ const sectionStyle: React.CSSProperties = { marginBottom: 16 }
  *  the raw events, aggregates with summarizeInsights, and lets the user export
  *  a Markdown report or clear the data. */
 // Renderização compacta do meta de um evento na timeline ("name=write_file ms=380").
-const META_KEYS = ['name', 'feature', 'kind', 'outcome', 'ms', 'totalMs', 'steps', 'step', 'waitMs', 'reasoningMs', 'toolMs', 'contentMs', 'provider', 'model', 'v'] as const
+const META_KEYS = ['name', 'feature', 'kind', 'outcome', 'ms', 'totalMs', 'steps', 'step', 'waitMs', 'reasoningMs', 'toolMs', 'contentMs', 'prevToolMs', 'provider', 'model', 'v'] as const
 function metaSummary(m?: InsightEvent['m']): string {
   if (!m) return ''
   return META_KEYS.filter((k) => m[k] !== undefined).map((k) => `${k}=${m[k]}`).join(' · ')

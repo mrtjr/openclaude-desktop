@@ -243,8 +243,41 @@ describe('summarizeInsights — perfil de geração (stream_profile)', () => {
     expect(d.streamShare.toolMsByName.write_file).toBeUndefined()
     const f = d.findings.find((x) => x.id === 'tool-assembly-dominant')!
     expect(f.evidence).toMatch(/execute_command/)
-    expect(f.recommendation).toMatch(/script|arquivo/i)
-    expect(f.recommendation).not.toMatch(/edit_file inteiro|write_file inteiro/)
+    // v2.21.0: recomendação token-truth — menos tokens, não realocar para arquivo.
+    expect(f.recommendation).toMatch(/menos tokens|MENOS tokens/)
+    expect(f.recommendation).toMatch(/NÃO ajuda/)
+  })
+
+  it('correlação cold-start: espera maior após execução local longa → client-fixable', () => {
+    const events: InsightEvent[] = []
+    // 3 passos após execução longa (prevToolMs alto) com espera grande...
+    for (let i = 0; i < 3; i++) {
+      events.push({ t: now - (100 - i) * 1000, c: 'chat', a: 'stream_profile', m: { waitMs: 60000, reasoningMs: 100, toolMs: 100, contentMs: 100, prevToolMs: 90000 } })
+    }
+    // ...e 3 após execução curta com espera pequena.
+    for (let i = 0; i < 3; i++) {
+      events.push({ t: now - (50 - i) * 1000, c: 'chat', a: 'stream_profile', m: { waitMs: 5000, reasoningMs: 100, toolMs: 100, contentMs: 100, prevToolMs: 1000 } })
+    }
+    const d = summarizeInsights(events, 30, now)
+    expect(d.streamShare.coldStart.afterLong.n).toBe(3)
+    expect(d.streamShare.coldStart.afterShort.n).toBe(3)
+    const f = d.findings.find((x) => x.id === 'cold-start-after-local-exec')!
+    expect(f).toBeTruthy()
+    expect(f.severity).toBe('critical')
+    expect(f.recommendation).toMatch(/keep-warm|quente/i)
+  })
+
+  it('correlação cold-start: espera independe da execução local → provider idle (server-side)', () => {
+    const events: InsightEvent[] = []
+    for (let i = 0; i < 3; i++) {
+      events.push({ t: now - (100 - i) * 1000, c: 'chat', a: 'stream_profile', m: { waitMs: 40000, reasoningMs: 100, toolMs: 100, contentMs: 100, prevToolMs: 90000 } })
+      events.push({ t: now - (50 - i) * 1000, c: 'chat', a: 'stream_profile', m: { waitMs: 38000, reasoningMs: 100, toolMs: 100, contentMs: 100, prevToolMs: 1000 } })
+    }
+    const d = summarizeInsights(events, 30, now)
+    const f = d.findings.find((x) => x.id === 'cold-start-provider-idle')
+    expect(f).toBeTruthy()
+    expect(f!.recommendation).toMatch(/server-side|min_containers/i)
+    expect(d.findings.find((x) => x.id === 'cold-start-after-local-exec')).toBeUndefined()
   })
 
   it('passo com !=1 tool/use cai em unattributed (honesto, não inventa)', () => {

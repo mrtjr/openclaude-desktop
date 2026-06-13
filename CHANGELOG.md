@@ -7,6 +7,36 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.21.0] — 2026-06-13
+
+### Added — Dev Insights: cold-start client-fixável determinável + conselho no-op corrigido
+
+Segunda rodada guiada por dados. Os dados apontaram dois sinks de latência:
+espera/cold-start (52%) e montagem de execute_command (37%). Decisão validada
+por painel multi-agente + verificação adversarial — que descartou o alvo óbvio
+(instrumentar execute_command) por dois motivos convergentes: (a) o conteúdo dos
+comandos é inacessível (telemetria privacy-safe; conversations.json vazio), e
+(b) mover script para arquivo NÃO reduz tokens, então a bifurcação seria
+inconclusiva. Pivot para o sink MAIOR, com bifurcação limpa.
+
+- **Instrumentação `prevToolMs`**: cada `stream_profile` agora carrega a duração
+  da execução de tool do passo anterior (só um número; nenhum conteúdo). Permite
+  correlacionar "execução local longa → espera longa no passo seguinte".
+- **Finding `cold-start-after-local-exec` (crítico)**: quando a espera média
+  após execução longa ≥ 1,5× a espera após execução curta, conclui que o
+  container Modal **esfria durante a execução local** — parte do cold-start é
+  **client-fixable** (keep-warm durante tool longa), uma hipótese agora
+  *validável* em vez de chute. Caso contrário, `cold-start-provider-idle` (info)
+  conclui que é idle puro do provider (server-side).
+- **Conselho no-op corrigido (×2 lugares)**: os findings `tool-assembly-dominant`
+  e `long-tool-assemblies` recomendavam "escrever scripts em arquivo e rodar" —
+  um NO-OP, pois são os mesmos tokens em `write_file.content`. Agora dizem a
+  verdade: só MENOS tokens (comandos menores; edit_file para editar em vez de
+  regenerar) ou provider mais rápido reduzem o tempo de montagem.
+- **Cold-start enriquecido** com os knobs exatos do Modal: `min_containers=1` e
+  `scaledown_window`/`container_idle_timeout`, com nota de custo (1 GPU ociosa).
+- 4 testes novos (587 no total). Validado sobre a telemetria real.
+
 ## [2.20.0] — 2026-06-13
 
 ### Fixed — Dev Insights mentia no diagnóstico de latência (1ª rodada guiada por dados reais)

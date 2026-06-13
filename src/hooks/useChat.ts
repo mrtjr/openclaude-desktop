@@ -438,6 +438,13 @@ export function useChat({
       console.log('[useChat] Starting chat loop:', { provider: finalProvider, model: finalModel, useStreaming, messageCount: allMessages.length })
       logInsight('chat', 'turn', { provider: finalProvider, model: finalModel, agent: isAgentMode, streaming: useStreaming })
 
+      // Duração da execução de tool do passo ANTERIOR — carregada para o
+      // stream_profile do passo atual. Se a espera de 1º token cresce após
+      // execuções longas, o container Modal desligou DURANTE a execução local
+      // (cold-start client-fixable via keep-warm); se não, é idle puro do
+      // provider (server-side). v2.21.0: torna essa bifurcação determinável.
+      let prevStepToolMs = 0
+
       while (continueLoop && steps < safetyLimit) {
         if (stopRequestedRef.current) break
         steps++
@@ -581,7 +588,9 @@ export function useChat({
           })
           // Stream concluído: registra onde foi o tempo deste passo (espera /
           // raciocínio / montagem de tool / texto) — alimenta o digest.
-          logInsight('chat', 'stream_profile', { ...phaseProfiler.finish(Date.now()) })
+          // prevToolMs = duração da execução de tool do passo anterior, para
+          // correlacionar "execução local longa → espera longa" (cold-start).
+          logInsight('chat', 'stream_profile', { ...phaseProfiler.finish(Date.now()), prevToolMs: prevStepToolMs })
           } catch (err: any) {
             // Tools-unsupported auto-recovery. Some providers (OpenRouter
             // especially) only expose a tool-capable endpoint for some
@@ -831,10 +840,14 @@ export function useChat({
               }
             }))
 
+            const toolStartTime = Date.now()
             const { message: thinkingMsg, shouldContinue } = await processToolCalls(
               convId, assistantMsg.content || '', normalizedTCs,
               recentToolCalls, activeMemory, idleSteps, sessionTracker
             )
+            // Tempo de execução local deste passo → vira o prevToolMs do próximo
+            // stream_profile (mede o gap que pode esfriar o container Modal).
+            prevStepToolMs = Date.now() - toolStartTime
             idleSteps = shouldContinue.idleSteps
             if (!shouldContinue.continue) continueLoop = false
 
