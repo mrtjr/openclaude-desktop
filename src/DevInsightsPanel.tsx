@@ -249,6 +249,7 @@ export default function DevInsightsPanel({ isOpen, onClose, language, providerCo
                 <div style={rowStyle}><span>{pt ? 'tools negadas' : 'tool denials'}</span><strong>{f.toolDenials}</strong></div>
                 <div style={rowStyle}><span>{pt ? 'respostas vazias' : 'empty replies'}</span><strong>{f.emptyReplies}</strong></div>
                 <div style={rowStyle}><span>{pt ? 'compactações' : 'compactions'}</span><strong>{f.contextCompactions}</strong></div>
+                <div style={rowStyle}><span>{pt ? 'reescritas (era p/ ser edit_file)' : 'rewrites (should be edit_file)'}</span><strong>{f.rewriteExisting}</strong></div>
               </div>
               {digest.latency.count > 0 && (
                 <div style={sectionStyle}>

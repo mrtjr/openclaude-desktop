@@ -7,6 +7,28 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.19.0] — 2026-06-12
+
+### Changed — Fazer o modelo USAR o edit_file (steering + coaching + medição)
+
+Dev Insights revelou: o edit_file existe completo de ponta a ponta, mas o
+modelo nunca o usou — 0 chamadas em 30 dias contra 9 write_file (cada um
+podendo levar 13 min montando o arquivo inteiro no Modal/GLM). O ciclo ataca
+o comportamento, não a infra:
+
+- **Steering**: regra nova no AGENT_SYSTEM_PROMPT (pt + en) — "EDITE, NÃO
+  REESCREVA": edit_file para alterar arquivo existente; write_file só para
+  arquivo novo ou reescrita total intencional.
+- **Coaching in-context**: o handler write-file agora reporta `existed`/`bytes`;
+  quando o modelo reescreve um arquivo existente com 1500+ chars, o tool
+  result vem com a nota "este arquivo já existia — use edit_file na próxima
+  alteração parcial". O feedback chega exatamente onde um modelo não-frontier
+  aprende: no resultado da própria chamada.
+- **Medição**: evento novo `tool/rewrite_existing` + contador no atrito +
+  finding `prefer-edit-file` (aviso quando ≥3 reescritas; drill-down incluso)
+  — o painel passa a denunciar o anti-padrão sozinho.
+- 6 testes novos (583 no total).
+
 ## [2.18.0] — 2026-06-12
 
 ### Added — Dev Insights ciclo 5 (final do plano): auto-análise pelo modelo configurado

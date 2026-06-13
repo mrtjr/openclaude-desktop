@@ -36,6 +36,9 @@ export interface InsightsDigest {
     toolDenials: number
     emptyReplies: number
     contextCompactions: number
+    /** write_file reescrevendo arquivo EXISTENTE grande (anti-padrão; era
+     *  para ser edit_file) — v2.19.0. */
+    rewriteExisting: number
   }
   /** Turn latency over the window (ms), from 'chat'/'complete' events. */
   latency: { count: number; avgMs: number; p95Ms: number }
@@ -426,6 +429,12 @@ export function buildFindings(d: Omit<InsightsDigest, 'notes' | 'findings'>): Fi
       ERROR_KIND_RECOMMENDATION[topError[0]] ?? 'Investigar a categoria — bom candidato a próximo ciclo.',
       topError[1] * 2, { type: 'errors', kind: topError[0] })
   }
+  if (d.friction.rewriteExisting >= 3) {
+    add('prefer-edit-file', 'warning', 'write_file reescrevendo arquivos existentes',
+      `${d.friction.rewriteExisting} reescritas totais de arquivos que já existiam`,
+      'O modelo está ignorando edit_file — conferir o steering do prompt e se as tentativas de edit_file falham.',
+      d.friction.rewriteExisting * 2, { type: 'action', c: 'tool', a: 'rewrite_existing' })
+  }
   if (d.friction.circuitBreaks >= 3) {
     add('circuit-breaks', 'warning', 'Circuit-breaks recorrentes',
       `${d.friction.circuitBreaks} disparos na janela`,
@@ -497,7 +506,7 @@ export function summarizeInsights(
   const providerMix: Record<string, number> = {}
   const modelMix: Record<string, number> = {}
   const versionMix: Record<string, number> = {}
-  const friction = { circuitBreaks: 0, retries: 0, toolDenials: 0, emptyReplies: 0, contextCompactions: 0 }
+  const friction = { circuitBreaks: 0, retries: 0, toolDenials: 0, emptyReplies: 0, contextCompactions: 0, rewriteExisting: 0 }
   const latencies: number[] = []
   // turnos com id → ciclo de vida; sem id (eventos legados) → só contagens.
   const turnMap = new Map<string, { startT: number; outcome: string | null }>()
@@ -540,6 +549,7 @@ export function summarizeInsights(
       case 'tool':
         if (e.a === 'use') bump(toolUsage, String(e.m?.name ?? 'unknown'))
         else if (e.a === 'denied') friction.toolDenials++
+        else if (e.a === 'rewrite_existing') friction.rewriteExisting++
         break
       case 'agent':
         if (e.a === 'circuit_break') friction.circuitBreaks++
@@ -659,6 +669,7 @@ export function formatInsightsReport(d: InsightsDigest): string {
     `- tools negadas: ${d.friction.toolDenials}`,
     `- respostas vazias: ${d.friction.emptyReplies}`,
     `- compactações de contexto: ${d.friction.contextCompactions}`,
+    `- reescritas de arquivo existente (era p/ ser edit_file): ${d.friction.rewriteExisting}`,
     ``,
   )
   if (d.latency.count > 0) {

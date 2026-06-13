@@ -4,7 +4,7 @@ import { TOOLS } from '../constants/tools'
 import { resolveToolSearch, formatToolSearchResult } from '../services/toolDeferral'
 import { toolNeedsApproval, truncateToolOutput, isToolError } from '../utils/toolPolicy'
 import { formatExecResult, resolveExecCwd, resolveExecTimeoutMs } from '../utils/execResult'
-import { formatEditResult } from '../utils/editResult'
+import { formatEditResult, formatWriteResult, COACH_REWRITE_MIN_CHARS } from '../utils/editResult'
 import { mergeFact } from '../utils/persistentMemory'
 import { parseSearchGlob, formatSearchResults } from '../utils/searchFiles'
 import { isRiskyDesktopAction } from '../utils/desktopPolicy'
@@ -59,8 +59,15 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         return paginateFileContent(result.content, args.offset, args.limit)
       }
       if (name === 'write_file') {
+        const content = String(args.content ?? '')
         const result = await window.electron.writeFile({ filePath: args.path, content: args.content })
-        return result.error ? `Erro: ${result.error}` : 'Arquivo escrito com sucesso'
+        // Anti-padrão medido pelos Dev Insights: reescrita total de arquivo
+        // existente (era para ser edit_file). O finding 'prefer-edit-file'
+        // agrega estes eventos.
+        if (!result.error && result.existed && content.length >= COACH_REWRITE_MIN_CHARS) {
+          logInsight('tool', 'rewrite_existing', { bytes: content.length })
+        }
+        return formatWriteResult(result, args.path, content.length)
       }
       if (name === 'edit_file') {
         const result = await window.electron.editFile({ filePath: args.path, oldString: args.old_string, newString: args.new_string ?? '' })

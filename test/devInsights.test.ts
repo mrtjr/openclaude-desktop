@@ -70,7 +70,7 @@ describe('summarizeInsights', () => {
     expect(d.providerMix).toEqual({ openai: 1, ollama: 1 })
     expect(d.modelMix).toEqual({ 'gpt-4o': 1, llama3: 1 })
     expect(d.toolUsage).toEqual({ web_search: 1 })
-    expect(d.friction).toEqual({ circuitBreaks: 1, retries: 0, toolDenials: 1, emptyReplies: 1, contextCompactions: 1 })
+    expect(d.friction).toEqual({ circuitBreaks: 1, retries: 0, toolDenials: 1, emptyReplies: 1, contextCompactions: 1, rewriteExisting: 0 })
     expect(d.totalEvents).toBe(events.length)
   })
 
@@ -453,6 +453,17 @@ describe('drillEvents — timeline por trás de um achado', () => {
     const r = drillEvents(many, { type: 'errors' }, now)
     expect(r).toHaveLength(50)
     expect(r[0].t).toBeGreaterThan(r[49].t)
+  })
+
+  it('finding prefer-edit-file dispara com ≥3 reescritas de arquivo existente', () => {
+    const events = Array.from({ length: 3 }, (): InsightEvent =>
+      ({ t: now - 1000, c: 'tool', a: 'rewrite_existing', m: { bytes: 9000 } }))
+    const d = summarizeInsights(events, 30, now)
+    expect(d.friction.rewriteExisting).toBe(3)
+    const f = d.findings.find((x) => x.id === 'prefer-edit-file')!
+    expect(f.severity).toBe('warning')
+    expect(f.recommendation).toMatch(/edit_file/)
+    expect(f.drill).toEqual({ type: 'action', c: 'tool', a: 'rewrite_existing' })
   })
 
   it('findings carregam o seletor de drill correspondente', () => {

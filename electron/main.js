@@ -559,10 +559,14 @@ ipcMain.handle('write-file', async (event, { filePath, content }) => {
     if (!isPathSafe(filePath)) {
       return { error: 'Access denied: path is in a protected directory' }
     }
+    // `existed` alimenta o coaching de edit_file no renderer: reescrever um
+    // arquivo existente inteiro é o anti-padrão que os Dev Insights flagram
+    // (write_file de 13 min no Modal/GLM enquanto edit_file tinha 0 usos).
+    const existed = fs.existsSync(filePath)
     snapshotFile(filePath)
     fs.mkdirSync(path.dirname(filePath), { recursive: true })
     fs.writeFileSync(filePath, content, 'utf-8')
-    return { error: null }
+    return { error: null, existed, bytes: Buffer.byteLength(String(content ?? ''), 'utf-8') }
   } catch (e) {
     return { error: e.message }
   }
