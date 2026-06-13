@@ -71,7 +71,7 @@ import { useMathReady } from './hooks/useMathReady'
 import { useTokenizerReady } from './hooks/useTokenizerReady'
 import { partitionTools, decideDeferral } from './services/toolDeferral'
 import { TOOLS } from './constants/tools'
-import { getModelContextLimit, countToolSchemas } from './services/contextEngine'
+import { getModelContextLimit, effectiveContextLimit, countToolSchemas } from './services/contextEngine'
 import { useUsageTracking } from './hooks/useUsageTracking'
 import { loadEnabledFeatures, saveEnabledFeatures, isFeatureEnabled } from './config/features'
 import { useMemoryDreaming } from './hooks/useMemoryDreaming'
@@ -534,6 +534,9 @@ export default function App() {
   const ctxBreakdown = useContextBreakdown({
     activeConv,
     model: providerConfig.model,
+    // Ollama: janela REAL (num_ctx), não a teórica — alinha o painel com o que
+    // o chat realmente envia e evita o falso "106%" do modelo local (v2.24.0).
+    limit: effectiveContextLimit(settings.provider, providerConfig.model, settings.ollamaNumCtx),
     inputText: input,
     systemPrompt: settings.systemPrompt || '',
     memoryText,

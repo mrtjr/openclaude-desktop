@@ -14,7 +14,7 @@ import { nextStreamPhase, classifyDelta, createPhaseProfiler, type StreamPhase }
 import { runCompaction, mergeSummary, planEmergencyCompaction } from '../services/compaction'
 import { renderWorkingMemory, renderPersistentMemory } from '../utils/memoryRender'
 import { logInsight, beginInsightTurn, bumpInsightStep, endInsightTurn } from '../services/devInsights'
-import { createContextEngine, getModelContextLimit, countToolSchemas, computeMessageBudget } from '../services/contextEngine'
+import { createContextEngine, getModelContextLimit, effectiveContextLimit, countToolSchemas, computeMessageBudget } from '../services/contextEngine'
 import type { ProviderConfig } from './useProviderConfig'
 
 // The engine is pure and stateless — create once at module load.
@@ -222,7 +222,7 @@ export function useChat({
       // turn and per model — see decideDeferral (context-pressure heuristic).
       const deferral = decideDeferral(
         settings.toolDeferralMode,
-        getModelContextLimit(finalModel),
+        effectiveContextLimit(finalProvider, finalModel, settings.ollamaNumCtx),
         countToolSchemas(TOOLS as any),
       )
       const deferralEnabled = deferral.enabled
@@ -272,7 +272,9 @@ export function useChat({
       // This replaces the previous fixed 50-message cap, which was both
       // too aggressive on large-context models (Gemini 1M) and too loose
       // on small ones (gpt-4 8k).
-      const modelLimit = getModelContextLimit(finalModel)
+      // Limite EFETIVO: nuvem = janela do modelo; Ollama = num_ctx real
+      // (a janela teórica é inviável em GPU de consumidor — ver contextEngine).
+      const modelLimit = effectiveContextLimit(finalProvider, finalModel, settings.ollamaNumCtx)
       let contextSummary = conv?.contextSummary || ''
       // Load persistent memory BEFORE the budget so its tokens are real
       // overhead, not hope that BUDGET_SAFETY_SLACK covers it (a grown facts
@@ -582,7 +584,8 @@ export function useChat({
                 })
               : window.electron.ollamaChatStream({
                   model: finalModel, messages: requestMessages, tools: toolsForRequest,
-                  temperature: settings.temperature, max_tokens: settings.maxTokens
+                  temperature: settings.temperature, max_tokens: settings.maxTokens,
+                  numCtx: modelLimit // janela real do local (evita timeout por contexto gigante)
                 })
             // O handler do main RESOLVE com {error} (não rejeita) em early-returns
             // que acontecem antes de qualquer chunk `done` (ex.: baseUrl custom
@@ -786,7 +789,8 @@ export function useChat({
           } else {
             response = await window.electron.ollamaChat({
               model: finalModel, messages: requestMessages, tools: toolsForRequest,
-              temperature: settings.temperature, max_tokens: settings.maxTokens
+              temperature: settings.temperature, max_tokens: settings.maxTokens,
+              numCtx: modelLimit // janela real do local (evita timeout por contexto gigante)
             })
           }
 

@@ -27,6 +27,9 @@ const engine = createContextEngine()
 export interface ContextBreakdownInputs {
   activeConv: Conversation | undefined
   model: string
+  /** Override do limite (v2.24.0): para Ollama, a janela REAL (num_ctx), não a
+   *  teórica do modelo. Quando ausente, cai no getModelContextLimit(model). */
+  limit?: number
   inputText: string
   systemPrompt: string
   memoryText: string
@@ -38,14 +41,15 @@ export interface ContextBreakdownInputs {
 
 export function useContextBreakdown(i: ContextBreakdownInputs): ContextBreakdown {
   const {
-    activeConv, model, inputText, systemPrompt, memoryText,
+    activeConv, model, limit: limitOverride, inputText, systemPrompt, memoryText,
     eagerTools, deferredToolNames, deferredToolSchemas, skillHeaders = '',
   } = i
 
   // Sharpen every category from char/4 to real BPE counts once loaded.
   const tokenizerReady = useTokenizerReady()
   return useMemo(() => {
-    const limit = getModelContextLimit(model)
+    const limit = (typeof limitOverride === 'number' && limitOverride > 0)
+      ? limitOverride : getModelContextLimit(model)
 
     // Messages: conv history + current input
     let messages = 0
@@ -119,7 +123,7 @@ export function useContextBreakdown(i: ContextBreakdownInputs): ContextBreakdown
       shouldAutocompact: usedRatio >= AUTOCOMPACT_TRIGGER_RATIO,
     }
   }, [
-    activeConv?.messages, model, inputText, systemPrompt, memoryText,
+    activeConv?.messages, model, limitOverride, inputText, systemPrompt, memoryText,
     eagerTools, deferredToolNames, deferredToolSchemas, skillHeaders,
     tokenizerReady,
   ])

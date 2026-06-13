@@ -7,6 +7,34 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.24.0] — 2026-06-13
+
+### Fixed — Timeout ao usar modelo local com contexto grande (janela de contexto real para Ollama)
+
+Sintoma (relatado pelo usuário): ao trocar para um modelo local do Ollama com a
+conversa já grande (~132k), o envio dava "O provedor demorou demais para
+responder". Causa raiz, confirmada no código: o orçamento de contexto para
+modelos locais era **fictício** — o app usava a janela *teórica* do modelo
+(`qwen3.5` → 128k via `getModelContextLimit`) e, pior, **nunca informava o
+`num_ctx` ao Ollama** (só mandava `temperature`). Resultado: ou o Ollama
+truncava em silêncio no seu default pequeno, ou tentava processar ~130k tokens
+num GPU de 12 GB — o KV-cache estoura a VRAM, escorre pra RAM e a geração trava
+até o timeout. Na nuvem (GLM 200k) isso roda fácil; no local, não.
+
+- **`effectiveContextLimit(provider, model, ollamaNumCtx)`**: para Ollama usa a
+  janela REAL configurada (não a teórica); nuvem continua usando a janela do
+  modelo. Aplicado em 3 lugares: orçamento de mensagens (compacta/trunca antes
+  de enviar), decisão de tool-deferral, e o painel de contexto (acaba o falso
+  "106%" ao trocar para local).
+- **`num_ctx` enviado ao Ollama** nos handlers de chat (stream e não-stream) —
+  o Ollama de fato aloca a janela que o app orçou, alinhando contagem e
+  realidade.
+- **Setting novo `ollamaNumCtx`** (default **8192**, configurável em
+  Configurações) — seguro contra timeout em qualquer 12 GB; suba se sua
+  VRAM/modelo aguentar.
+- 7 testes novos (605 no total).
+
+
 ## [2.23.0] — 2026-06-13
 
 ### Added — Troca rápida de modelo/provider no chat (estilo Claude)

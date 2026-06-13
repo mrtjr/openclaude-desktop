@@ -255,14 +255,14 @@ ipcMain.handle('compact-context', async (event, { messages, model, language, pro
 })
 
 // ─── IPC: Ollama chat (non-streaming) ────────────────────────────────
-ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperature, max_tokens }) => {
+ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperature, max_tokens, numCtx }) => {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
       model,
       messages,
       tools: tools || [],
       stream: false,
-      options: { temperature: temperature ?? 0.7 },
+      options: { temperature: temperature ?? 0.7, ...(numCtx ? { num_ctx: numCtx } : {}) },
       ...(max_tokens ? { max_tokens } : {})
     })
 
@@ -301,14 +301,18 @@ ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperatur
 })
 
 // ─── IPC: Ollama chat streaming ──────────────────────────────────────
-ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, temperature, max_tokens }) => {
+ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, temperature, max_tokens, numCtx }) => {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
       model,
       messages,
       tools: tools || [],
       stream: true,
-      options: { temperature: temperature ?? 0.7 },
+      // num_ctx ALOCA a janela de contexto no Ollama. Sem isto ele usa um
+      // default pequeno e trunca em silêncio; com valor alto demais, processar
+      // o contexto gigante num GPU de consumidor trava até dar timeout. O
+      // renderer manda a janela REALISTA (settings.ollamaNumCtx). v2.24.0.
+      options: { temperature: temperature ?? 0.7, ...(numCtx ? { num_ctx: numCtx } : {}) },
       ...(max_tokens ? { max_tokens } : {})
     })
 

@@ -209,6 +209,25 @@ export function countTextTokens(text: string): number {
   return estimateTokens(text)
 }
 
+// ─── Limite prático para modelos LOCAIS (Ollama) — v2.24.0 ──────────
+// A janela TEÓRICA de um modelo (ex.: qwen3.5 → 128k) é ficção num GPU de
+// consumidor: o KV-cache de 100k+ tokens estoura a VRAM, escorre pra RAM e a
+// geração trava até dar timeout. Pior: o app nem informava `num_ctx` ao Ollama,
+// que então usava seu default pequeno e truncava em silêncio. Para local usamos
+// um limite REALISTA e configurável — usado no orçamento (compacta antes de
+// enviar) E enviado como num_ctx (o Ollama de fato aloca essa janela).
+export const DEFAULT_OLLAMA_NUM_CTX = 8192
+
+/** Limite de contexto EFETIVO do backend ativo. Nuvem usa a janela do modelo;
+ *  Ollama (local) usa o num_ctx configurado — não a janela teórica. */
+export function effectiveContextLimit(provider: string, model: string, ollamaNumCtx?: number): number {
+  if (provider === 'ollama') {
+    const n = Number(ollamaNumCtx)
+    return Number.isFinite(n) && n > 0 ? n : DEFAULT_OLLAMA_NUM_CTX
+  }
+  return getModelContextLimit(model)
+}
+
 /** Get approximate context limit for a model. Returns 8192 as safe default. */
 export function getModelContextLimit(model: string): number {
   // Exact match first

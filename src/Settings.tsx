@@ -288,6 +288,28 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                 />
               </div>
 
+              {/* Janela de contexto do Ollama (num_ctx) — v2.24.0 */}
+              <div className="settings-group">
+                <label className="settings-label">
+                  <span>{local.language === 'en' ? 'Ollama context window (num_ctx)' : 'Janela de contexto do Ollama (num_ctx)'}</span>
+                  <span className="settings-value">{(local.ollamaNumCtx ?? 8192).toLocaleString()}</span>
+                </label>
+                <input
+                  type="number"
+                  min={2048}
+                  max={131072}
+                  step={2048}
+                  value={local.ollamaNumCtx ?? 8192}
+                  onChange={(e) => setLocal(s => ({ ...s, ollamaNumCtx: parseInt(e.target.value) || 8192 }))}
+                  className="settings-input"
+                />
+                <p className="settings-hint">
+                  {local.language === 'en'
+                    ? 'Real context window sent to local Ollama models. The model\'s theoretical window (128k+) is impractical on a consumer GPU — too-large contexts overflow VRAM and time out. Raise only if your VRAM/model handles it.'
+                    : 'Janela de contexto REAL enviada aos modelos locais do Ollama. A janela teórica do modelo (128k+) é inviável em GPU de consumidor — contexto grande demais estoura a VRAM e dá timeout. Aumente só se sua VRAM/modelo aguentar.'}
+                </p>
+              </div>
+
               {/* System prompt */}
               <div className="settings-group">
                 <label className="settings-label">

@@ -4,6 +4,8 @@ import { describe, it, expect } from 'vitest'
 import {
   createContextEngine,
   getModelContextLimit,
+  effectiveContextLimit,
+  DEFAULT_OLLAMA_NUM_CTX,
   computeMessageBudget,
   BUDGET_SAFETY_SLACK,
   MODEL_CONTEXT_LIMITS,
@@ -102,6 +104,27 @@ describe('getModelContextLimit', () => {
   it('covers all documented families', () => {
     // Guard rails: make sure we don't silently lose a model family
     expect(Object.keys(MODEL_CONTEXT_LIMITS).length).toBeGreaterThan(15)
+  })
+})
+
+describe('effectiveContextLimit — janela REAL por backend (v2.24.0)', () => {
+  it('Ollama usa o num_ctx configurado, NÃO a janela teórica do modelo', () => {
+    // qwen35 teórico = 128k, mas local num GPU de 12GB é inviável.
+    expect(getModelContextLimit('huihui_ai/qwen3.5-abliterated')).toBe(128_000)
+    expect(effectiveContextLimit('ollama', 'huihui_ai/qwen3.5-abliterated', 16384)).toBe(16384)
+  })
+
+  it('Ollama cai no default seguro quando num_ctx ausente/inválido', () => {
+    expect(effectiveContextLimit('ollama', 'qwen3', undefined)).toBe(DEFAULT_OLLAMA_NUM_CTX)
+    expect(effectiveContextLimit('ollama', 'qwen3', 0)).toBe(DEFAULT_OLLAMA_NUM_CTX)
+    expect(effectiveContextLimit('ollama', 'qwen3', -5)).toBe(DEFAULT_OLLAMA_NUM_CTX)
+    expect(effectiveContextLimit('ollama', 'qwen3', NaN)).toBe(DEFAULT_OLLAMA_NUM_CTX)
+  })
+
+  it('providers de nuvem ignoram num_ctx e usam a janela do modelo', () => {
+    expect(effectiveContextLimit('modal', 'zai-org/GLM-5.1-FP8', 8192)).toBe(200_000)
+    expect(effectiveContextLimit('anthropic', 'claude-opus-4-8', 8192)).toBe(1_000_000)
+    expect(effectiveContextLimit('openai', 'gpt-4o', 8192)).toBe(128_000)
   })
 })
 

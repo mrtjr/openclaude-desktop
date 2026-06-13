@@ -52,6 +52,10 @@ export interface AppSettings {
   customBaseUrl: string
   customLabel: string
   contextLimit: number
+  /** v2.24.0 — janela de contexto REAL para modelos locais do Ollama. A janela
+   *  teórica (128k+) é inviável num GPU de consumidor; isto limita o que é
+   *  enviado E vira o num_ctx do Ollama. Suba se sua VRAM/modelo aguentar. */
+  ollamaNumCtx: number
   memoryEnabled: boolean
   analyticsEnabled: boolean
   permissionLevel: PermissionLevel
@@ -99,6 +103,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   customBaseUrl: '',
   customLabel: 'Custom (OpenAI-compatible)',
   contextLimit: 50,
+  ollamaNumCtx: 8192,
   memoryEnabled: false,
   analyticsEnabled: true,
   permissionLevel: 'ask',
