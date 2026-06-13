@@ -7,6 +7,36 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.22.0] — 2026-06-13
+
+### Added — Auto-recuperação de stream travado (stall) em vez de matar o turno
+
+Atende ao pedido direto do usuário: quando aparecia "Erro do provedor: Stream
+travado: provider parou de enviar conteúdo por 150s (só keep-alive)", o turno
+morria e era preciso reenviar à mão. Agora o passo é refeito automaticamente.
+Causa: a mensagem caía em `unknown` (não-retryável) e, mesmo se não caísse, o
+retry transitório tinha a trava `!accumulated` (stall costuma pegar no meio).
+Desenho validado por painel multi-agente + verificação adversarial (escolhido
+retry-do-zero sobre continuação por ser estruturalmente seguro).
+
+- **Classificação `stall`** (`providerErrors.ts`): casa os fragmentos ASCII
+  da mensagem real (`travado`/`parou de enviar`/`keep-alive`), antes do check
+  de timeout; retryável, com mensagem amigável ("O provedor travou no meio da
+  resposta").
+- **Recuperação retry-do-zero** no loop de chat: ao detectar stall, espera
+  1,2s e refaz o MESMO passo. Seguro por construção — nada parcial é commitado
+  no erro (o commit só roda no sucesso), então não há texto duplicado nem
+  tool-call com JSON truncado (o catch precede a execução de tools); os
+  acumuladores são re-declarados zerados na nova iteração.
+- **Orçamento `stallRecovery.ts`** (puro/testável): 1 retry por passo, teto de
+  3 por turno — recupera stalls isolados ao longo de um run agêntico longo
+  (pior caso GLM/Modal) sem re-cobrar em loop. É o ÚNICO guard de término do
+  stall (o `safetyLimit` global não conta porque o retry rebobina o passo).
+- Esgotado o orçamento, degrada exatamente como antes (mensagem amigável,
+  turno encerra) — nunca pior. `logInsight` registra cada stall-retry para o
+  Dev Insights.
+- 12 testes novos (595 no total).
+
 ## [2.21.0] — 2026-06-13
 
 ### Added — Dev Insights: cold-start client-fixável determinável + conselho no-op corrigido

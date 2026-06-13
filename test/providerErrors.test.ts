@@ -15,6 +15,7 @@ describe('classifyProviderError', () => {
     ['Provider request timeout after 60s', 'timeout', false],
     ["This model's maximum context length is 8192 tokens", 'context', false],
     ['API error 404: model not found', 'not_found', false],
+    ['Stream travado: provider parou de enviar conteúdo por 150s (só keep-alive)', 'stall', true],
     ['some totally weird thing', 'unknown', false],
   ]
   it.each(cases)('classifies "%s" as %s (retryable=%s)', (msg, kind, retryable) => {
@@ -36,6 +37,16 @@ describe('classifyProviderError', () => {
     expect(classifyProviderError(undefined).kind).toBe('unknown')
     expect(classifyProviderError('').kind).toBe('unknown')
   })
+
+  it('classifica stall pela string real do watchdog e é retryável; não colide com timeout', () => {
+    // A mensagem real (electron/main.js) NÃO contém "timeout" → não vira 'timeout'.
+    const real = 'Stream travado: provider parou de enviar conteúdo por 150s (só keep-alive)'
+    expect(classifyProviderError(real)).toEqual({ kind: 'stall', retryable: true })
+    // cada fragmento ASCII sozinho também identifica
+    expect(classifyProviderError('travado').kind).toBe('stall')
+    expect(classifyProviderError('parou de enviar').kind).toBe('stall')
+    expect(classifyProviderError('keep-alive').kind).toBe('stall')
+  })
 })
 
 describe('humanizeProviderError', () => {
@@ -54,5 +65,11 @@ describe('humanizeProviderError', () => {
   it('never returns an empty string', () => {
     expect(humanizeProviderError(undefined, 'en').length).toBeGreaterThan(0)
     expect(humanizeProviderError('Overloaded', 'pt').length).toBeGreaterThan(0)
+  })
+
+  it('humaniza o stall com mensagem amigável (não despeja a string crua)', () => {
+    const out = humanizeProviderError('Stream travado: provider parou de enviar conteúdo por 150s (só keep-alive)', 'pt')
+    expect(out).toMatch(/travou no meio/)
+    expect(out).not.toMatch(/Erro do provedor:/) // não é mais "unknown"
   })
 })

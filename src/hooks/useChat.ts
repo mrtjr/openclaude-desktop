@@ -6,6 +6,7 @@ import { partitionTools, renderDeferredManifest, decideDeferral } from '../servi
 import { generateId, isSmallModel } from '../utils/formatting'
 import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice, extractThinking } from '../utils/sanitizers'
 import { classifyProviderError, humanizeProviderError } from '../utils/providerErrors'
+import { initStallState, decideStallRetry } from '../utils/stallRecovery'
 import { resolveTurnUsage } from '../utils/usage'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
 import { toolCallSummary } from '../utils/toolDisplay'
@@ -380,6 +381,11 @@ export function useChat({
       // recovery below. Reset per sendMessage.
       let transientRetriesUsed = 0
       const MAX_TRANSIENT_RETRIES = 1
+      // Auto-recuperação de stream travado (stall). Refaz o passo do zero —
+      // seguro pois o parcial nunca é commitado no erro. 1 retry/passo, teto
+      // por turno (ver utils/stallRecovery.ts). Este estado é o ÚNICO guard de
+      // término do stall; NÃO resetar por passo (removeria o limite por-turno).
+      let stallState = initStallState()
       const isToolsUnsupportedError = (msg: string | undefined): boolean => {
         if (!msg) return false
         const m = msg.toLowerCase()
@@ -610,11 +616,31 @@ export function useChat({
               steps-- // don't count the failed attempt
               continue
             }
+            const cls = classifyProviderError(err?.message)
+            // Stream travado (stall): refaz o passo. Vem ANTES do transitório
+            // (stall também é retryable, mas tem orçamento próprio e ignora o
+            // guard !accumulated — o parcial de um stall é provadamente
+            // descartável). O catch precede o processToolCalls, então um
+            // tool-call com JSON truncado nunca é executado; accumulated/
+            // toolCallsData são re-declarados zerados na próxima iteração.
+            if (cls.kind === 'stall' && !stopRequestedRef.current) {
+              const d = decideStallRetry(stallState, steps)
+              stallState = d.state
+              if (d.retry) {
+                logInsight('chat', 'retry', { kind: 'stall', hadPartial: !!accumulated, partialLen: accumulated.length, attempt: stallState.perTurn })
+                setIsStreaming(false)
+                setStreamingText(''); setStreamingPhase(null)
+                showToast(humanizeProviderError(err?.message, lang) + (lang === 'en' ? ' (retrying…)' : ' (tentando de novo…)'))
+                await new Promise(r => setTimeout(r, 1200))
+                steps-- // rewind: re-roda ESTE passo com a mesma entrada
+                continue
+              }
+            }
             // Transient failure: back off and retry once. Guarded by
             // `!accumulated` so we never re-send after partial output already
-            // streamed (no double output / double billing).
-            const cls = classifyProviderError(err?.message)
-            if (cls.retryable && transientRetriesUsed < MAX_TRANSIENT_RETRIES && !accumulated) {
+            // streamed (no double output / double billing). `cls.kind !== 'stall'`
+            // mantém os orçamentos separados (stall já foi tratado acima).
+            if (cls.retryable && cls.kind !== 'stall' && transientRetriesUsed < MAX_TRANSIENT_RETRIES && !accumulated) {
               transientRetriesUsed++
               logInsight('chat', 'retry', { kind: cls.kind })
               setIsStreaming(false)

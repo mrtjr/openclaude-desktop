@@ -19,6 +19,7 @@ export type ProviderErrorKind =
   | 'timeout'
   | 'context'
   | 'not_found'
+  | 'stall'
   | 'unknown'
 
 export interface ProviderErrorInfo {
@@ -49,6 +50,15 @@ export function classifyProviderError(raw: string | undefined): ProviderErrorInf
   if (has('econnreset', 'enotfound', 'econnrefused', 'eai_again', 'epipe',
           'socket hang up', 'network', 'fetch failed', 'getaddrinfo'))
     return { kind: 'network', retryable: true }
+
+  // Stream stall (watchdog em electron/main.js): o provider mandou keep-alive
+  // mas parou de produzir conteúdo. Diferente de timeout — é recuperável
+  // refazendo o passo (o parcial nunca foi commitado). Checado ANTES do
+  // timeout (a string não contém "timeout", mas a ordem é guarda deliberada).
+  // Casa só fragmentos ASCII estáveis da mensagem real ("Stream travado:
+  // provider parou de enviar conteúdo por Ns (só keep-alive)").
+  if (has('travado', 'parou de enviar', 'keep-alive'))
+    return { kind: 'stall', retryable: true }
 
   // Our own request-timeout strings ("Provider request timeout after 60s") or
   // a generic timeout: don't auto-retry (would just make the user wait the
@@ -95,6 +105,10 @@ const MESSAGES: Record<ProviderErrorKind, { pt: string; en: string }> = {
   not_found: {
     pt: 'Modelo ou endpoint não encontrado para este provedor. Confira o modelo selecionado.',
     en: 'Model or endpoint not found for this provider. Check the selected model.',
+  },
+  stall: {
+    pt: 'O provedor travou no meio da resposta (parou de enviar conteúdo).',
+    en: 'The provider stalled mid-response (stopped sending content).',
   },
   unknown: { pt: '', en: '' },
 }
