@@ -7,6 +7,28 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.16.0] — 2026-06-12
+
+### Changed — Dev Insights ciclo 3: motor de findings no lugar das notas fixas
+
+Opção 3 do plano. As notas eram frases de threshold fixo, sempre iguais e sem
+hierarquia — quem lia não sabia o que atacar primeiro.
+
+- **`buildFindings`**: achados estruturados com **severidade**
+  (crítico/aviso/info), **evidência** (os números que sustentam — achado sem
+  evidência não entra), **recomendação acionável** e **score de impacto** para
+  ranquear. Catálogo: zumbis, regressão/melhora entre versões, erros
+  novos/resolvidos, montagem de tool dominante, raciocínio dominante,
+  montagens longas, erro frequente, circuit-breaks, respostas vazias, pressão
+  de contexto, tools negadas, latência, feature/tool mais usada.
+- **Recomendação específica por categoria de erro** (timeout → watchdog;
+  auth → credenciais; unknown → melhorar classificação; etc.).
+- Painel: seção "Achados (por impacto)" com bolinha de severidade colorida,
+  evidência e recomendação por item. Relatório .md: "## Achados" com 🔴🟡🔵.
+- `notes` continua existindo, agora derivado 1:1 dos findings (compatibilidade
+  com quem lê o digest JSON) — todos os textos antigos preservados.
+- 5 testes novos (565 no total).
+
 ## [2.15.0] — 2026-06-12
 
 ### Added — Dev Insights ciclo 2: digest comparativo ("o que mudou desde a versão anterior")

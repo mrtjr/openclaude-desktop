@@ -50,8 +50,48 @@ export interface InsightsDigest {
   /** Comparativo entre as duas versões mais recentes com amostra suficiente
    *  (v2.15.0) — "o que mudou desde a release anterior". Null sem dados. */
   comparison: VersionComparison | null
-  /** Auto-generated, human/AI-readable prioritisation hints. */
+  /** Achados estruturados ranqueados por impacto (v2.16.0) — substituem as
+   *  notas de threshold fixo como fonte; `notes` é derivado deles. */
+  findings: Finding[]
+  /** Renderização em texto dos findings (compatibilidade + leitura rápida). */
   notes: string[]
+}
+
+// ─── Motor de findings (v2.16.0) ────────────────────────────────────
+//
+// As notas eram frases de threshold fixo, sempre iguais e sem hierarquia.
+// Um finding é estruturado: severidade + evidência (os números que o
+// sustentam — achado sem evidência não entra) + recomendação acionável +
+// score de impacto para ranquear. O maintainer lê os 3 primeiros e já sabe
+// o que atacar no ciclo; a UI pinta por severidade.
+
+export type FindingSeverity = 'critical' | 'warning' | 'info'
+
+export interface Finding {
+  /** Chave estável do tipo de achado (ex.: 'zombie-turns', 'error-regression'). */
+  id: string
+  severity: FindingSeverity
+  title: string
+  /** Números que sustentam o achado. */
+  evidence: string
+  /** Próximo passo acionável. */
+  recommendation: string
+  /** Ranking de impacto (maior = mais urgente). */
+  score: number
+}
+
+const SEVERITY_BASE: Record<FindingSeverity, number> = { critical: 100, warning: 50, info: 10 }
+
+/** Recomendação específica por categoria de erro (classifyProviderError). */
+const ERROR_KIND_RECOMMENDATION: Record<string, string> = {
+  timeout: 'Rever budgets de timeout e watchdog do provider (provider-timeouts.js).',
+  auth: 'Chave de API inválida ou expirada — revisar credenciais nas configurações.',
+  rate_limit: 'Provider limitando chamadas — espaçar requisições ou revisar plano.',
+  overloaded: 'Provider sobrecarregado — o retry já cobre; considerar fallback de modelo.',
+  network: 'Instabilidade de rede entre o app e o provider.',
+  context: 'Pressão de contexto — revisar compactação e limite do modelo.',
+  not_found: 'Modelo ou endpoint inexistente — revisar a configuração do provider.',
+  unknown: 'Categoria dominante é "unknown" — melhorar a classificação em providerErrors.ts para diagnósticos futuros.',
 }
 
 // ─── Comparativo entre versões (v2.15.0) ────────────────────────────
@@ -248,75 +288,130 @@ function bump(rec: Record<string, number>, key: string): void {
   rec[key] = (rec[key] || 0) + 1
 }
 
-function buildNotes(d: Omit<InsightsDigest, 'notes'>): string[] {
-  const notes: string[] = []
-  // Comparativo de versões: regressões e melhoras desde a release anterior.
+export function buildFindings(d: Omit<InsightsDigest, 'notes' | 'findings'>): Finding[] {
+  const findings: Finding[] = []
+  const add = (id: string, severity: FindingSeverity, title: string, evidence: string, recommendation: string, bonus = 0) =>
+    findings.push({ id, severity, title, evidence, recommendation, score: SEVERITY_BASE[severity] + bonus })
+
+  // ── Críticos ──
+  if (d.turns.zombies > 0) {
+    add('zombie-turns', 'critical', 'Turnos zumbis',
+      `${d.turns.zombies} turno(s) zumbi — começaram e nunca registraram desfecho`,
+      'Investigar stream preso, crash ou app fechado no meio — conferir watchdog e logs do main.',
+      d.turns.zombies * 5)
+  }
   if (d.comparison) {
     const { current: cur, previous: prev, newErrorKinds, resolvedErrorKinds } = d.comparison
-    if (prev.errorRate > 0 && cur.errorRate <= prev.errorRate * 0.5) {
-      notes.push(`Desde a ${prev.v}: taxa de erro caiu de ${prev.errorRate} para ${cur.errorRate}/turno na ${cur.v} — o ciclo funcionou.`)
-    } else if (cur.errors >= 2 && cur.errorRate >= prev.errorRate * 1.5 && prev.turns >= MIN_TURNS_FOR_COMPARISON) {
-      notes.push(`⚠ Taxa de erro subiu de ${prev.errorRate} para ${cur.errorRate}/turno na ${cur.v} vs ${prev.v} — possível regressão.`)
+    if (cur.errors >= 2 && cur.errorRate >= prev.errorRate * 1.5 && prev.turns >= MIN_TURNS_FOR_COMPARISON && prev.errorRate > 0) {
+      add('error-regression', 'critical', `Possível regressão na ${cur.v}`,
+        `taxa de erro subiu de ${prev.errorRate} para ${cur.errorRate}/turno vs ${prev.v}`,
+        `Revisar o que mudou na ${cur.v}; começar pelos erros novos se houver.`,
+        20)
     }
     if (newErrorKinds.length > 0) {
-      notes.push(`⚠ Erro(s) novo(s) na ${cur.v}: ${newErrorKinds.join(', ')} — não existiam na ${prev.v}.`)
+      add('new-error-kinds', 'warning', `Erro(s) novo(s) na ${cur.v}`,
+        `${newErrorKinds.join(', ')} — não existiam na ${prev.v}`,
+        `Conferir as mudanças da ${cur.v} relacionadas a essas categorias.`,
+        newErrorKinds.length * 5)
+    }
+    if (prev.errorRate > 0 && cur.errorRate <= prev.errorRate * 0.5) {
+      add('error-improvement', 'info', `Melhora desde a ${prev.v}`,
+        `taxa de erro caiu de ${prev.errorRate} para ${cur.errorRate}/turno na ${cur.v}`,
+        'O ciclo funcionou — confirmar a tendência no próximo digest.')
     }
     if (resolvedErrorKinds.length > 0) {
-      notes.push(`Resolvido(s) desde a ${prev.v}: ${resolvedErrorKinds.join(', ')} — sumiram na ${cur.v}.`)
+      add('resolved-error-kinds', 'info', `Resolvido(s) desde a ${prev.v}`,
+        `${resolvedErrorKinds.join(', ')} — sumiram na ${cur.v}`,
+        'Nada a fazer; registrar como ganho do ciclo.')
     }
     if (prev.zombies > 0 && cur.zombies === 0) {
-      notes.push(`Zumbis zerados na ${cur.v} (eram ${prev.zombies} na ${prev.v}).`)
+      add('zombies-zeroed', 'info', `Zumbis zerados na ${cur.v}`,
+        `eram ${prev.zombies} na ${prev.v}`,
+        'Nada a fazer; monitorar.')
     }
   }
-  // Zumbis primeiro: é o sinal mais grave (turno morreu sem registrar nada).
-  if (d.turns.zombies > 0) {
-    notes.push(`${d.turns.zombies} turno(s) zumbi — começaram e nunca registraram desfecho (app fechado no meio, crash ou stream preso).`)
-  }
-  // Perfil de geração: onde o tempo realmente foi (≥3 amostras para não
-  // tirar conclusão de um turno só).
+
+  // ── Avisos ──
   const gen = d.streamShare.reasoningMs + d.streamShare.toolMs + d.streamShare.contentMs
   if (d.streamShare.samples >= 3 && gen > 0) {
     const toolPct = Math.round((d.streamShare.toolMs / gen) * 100)
     const reasonPct = Math.round((d.streamShare.reasoningMs / gen) * 100)
     if (toolPct >= 40) {
-      notes.push(`Montagem de tool call consome ${toolPct}% do tempo de geração — candidata: tool de edição por trecho em vez de write_file inteiro.`)
+      add('tool-assembly-dominant', 'warning', 'Montagem de tool call domina a geração',
+        `montagem de tool call consome ${toolPct}% do tempo de geração (${d.streamShare.samples} amostras)`,
+        'Candidata: tool de edição por trecho em vez de write_file inteiro.',
+        toolPct - 40)
     }
     if (reasonPct >= 50) {
-      notes.push(`Raciocínio consome ${reasonPct}% do tempo de geração — avaliar limite de thinking ou modelo mais direto para tarefas simples.`)
+      add('reasoning-dominant', 'warning', 'Raciocínio domina a geração',
+        `raciocínio consome ${reasonPct}% do tempo de geração`,
+        'Avaliar limite de thinking ou modelo mais direto para tarefas simples.',
+        reasonPct - 50)
     }
   }
   if (d.streamShare.longToolAssemblies >= 2) {
-    notes.push(`${d.streamShare.longToolAssemblies} passo(s) com 5+ min só montando tool call — turnos "parados" que parecem travamento.`)
+    add('long-tool-assemblies', 'warning', 'Montagens de tool call muito longas',
+      `${d.streamShare.longToolAssemblies} passo(s) com 5+ min só montando tool call`,
+      'Turnos "parados" que parecem travamento — reforça a tool de edição por trecho.',
+      d.streamShare.longToolAssemblies * 3)
   }
   const topError = Object.entries(d.errorsByKind).sort((a, b) => b[1] - a[1])[0]
   if (topError && topError[1] >= 3) {
-    notes.push(`Erro mais frequente: "${topError[0]}" (${topError[1]}×) — bom candidato a próximo ciclo.`)
-  }
-  if (d.friction.contextCompactions >= 5) {
-    notes.push(`Pressão de contexto alta: ${d.friction.contextCompactions} compactações.`)
+    add('frequent-error', 'warning', `Erro mais frequente: "${topError[0]}"`,
+      `${topError[1]}× na janela`,
+      ERROR_KIND_RECOMMENDATION[topError[0]] ?? 'Investigar a categoria — bom candidato a próximo ciclo.',
+      topError[1] * 2)
   }
   if (d.friction.circuitBreaks >= 3) {
-    notes.push(`Circuit-breaks recorrentes (${d.friction.circuitBreaks}) — possíveis loops de agente.`)
-  }
-  if (d.friction.toolDenials >= 3) {
-    notes.push(`Muitas tools negadas (${d.friction.toolDenials}) — revisar gating/UX de permissão.`)
+    add('circuit-breaks', 'warning', 'Circuit-breaks recorrentes',
+      `${d.friction.circuitBreaks} disparos na janela`,
+      'Possíveis loops de agente — revisar prompts/política dos casos que repetem.',
+      d.friction.circuitBreaks)
   }
   if (d.friction.emptyReplies >= 3) {
-    notes.push(`Respostas vazias frequentes (${d.friction.emptyReplies}) — modelo/provider problemático.`)
+    add('empty-replies', 'warning', 'Respostas vazias frequentes',
+      `${d.friction.emptyReplies} na janela`,
+      'Modelo/provider problemático — cruzar com o mix de modelos.',
+      d.friction.emptyReplies)
+  }
+
+  // ── Informativos ──
+  if (d.friction.contextCompactions >= 5) {
+    add('context-pressure', 'info', 'Pressão de contexto alta',
+      `${d.friction.contextCompactions} compactações na janela`,
+      'Revisar limites de contexto do modelo ou a agressividade da compactação.',
+      d.friction.contextCompactions)
+  }
+  if (d.friction.toolDenials >= 3) {
+    add('tool-denials', 'info', 'Muitas tools negadas',
+      `${d.friction.toolDenials} negações`,
+      'Revisar gating/UX de permissão — atrito repetido vira abandono.',
+      d.friction.toolDenials)
   }
   if (d.latency.count >= 5 && d.latency.p95Ms >= 30000) {
-    notes.push(`Latência alta: p95 ${Math.round(d.latency.p95Ms / 1000)}s em ${d.latency.count} turnos.`)
+    add('high-latency', 'info', 'Latência alta',
+      `p95 ${Math.round(d.latency.p95Ms / 1000)}s em ${d.latency.count} turnos`,
+      'Cruzar com o perfil de geração para ver qual fase domina.')
   }
-  const usedFeatures = Object.keys(d.featureUsage).length
-  if (usedFeatures > 0) {
-    const top = Object.entries(d.featureUsage).sort((a, b) => b[1] - a[1])[0]
-    notes.push(`Feature mais usada: "${top[0]}" (${top[1]}×).`)
+  const topFeature = Object.entries(d.featureUsage).sort((a, b) => b[1] - a[1])[0]
+  if (topFeature) {
+    add('top-feature', 'info', `Feature mais usada: "${topFeature[0]}"`,
+      `${topFeature[1]}× na janela`,
+      'Área de maior valor percebido — priorizar polimento aqui.')
   }
   const topTool = Object.entries(d.toolUsage).sort((a, b) => b[1] - a[1])[0]
   if (topTool && topTool[1] >= 3) {
-    notes.push(`Tool mais usada: "${topTool[0]}" (${topTool[1]}×) — área de maior uso real.`)
+    add('top-tool', 'info', `Tool mais usada: "${topTool[0]}"`,
+      `${topTool[1]}× na janela`,
+      'Área de maior uso real — otimizações aqui têm o maior alcance.')
   }
-  return notes
+
+  return findings.sort((a, b) => b.score - a.score)
+}
+
+/** Renderiza um finding como linha de texto (alimenta `notes` e o .md). */
+export function renderFinding(f: Finding): string {
+  return `${f.title} — ${f.evidence}. ${f.recommendation}`
 }
 
 /** Aggregate raw events into a small, readable digest over the last
@@ -420,7 +515,8 @@ export function summarizeInsights(
     versionMix,
     comparison: compareVersionSegments(recent, now),
   }
-  return { ...base, notes: buildNotes(base) }
+  const findings = buildFindings(base)
+  return { ...base, findings, notes: findings.map(renderFinding) }
 }
 
 function computeLatency(ms: number[]): InsightsDigest['latency'] {
@@ -501,9 +597,10 @@ export function formatInsightsReport(d: InsightsDigest): string {
   if (d.latency.count > 0) {
     lines.push(`## Latência`, `- amostras: ${d.latency.count} · média: ${d.latency.avgMs}ms · p95: ${d.latency.p95Ms}ms`, ``)
   }
-  if (d.notes.length) {
-    lines.push(`## Notas`)
-    for (const n of d.notes) lines.push(`- ${n}`)
+  if (d.findings.length) {
+    const icon: Record<FindingSeverity, string> = { critical: '🔴', warning: '🟡', info: '🔵' }
+    lines.push(`## Achados (por impacto)`)
+    for (const f of d.findings) lines.push(`- ${icon[f.severity]} ${renderFinding(f)}`)
     lines.push(``)
   }
   return lines.join('\n')

@@ -334,3 +334,71 @@ describe('compareVersionSegments — o que mudou entre versões', () => {
     expect(d.notes.some((n) => /regressão/.test(n))).toBe(true)
   })
 })
+
+describe('motor de findings — severidade, ranking e recomendação', () => {
+  const now = 1_700_000_000_000
+  const at = (minAgo: number) => now - minAgo * 60_000
+
+  it('ranqueia por impacto: crítico > aviso > informativo', () => {
+    const events: InsightEvent[] = [
+      // zumbi (critical): turno com id sem complete + turno mais novo depois
+      { t: at(300), c: 'chat', a: 'turn', m: { provider: 'x', model: 'y', turn: 'morto' } },
+      { t: at(100), c: 'chat', a: 'turn', m: { provider: 'x', model: 'y', turn: 'vivo' } },
+      { t: at(99), c: 'chat', a: 'complete', m: { ms: 10, turn: 'vivo', outcome: 'ok' } },
+      // erro frequente (warning)
+      ...Array.from({ length: 3 }, (): InsightEvent => ({ t: at(50), c: 'error', a: 'timeout' })),
+      // tool mais usada (info)
+      ...Array.from({ length: 3 }, (): InsightEvent => ({ t: at(40), c: 'tool', a: 'use', m: { name: 'web_search' } })),
+    ]
+    const d = summarizeInsights(events, 30, now)
+    const ids = d.findings.map((f) => f.id)
+    expect(ids[0]).toBe('zombie-turns')
+    expect(ids.indexOf('frequent-error')).toBeLessThan(ids.indexOf('top-tool'))
+    expect(d.findings[0].severity).toBe('critical')
+  })
+
+  it('recomendação específica por categoria de erro', () => {
+    const mk = (kind: string) => summarizeInsights(
+      Array.from({ length: 3 }, (): InsightEvent => ({ t: now - 1000, c: 'error', a: kind })), 30, now)
+    expect(mk('timeout').findings.find((f) => f.id === 'frequent-error')!.recommendation).toMatch(/watchdog|timeout/i)
+    expect(mk('auth').findings.find((f) => f.id === 'frequent-error')!.recommendation).toMatch(/credencia/i)
+    expect(mk('unknown').findings.find((f) => f.id === 'frequent-error')!.recommendation).toMatch(/providerErrors/i)
+    expect(mk('inedito').findings.find((f) => f.id === 'frequent-error')!.recommendation).toMatch(/Investigar/i)
+  })
+
+  it('todo finding tem evidência e recomendação; notes deriva 1:1 dos findings', () => {
+    const events: InsightEvent[] = [
+      ...Array.from({ length: 5 }, (): InsightEvent => ({ t: now - 1000, c: 'context', a: 'compaction' })),
+      ...Array.from({ length: 3 }, (): InsightEvent => ({ t: now - 1000, c: 'chat', a: 'empty_reply' })),
+    ]
+    const d = summarizeInsights(events, 30, now)
+    expect(d.findings.length).toBeGreaterThan(0)
+    for (const f of d.findings) {
+      expect(f.evidence.length).toBeGreaterThan(0)
+      expect(f.recommendation.length).toBeGreaterThan(0)
+      expect(['critical', 'warning', 'info']).toContain(f.severity)
+    }
+    expect(d.notes).toHaveLength(d.findings.length)
+    expect(d.notes[0]).toContain(d.findings[0].title)
+  })
+
+  it('relatório .md traz os achados com ícone de severidade', () => {
+    const events: InsightEvent[] = [
+      { t: at(300), c: 'chat', a: 'turn', m: { provider: 'x', model: 'y', turn: 'morto' } },
+      { t: at(100), c: 'chat', a: 'turn', m: { provider: 'x', model: 'y', turn: 'vivo' } },
+      { t: at(99), c: 'chat', a: 'complete', m: { ms: 10, turn: 'vivo', outcome: 'ok' } },
+    ]
+    const md = formatInsightsReport(summarizeInsights(events, 30, now))
+    expect(md).toContain('## Achados (por impacto)')
+    expect(md).toContain('🔴')
+    expect(md).toContain('Turnos zumbis')
+  })
+
+  it('sem sinais → sem findings (não inventa achado sem evidência)', () => {
+    const d = summarizeInsights([
+      { t: now - 1000, c: 'chat', a: 'turn', m: { provider: 'x', model: 'y', turn: 'a' } },
+      { t: now - 500, c: 'chat', a: 'complete', m: { ms: 10, turn: 'a', outcome: 'ok' } },
+    ], 30, now)
+    expect(d.findings.filter((f) => f.severity !== 'info')).toHaveLength(0)
+  })
+})

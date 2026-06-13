@@ -193,12 +193,28 @@ export default function DevInsightsPanel({ isOpen, onClose, language }: Props) {
                   <div style={rowStyle}><span>p95</span><strong>{digest.latency.p95Ms}ms</strong></div>
                 </div>
               )}
-              {digest.notes.length > 0 && (
+              {digest.findings.length > 0 && (
                 <div style={sectionStyle}>
-                  <h3 style={{ fontSize: 13, opacity: 0.7, margin: '0 0 6px' }}>{pt ? 'Notas' : 'Notes'}</h3>
-                  {digest.notes.map((n, i) => (
-                    <p key={i} style={{ fontSize: 12, margin: '4px 0', opacity: 0.85 }}>• {n}</p>
-                  ))}
+                  <h3 style={{ fontSize: 13, opacity: 0.7, margin: '0 0 6px' }}>
+                    {pt ? 'Achados (por impacto)' : 'Findings (by impact)'}
+                  </h3>
+                  {digest.findings.map((f) => {
+                    const color = f.severity === 'critical' ? 'var(--error, #e5484d)'
+                      : f.severity === 'warning' ? '#f5a524'
+                      : 'var(--text-secondary, #888)'
+                    return (
+                      <div key={f.id} style={{ margin: '0 0 10px', fontSize: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{
+                            width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0,
+                          }} aria-label={f.severity} title={f.severity} />
+                          <strong>{f.title}</strong>
+                        </div>
+                        <div style={{ opacity: 0.85, margin: '2px 0 0 14px' }}>{f.evidence}</div>
+                        <div style={{ opacity: 0.65, margin: '1px 0 0 14px', fontStyle: 'italic' }}>→ {f.recommendation}</div>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </>
