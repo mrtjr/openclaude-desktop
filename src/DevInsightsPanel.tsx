@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { X, LineChart, Trash2, Download, ChevronDown, ChevronRight, CornerDownRight } from 'lucide-react'
+import { X, LineChart, Trash2, Download, ChevronDown, ChevronRight, CornerDownRight, Sparkles, Loader2 } from 'lucide-react'
 import {
   summarizeInsights,
   formatInsightsReport,
@@ -8,11 +8,16 @@ import {
   type InsightEvent,
   type InsightsDigest,
 } from './services/devInsights'
+import { runInsightsAnalysis } from './services/insightsAnalysis'
+import type { CompactionProviderConfig } from './services/compaction'
+import { formatMarkdown } from './utils/formatting'
 
 interface Props {
   isOpen: boolean
   onClose: () => void
   language: 'pt' | 'en'
+  /** Provider configurado — usado pela auto-análise (v2.18.0). */
+  providerConfig: CompactionProviderConfig
 }
 
 const rowStyle: React.CSSProperties = {
@@ -38,13 +43,15 @@ function eventTime(t: number, now: number): string {
   return sameDay ? hms : `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} ${hms}`
 }
 
-export default function DevInsightsPanel({ isOpen, onClose, language }: Props) {
+export default function DevInsightsPanel({ isOpen, onClose, language, providerConfig }: Props) {
   const [events, setEvents] = useState<InsightEvent[]>([])
   const [loading, setLoading] = useState(false)
   // Drill-down ativo: finding expandido e/ou timeline de turno aberta a
   // partir de um evento (sel é a fonte; turnSel sobrepõe quando navegado).
   const [openDrill, setOpenDrill] = useState<string | null>(null)
   const [turnDrill, setTurnDrill] = useState<{ from: string; id: string } | null>(null)
+  // Auto-análise pelo modelo configurado (v2.18.0).
+  const [analysis, setAnalysis] = useState<{ status: 'idle' | 'running' | 'done' | 'error'; text: string }>({ status: 'idle', text: '' })
   const pt = language === 'pt'
 
   useEffect(() => {
@@ -52,6 +59,7 @@ export default function DevInsightsPanel({ isOpen, onClose, language }: Props) {
     setLoading(true)
     setOpenDrill(null)
     setTurnDrill(null)
+    setAnalysis({ status: 'idle', text: '' })
     window.electron.devInsightsLoad()
       .then((e) => setEvents(Array.isArray(e) ? e : []))
       .catch(() => setEvents([]))
@@ -68,7 +76,19 @@ export default function DevInsightsPanel({ isOpen, onClose, language }: Props) {
       filters: [{ name: 'Markdown', extensions: ['md'] }],
     })
     if (!result.filePath) return
-    await window.electron.writeFile({ filePath: result.filePath, content: formatInsightsReport(digest) })
+    // A análise da IA (quando rodou) vai junto no export.
+    const analysisSection = analysis.status === 'done'
+      ? `\n\n# Análise da IA (${providerConfig.model})\n\n${analysis.text}\n`
+      : ''
+    await window.electron.writeFile({ filePath: result.filePath, content: formatInsightsReport(digest) + analysisSection })
+  }
+
+  const handleAnalyze = async () => {
+    if (analysis.status === 'running') return
+    setAnalysis({ status: 'running', text: '' })
+    const { report, error } = await runInsightsAnalysis(providerConfig, digest, events, language)
+    if (error) setAnalysis({ status: 'error', text: error })
+    else setAnalysis({ status: 'done', text: report })
   }
 
   const handleClear = async () => {
@@ -124,6 +144,28 @@ export default function DevInsightsPanel({ isOpen, onClose, language }: Props) {
               <p style={{ fontSize: 12, opacity: 0.6, marginTop: 0 }}>
                 {digest.totalEvents} {pt ? 'eventos' : 'events'} · {pt ? 'janela' : 'window'} {digest.windowDays}d
               </p>
+              {analysis.status !== 'idle' && (
+                <div style={{
+                  ...sectionStyle, padding: '10px 12px', borderRadius: 8,
+                  background: 'rgba(127,127,127,0.07)', border: '1px solid rgba(127,127,127,0.18)',
+                }}>
+                  <h3 style={{ fontSize: 13, opacity: 0.8, margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Sparkles size={13} /> {pt ? `Análise da IA (${providerConfig.model})` : `AI analysis (${providerConfig.model})`}
+                  </h3>
+                  {analysis.status === 'running' && (
+                    <p style={{ fontSize: 12, opacity: 0.6, display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
+                      <Loader2 size={12} className="spin" /> {pt ? 'analisando a telemetria…' : 'analyzing telemetry…'}
+                    </p>
+                  )}
+                  {analysis.status === 'error' && (
+                    <p style={{ fontSize: 12, margin: 0, color: 'var(--error, #e5484d)' }}>{analysis.text}</p>
+                  )}
+                  {analysis.status === 'done' && (
+                    <div className="message-text" style={{ fontSize: 12.5 }}
+                         dangerouslySetInnerHTML={{ __html: formatMarkdown(analysis.text, false) }} />
+                  )}
+                </div>
+              )}
               <Section title={pt ? 'Erros por categoria' : 'Errors by kind'} rec={digest.errorsByKind} />
               <Section title={pt ? 'Features usadas' : 'Feature usage'} rec={digest.featureUsage} />
               <Section title={pt ? 'Tools' : 'Tools'} rec={digest.toolUsage} />
@@ -296,6 +338,12 @@ export default function DevInsightsPanel({ isOpen, onClose, language }: Props) {
         </div>
 
         <div style={{ display: 'flex', gap: 8, padding: '12px 20px', borderTop: '1px solid rgba(127,127,127,0.15)' }}>
+          <button className="settings-close" style={{ display: 'flex', alignItems: 'center', gap: 6, width: 'auto', padding: '6px 12px' }}
+                  onClick={handleAnalyze} disabled={digest.totalEvents === 0 || analysis.status === 'running'}
+                  title={pt ? 'Envia o digest + amostra de eventos (sem conteúdo de mensagens) ao modelo configurado' : 'Sends the digest + event sample (no message content) to the configured model'}>
+            {analysis.status === 'running' ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
+            {pt ? 'Analisar com IA' : 'Analyze with AI'}
+          </button>
           <button className="settings-close" style={{ display: 'flex', alignItems: 'center', gap: 6, width: 'auto', padding: '6px 12px' }}
                   onClick={handleExport} disabled={digest.totalEvents === 0}>
             <Download size={14} /> {pt ? 'Exportar .md' : 'Export .md'}

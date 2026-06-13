@@ -1229,7 +1229,7 @@ export default function App() {
          Saves ~1MB from initial bundle. Fallback is minimal (modals load fast). */}
       <Suspense fallback={<div className="lazy-panel-fallback" role="status" aria-label="Carregando painel"><Loader2 size={20} className="spin" /></div>}>
         {showAnalytics && <AnalyticsDashboard isOpen={showAnalytics} onClose={() => setShowAnalytics(false)} language={settings.language} />}
-        {showDevInsights && <DevInsightsPanel isOpen={showDevInsights} onClose={() => setShowDevInsights(false)} language={settings.language} />}
+        {showDevInsights && <DevInsightsPanel isOpen={showDevInsights} onClose={() => setShowDevInsights(false)} language={settings.language} providerConfig={providerConfig} />}
         {editingProject && <ProjectEditModal project={editingProject} onSave={handleSaveProject} onClose={() => setEditingProject(null)} />}
         {openArtifact && (
           <Suspense fallback={null}>

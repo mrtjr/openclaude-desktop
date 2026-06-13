@@ -7,6 +7,25 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.18.0] — 2026-06-12
+
+### Added — Dev Insights ciclo 5 (final do plano): auto-análise pelo modelo configurado
+
+Opção 5 — o app analisa a si mesmo. Botão "Analisar com IA" no painel envia o
+digest formatado + amostra dos 120 eventos mais recentes (apenas metadados —
+nunca conteúdo de mensagens, garantido por construção da telemetria) ao
+provider configurado e exibe um relatório narrativo.
+
+- **`services/insightsAnalysis.ts`**: prompt builder puro com seções
+  obrigatórias (Diagnóstico, Top 3 prioridades com evidência numérica,
+  Hipóteses, Próximo ciclo sugerido, Monitorar) e regras anti-alucinação
+  ("cite números reais; não invente; declare amostra insuficiente").
+- Mesma arquitetura da compactação cloud: roteado pelo `provider-chat` /
+  `ollama-chat` não-streaming (ambos OpenAI-shaped); nunca lança.
+- Resultado renderizado em markdown no topo do painel; o "Exportar .md"
+  inclui a análise quando ela rodou.
+- 5 testes novos (577 no total). Fecha o plano de 5 ciclos do Dev Insights.
+
 ## [2.17.0] — 2026-06-12
 
 ### Added — Dev Insights ciclo 4: drill-down (do achado à timeline dos eventos)
