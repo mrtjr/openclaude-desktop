@@ -67,6 +67,17 @@ export interface InsightsDigest {
 
 export type FindingSeverity = 'critical' | 'warning' | 'info'
 
+/** Seletor de drill-down (v2.17.0): descreve quais eventos sustentam um
+ *  achado, para o painel abrir a timeline por trás do número. */
+export type DrillSelector =
+  | { type: 'errors'; kind?: string; v?: string }
+  | { type: 'zombie-turns' }
+  | { type: 'action'; c: InsightCategory; a: string }
+  | { type: 'tool'; name: string }
+  | { type: 'feature'; name: string }
+  | { type: 'long-tool-assemblies' }
+  | { type: 'turn'; id: string }
+
 export interface Finding {
   /** Chave estável do tipo de achado (ex.: 'zombie-turns', 'error-regression'). */
   id: string
@@ -78,6 +89,59 @@ export interface Finding {
   recommendation: string
   /** Ranking de impacto (maior = mais urgente). */
   score: number
+  /** Quando presente, o painel permite abrir os eventos por trás do achado. */
+  drill?: DrillSelector
+}
+
+/** Resolve um seletor de drill-down para os eventos que o sustentam —
+ *  mais novos primeiro, limitado a `cap`. Pure (`now` injetável). */
+export function drillEvents(
+  events: InsightEvent[],
+  sel: DrillSelector,
+  now: number = Date.now(),
+  cap = 50,
+): InsightEvent[] {
+  let match: (e: InsightEvent) => boolean
+  switch (sel.type) {
+    case 'errors':
+      match = (e) => e.c === 'error'
+        && (sel.kind === undefined || e.a === sel.kind)
+        && (sel.v === undefined || e.m?.v === sel.v)
+      break
+    case 'action':
+      match = (e) => e.c === sel.c && e.a === sel.a
+      break
+    case 'tool':
+      match = (e) => e.c === 'tool' && e.a === 'use' && e.m?.name === sel.name
+      break
+    case 'feature':
+      match = (e) => e.c === 'feature' && e.a === 'open' && e.m?.feature === sel.name
+      break
+    case 'long-tool-assemblies':
+      match = (e) => e.c === 'chat' && e.a === 'stream_profile'
+        && typeof e.m?.toolMs === 'number' && e.m.toolMs >= LONG_TOOL_ASSEMBLY_MS
+      break
+    case 'turn':
+      // Timeline completa do turno: tudo que ele fez, em ordem.
+      match = (e) => e.m?.turn === sel.id
+      break
+    case 'zombie-turns': {
+      // Mesma semântica do digest: turno com id, sem complete, e (turno mais
+      // novo existe OU passou da idade).
+      const completedIds = new Set<string>()
+      let lastTurnStartT = 0
+      for (const e of events) {
+        if (e.c !== 'chat') continue
+        if (e.a === 'complete' && typeof e.m?.turn === 'string') completedIds.add(e.m.turn)
+        else if (e.a === 'turn' && e.t > lastTurnStartT) lastTurnStartT = e.t
+      }
+      match = (e) => e.c === 'chat' && e.a === 'turn'
+        && typeof e.m?.turn === 'string' && !completedIds.has(e.m.turn)
+        && (e.t < lastTurnStartT || now - e.t > ZOMBIE_AGE_MS)
+      break
+    }
+  }
+  return events.filter(match).sort((a, b) => b.t - a.t).slice(0, cap)
 }
 
 const SEVERITY_BASE: Record<FindingSeverity, number> = { critical: 100, warning: 50, info: 10 }
@@ -290,15 +354,15 @@ function bump(rec: Record<string, number>, key: string): void {
 
 export function buildFindings(d: Omit<InsightsDigest, 'notes' | 'findings'>): Finding[] {
   const findings: Finding[] = []
-  const add = (id: string, severity: FindingSeverity, title: string, evidence: string, recommendation: string, bonus = 0) =>
-    findings.push({ id, severity, title, evidence, recommendation, score: SEVERITY_BASE[severity] + bonus })
+  const add = (id: string, severity: FindingSeverity, title: string, evidence: string, recommendation: string, bonus = 0, drill?: DrillSelector) =>
+    findings.push({ id, severity, title, evidence, recommendation, score: SEVERITY_BASE[severity] + bonus, ...(drill ? { drill } : {}) })
 
   // ── Críticos ──
   if (d.turns.zombies > 0) {
     add('zombie-turns', 'critical', 'Turnos zumbis',
       `${d.turns.zombies} turno(s) zumbi — começaram e nunca registraram desfecho`,
       'Investigar stream preso, crash ou app fechado no meio — conferir watchdog e logs do main.',
-      d.turns.zombies * 5)
+      d.turns.zombies * 5, { type: 'zombie-turns' })
   }
   if (d.comparison) {
     const { current: cur, previous: prev, newErrorKinds, resolvedErrorKinds } = d.comparison
@@ -306,13 +370,13 @@ export function buildFindings(d: Omit<InsightsDigest, 'notes' | 'findings'>): Fi
       add('error-regression', 'critical', `Possível regressão na ${cur.v}`,
         `taxa de erro subiu de ${prev.errorRate} para ${cur.errorRate}/turno vs ${prev.v}`,
         `Revisar o que mudou na ${cur.v}; começar pelos erros novos se houver.`,
-        20)
+        20, { type: 'errors', v: cur.v })
     }
     if (newErrorKinds.length > 0) {
       add('new-error-kinds', 'warning', `Erro(s) novo(s) na ${cur.v}`,
         `${newErrorKinds.join(', ')} — não existiam na ${prev.v}`,
         `Conferir as mudanças da ${cur.v} relacionadas a essas categorias.`,
-        newErrorKinds.length * 5)
+        newErrorKinds.length * 5, { type: 'errors', v: cur.v })
     }
     if (prev.errorRate > 0 && cur.errorRate <= prev.errorRate * 0.5) {
       add('error-improvement', 'info', `Melhora desde a ${prev.v}`,
@@ -340,39 +404,39 @@ export function buildFindings(d: Omit<InsightsDigest, 'notes' | 'findings'>): Fi
       add('tool-assembly-dominant', 'warning', 'Montagem de tool call domina a geração',
         `montagem de tool call consome ${toolPct}% do tempo de geração (${d.streamShare.samples} amostras)`,
         'Candidata: tool de edição por trecho em vez de write_file inteiro.',
-        toolPct - 40)
+        toolPct - 40, { type: 'action', c: 'chat', a: 'stream_profile' })
     }
     if (reasonPct >= 50) {
       add('reasoning-dominant', 'warning', 'Raciocínio domina a geração',
         `raciocínio consome ${reasonPct}% do tempo de geração`,
         'Avaliar limite de thinking ou modelo mais direto para tarefas simples.',
-        reasonPct - 50)
+        reasonPct - 50, { type: 'action', c: 'chat', a: 'stream_profile' })
     }
   }
   if (d.streamShare.longToolAssemblies >= 2) {
     add('long-tool-assemblies', 'warning', 'Montagens de tool call muito longas',
       `${d.streamShare.longToolAssemblies} passo(s) com 5+ min só montando tool call`,
       'Turnos "parados" que parecem travamento — reforça a tool de edição por trecho.',
-      d.streamShare.longToolAssemblies * 3)
+      d.streamShare.longToolAssemblies * 3, { type: 'long-tool-assemblies' })
   }
   const topError = Object.entries(d.errorsByKind).sort((a, b) => b[1] - a[1])[0]
   if (topError && topError[1] >= 3) {
     add('frequent-error', 'warning', `Erro mais frequente: "${topError[0]}"`,
       `${topError[1]}× na janela`,
       ERROR_KIND_RECOMMENDATION[topError[0]] ?? 'Investigar a categoria — bom candidato a próximo ciclo.',
-      topError[1] * 2)
+      topError[1] * 2, { type: 'errors', kind: topError[0] })
   }
   if (d.friction.circuitBreaks >= 3) {
     add('circuit-breaks', 'warning', 'Circuit-breaks recorrentes',
       `${d.friction.circuitBreaks} disparos na janela`,
       'Possíveis loops de agente — revisar prompts/política dos casos que repetem.',
-      d.friction.circuitBreaks)
+      d.friction.circuitBreaks, { type: 'action', c: 'agent', a: 'circuit_break' })
   }
   if (d.friction.emptyReplies >= 3) {
     add('empty-replies', 'warning', 'Respostas vazias frequentes',
       `${d.friction.emptyReplies} na janela`,
       'Modelo/provider problemático — cruzar com o mix de modelos.',
-      d.friction.emptyReplies)
+      d.friction.emptyReplies, { type: 'action', c: 'chat', a: 'empty_reply' })
   }
 
   // ── Informativos ──
@@ -380,30 +444,33 @@ export function buildFindings(d: Omit<InsightsDigest, 'notes' | 'findings'>): Fi
     add('context-pressure', 'info', 'Pressão de contexto alta',
       `${d.friction.contextCompactions} compactações na janela`,
       'Revisar limites de contexto do modelo ou a agressividade da compactação.',
-      d.friction.contextCompactions)
+      d.friction.contextCompactions, { type: 'action', c: 'context', a: 'compaction' })
   }
   if (d.friction.toolDenials >= 3) {
     add('tool-denials', 'info', 'Muitas tools negadas',
       `${d.friction.toolDenials} negações`,
       'Revisar gating/UX de permissão — atrito repetido vira abandono.',
-      d.friction.toolDenials)
+      d.friction.toolDenials, { type: 'action', c: 'tool', a: 'denied' })
   }
   if (d.latency.count >= 5 && d.latency.p95Ms >= 30000) {
     add('high-latency', 'info', 'Latência alta',
       `p95 ${Math.round(d.latency.p95Ms / 1000)}s em ${d.latency.count} turnos`,
-      'Cruzar com o perfil de geração para ver qual fase domina.')
+      'Cruzar com o perfil de geração para ver qual fase domina.',
+      0, { type: 'action', c: 'chat', a: 'complete' })
   }
   const topFeature = Object.entries(d.featureUsage).sort((a, b) => b[1] - a[1])[0]
   if (topFeature) {
     add('top-feature', 'info', `Feature mais usada: "${topFeature[0]}"`,
       `${topFeature[1]}× na janela`,
-      'Área de maior valor percebido — priorizar polimento aqui.')
+      'Área de maior valor percebido — priorizar polimento aqui.',
+      0, { type: 'feature', name: topFeature[0] })
   }
   const topTool = Object.entries(d.toolUsage).sort((a, b) => b[1] - a[1])[0]
   if (topTool && topTool[1] >= 3) {
     add('top-tool', 'info', `Tool mais usada: "${topTool[0]}"`,
       `${topTool[1]}× na janela`,
-      'Área de maior uso real — otimizações aqui têm o maior alcance.')
+      'Área de maior uso real — otimizações aqui têm o maior alcance.',
+      0, { type: 'tool', name: topTool[0] })
   }
 
   return findings.sort((a, b) => b.score - a.score)

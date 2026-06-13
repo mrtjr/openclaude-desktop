@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { X, LineChart, Trash2, Download } from 'lucide-react'
+import { X, LineChart, Trash2, Download, ChevronDown, ChevronRight, CornerDownRight } from 'lucide-react'
 import {
   summarizeInsights,
   formatInsightsReport,
+  drillEvents,
+  type DrillSelector,
   type InsightEvent,
   type InsightsDigest,
 } from './services/devInsights'
@@ -22,14 +24,34 @@ const sectionStyle: React.CSSProperties = { marginBottom: 16 }
 /** Read-only view of the privacy-safe usage telemetry (Dev Insights). Loads
  *  the raw events, aggregates with summarizeInsights, and lets the user export
  *  a Markdown report or clear the data. */
+// Renderização compacta do meta de um evento na timeline ("name=write_file ms=380").
+const META_KEYS = ['name', 'feature', 'kind', 'outcome', 'ms', 'totalMs', 'steps', 'step', 'waitMs', 'reasoningMs', 'toolMs', 'contentMs', 'provider', 'model', 'v'] as const
+function metaSummary(m?: InsightEvent['m']): string {
+  if (!m) return ''
+  return META_KEYS.filter((k) => m[k] !== undefined).map((k) => `${k}=${m[k]}`).join(' · ')
+}
+
+function eventTime(t: number, now: number): string {
+  const d = new Date(t)
+  const sameDay = new Date(now).toDateString() === d.toDateString()
+  const hms = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return sameDay ? hms : `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} ${hms}`
+}
+
 export default function DevInsightsPanel({ isOpen, onClose, language }: Props) {
   const [events, setEvents] = useState<InsightEvent[]>([])
   const [loading, setLoading] = useState(false)
+  // Drill-down ativo: finding expandido e/ou timeline de turno aberta a
+  // partir de um evento (sel é a fonte; turnSel sobrepõe quando navegado).
+  const [openDrill, setOpenDrill] = useState<string | null>(null)
+  const [turnDrill, setTurnDrill] = useState<{ from: string; id: string } | null>(null)
   const pt = language === 'pt'
 
   useEffect(() => {
     if (!isOpen) return
     setLoading(true)
+    setOpenDrill(null)
+    setTurnDrill(null)
     window.electron.devInsightsLoad()
       .then((e) => setEvents(Array.isArray(e) ? e : []))
       .catch(() => setEvents([]))
@@ -202,16 +224,68 @@ export default function DevInsightsPanel({ isOpen, onClose, language }: Props) {
                     const color = f.severity === 'critical' ? 'var(--error, #e5484d)'
                       : f.severity === 'warning' ? '#f5a524'
                       : 'var(--text-secondary, #888)'
+                    const isOpen = openDrill === f.id
+                    const inTurnView = isOpen && turnDrill?.from === f.id
+                    const sel: DrillSelector | undefined = inTurnView ? { type: 'turn', id: turnDrill!.id } : f.drill
+                    const drilled = isOpen && sel ? drillEvents(events, sel, Date.now()) : []
                     return (
                       <div key={f.id} style={{ margin: '0 0 10px', fontSize: 12 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: f.drill ? 'pointer' : 'default' }}
+                          onClick={() => {
+                            if (!f.drill) return
+                            setTurnDrill(null)
+                            setOpenDrill(isOpen ? null : f.id)
+                          }}
+                          title={f.drill ? (pt ? 'Clique para ver os eventos por trás' : 'Click to see the events behind this') : undefined}
+                        >
                           <span style={{
                             width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0,
                           }} aria-label={f.severity} title={f.severity} />
                           <strong>{f.title}</strong>
+                          {f.drill && (isOpen ? <ChevronDown size={12} style={{ opacity: 0.6 }} /> : <ChevronRight size={12} style={{ opacity: 0.6 }} />)}
                         </div>
                         <div style={{ opacity: 0.85, margin: '2px 0 0 14px' }}>{f.evidence}</div>
                         <div style={{ opacity: 0.65, margin: '1px 0 0 14px', fontStyle: 'italic' }}>→ {f.recommendation}</div>
+                        {isOpen && (
+                          <div style={{
+                            margin: '6px 0 0 14px', padding: '6px 8px', borderRadius: 6,
+                            background: 'rgba(127,127,127,0.07)', border: '1px solid rgba(127,127,127,0.15)',
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, opacity: 0.7 }}>
+                              {inTurnView ? (
+                                <>
+                                  <button
+                                    onClick={() => setTurnDrill(null)}
+                                    style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 11, textDecoration: 'underline' }}
+                                  >← {pt ? 'voltar' : 'back'}</button>
+                                  <span>{pt ? `timeline do turno ${turnDrill!.id}` : `turn ${turnDrill!.id} timeline`}</span>
+                                </>
+                              ) : (
+                                <span>{pt ? 'eventos por trás do achado' : 'events behind this finding'}{drilled.length === 50 ? (pt ? ' (50 mais recentes)' : ' (50 most recent)') : ''}</span>
+                              )}
+                            </div>
+                            {drilled.length === 0 && (
+                              <div style={{ opacity: 0.6 }}>{pt ? 'nenhum evento na janela' : 'no events in window'}</div>
+                            )}
+                            {drilled.map((e, i) => (
+                              <div key={i} style={{ display: 'flex', gap: 8, padding: '2px 0', fontFamily: 'monospace', fontSize: 11, alignItems: 'baseline' }}>
+                                <span style={{ opacity: 0.55, flexShrink: 0 }}>{eventTime(e.t, Date.now())}</span>
+                                <span style={{ flexShrink: 0 }}>[{e.c}/{e.a}]</span>
+                                <span style={{ opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{metaSummary(e.m)}</span>
+                                {!inTurnView && typeof e.m?.turn === 'string' && (
+                                  <button
+                                    onClick={() => setTurnDrill({ from: f.id, id: e.m!.turn as string })}
+                                    title={pt ? 'Ver tudo que este turno fez' : 'See everything this turn did'}
+                                    style={{ background: 'none', border: 'none', color: 'var(--accent, #6e9eff)', cursor: 'pointer', padding: 0, fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0 }}
+                                  >
+                                    <CornerDownRight size={10} /> {pt ? 'ver turno' : 'view turn'}
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )
                   })}

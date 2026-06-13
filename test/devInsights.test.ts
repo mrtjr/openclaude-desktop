@@ -10,6 +10,7 @@ import {
   bumpInsightStep,
   endInsightTurn,
   compareVersionSegments,
+  drillEvents,
   type InsightCategory,
   type InsightEvent,
 } from '../src/services/devInsights'
@@ -400,5 +401,66 @@ describe('motor de findings — severidade, ranking e recomendação', () => {
       { t: now - 500, c: 'chat', a: 'complete', m: { ms: 10, turn: 'a', outcome: 'ok' } },
     ], 30, now)
     expect(d.findings.filter((f) => f.severity !== 'info')).toHaveLength(0)
+  })
+})
+
+describe('drillEvents — timeline por trás de um achado', () => {
+  const now = 1_700_000_000_000
+  const at = (minAgo: number) => now - minAgo * 60_000
+  const base: InsightEvent[] = [
+    { t: at(300), c: 'chat', a: 'turn', m: { provider: 'modal', model: 'glm', turn: 'morto', v: '2.14.0' } },
+    { t: at(299), c: 'tool', a: 'use', m: { name: 'web_search', turn: 'morto', step: 1 } },
+    { t: at(298), c: 'tool', a: 'use', m: { name: 'write_file', turn: 'morto', step: 2 } },
+    { t: at(100), c: 'chat', a: 'turn', m: { provider: 'modal', model: 'glm', turn: 'vivo', v: '2.15.0' } },
+    { t: at(99), c: 'error', a: 'timeout', m: { turn: 'vivo', v: '2.15.0' } },
+    { t: at(98), c: 'error', a: 'auth', m: { turn: 'vivo', v: '2.15.0' } },
+    { t: at(97), c: 'chat', a: 'complete', m: { ms: 10, turn: 'vivo', outcome: 'ok', v: '2.15.0' } },
+    { t: at(50), c: 'chat', a: 'stream_profile', m: { waitMs: 0, reasoningMs: 0, toolMs: 400_000, contentMs: 100 } },
+    { t: at(40), c: 'chat', a: 'stream_profile', m: { waitMs: 0, reasoningMs: 0, toolMs: 100, contentMs: 100 } },
+  ]
+
+  it('errors: filtra por kind e por versão', () => {
+    expect(drillEvents(base, { type: 'errors', kind: 'timeout' }, now)).toHaveLength(1)
+    expect(drillEvents(base, { type: 'errors', v: '2.15.0' }, now)).toHaveLength(2)
+    expect(drillEvents(base, { type: 'errors', kind: 'auth', v: '2.14.0' }, now)).toHaveLength(0)
+  })
+
+  it('turn: devolve a timeline completa do turno, mais novo primeiro', () => {
+    const tl = drillEvents(base, { type: 'turn', id: 'morto' }, now)
+    expect(tl.map((e) => `${e.c}/${e.a}`)).toEqual(['tool/use', 'tool/use', 'chat/turn'])
+    expect(tl[0].m?.name).toBe('write_file') // o último ato antes de morrer
+  })
+
+  it('zombie-turns: devolve só os turnos sem desfecho (mesma semântica do digest)', () => {
+    const z = drillEvents(base, { type: 'zombie-turns' }, now)
+    expect(z).toHaveLength(1)
+    expect(z[0].m?.turn).toBe('morto')
+  })
+
+  it('long-tool-assemblies: só perfis com 5+ min de montagem', () => {
+    const l = drillEvents(base, { type: 'long-tool-assemblies' }, now)
+    expect(l).toHaveLength(1)
+    expect(l[0].m?.toolMs).toBe(400_000)
+  })
+
+  it('tool/feature/action: filtros simples por nome e ação', () => {
+    expect(drillEvents(base, { type: 'tool', name: 'web_search' }, now)).toHaveLength(1)
+    expect(drillEvents(base, { type: 'action', c: 'chat', a: 'stream_profile' }, now)).toHaveLength(2)
+  })
+
+  it('respeita o cap e ordena do mais novo para o mais antigo', () => {
+    const many: InsightEvent[] = Array.from({ length: 80 }, (_, i) => ({ t: at(80 - i), c: 'error', a: 'timeout' }))
+    const r = drillEvents(many, { type: 'errors' }, now)
+    expect(r).toHaveLength(50)
+    expect(r[0].t).toBeGreaterThan(r[49].t)
+  })
+
+  it('findings carregam o seletor de drill correspondente', () => {
+    const d = summarizeInsights([
+      ...base,
+      ...Array.from({ length: 3 }, (): InsightEvent => ({ t: at(10), c: 'error', a: 'timeout' })),
+    ], 30, now)
+    expect(d.findings.find((f) => f.id === 'zombie-turns')?.drill).toEqual({ type: 'zombie-turns' })
+    expect(d.findings.find((f) => f.id === 'frequent-error')?.drill).toEqual({ type: 'errors', kind: 'timeout' })
   })
 })

@@ -7,6 +7,26 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.17.0] — 2026-06-12
+
+### Added — Dev Insights ciclo 4: drill-down (do achado à timeline dos eventos)
+
+Opção 4 do plano. O digest dizia "1 turno zumbi"; agora dá para clicar e ver
+o que aconteceu — sem sair do painel, sem IPC novo (os eventos crus já eram
+carregados).
+
+- **`DrillSelector` + `drillEvents`**: cada finding carrega o seletor dos
+  eventos que o sustentam (erros por tipo/versão, turnos zumbis, perfis com
+  montagem longa, tool/feature por nome, ações de atrito). Resolução pura,
+  mais novos primeiro, cap de 50.
+- **Timeline inline no painel**: clicar num achado expande a lista de eventos
+  (hora · categoria/ação · meta compacto). Achados com drill mostram chevron.
+- **Pulo para a timeline do turno**: qualquer evento com `turn` ganha o botão
+  "ver turno" — abre TUDO que aquele turno fez, em ordem. Para um zumbi:
+  o último ato antes de morrer fica visível em dois cliques (era exatamente
+  a arqueologia manual do diagnóstico v2.13.x).
+- 7 testes novos (572 no total).
+
 ## [2.16.0] — 2026-06-12
 
 ### Changed — Dev Insights ciclo 3: motor de findings no lugar das notas fixas
