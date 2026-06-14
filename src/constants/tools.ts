@@ -143,6 +143,20 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'fetch_url',
+      description: 'Read a web page by URL WITHOUT opening a browser window: does a plain HTTP fetch and returns the page title + extracted text. This is the DEFAULT, preferred way to read or scan a page — fast and with no popup window. Use this instead of browser_navigate for reading. If the result is flagged "(thin/JS-rendered)" or you need to click, fill a form, or screenshot, THEN switch to browser_navigate.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'URL to read (https:// prefix added if missing)' }
+        },
+        required: ['url']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'list_directory',
       description: 'List files and folders in a directory',
       parameters: {
@@ -214,7 +228,7 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'browser_navigate',
-      description: 'Navigate to a URL in the built-in browser. Returns page title, final URL, and extracted text content. The browser uses Electron\'s native Chromium — no external dependencies needed. Handles SPAs and JavaScript-rendered pages.',
+      description: 'Open a URL in the built-in browser for INTERACTION — clicking, typing, screenshots, or JS-heavy / login pages. For merely READING a page, use fetch_url instead (faster, opens no window). The browser uses Electron\'s native Chromium, runs HIDDEN by default (no popup), and only becomes visible for visual tools (screenshot / click-by-coordinate). Returns page title, final URL, and extracted text; handles SPAs and JavaScript-rendered pages.',
       parameters: {
         type: 'object',
         properties: {
@@ -228,7 +242,7 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'browser_get_text',
-      description: 'Get the text content of the current browser page. Optionally extract from a specific CSS selector. Smart extraction: tries <article> or <main> first, falls back to <body>.',
+      description: 'Get the text content of the current browser page (the one opened by browser_navigate). Optionally extract from a specific CSS selector. Smart extraction: tries <article> or <main> first, falls back to <body>. For a one-off read without an open browser session, use fetch_url instead.',
       parameters: {
         type: 'object',
         properties: {
@@ -463,7 +477,7 @@ export const IDLE_STEP_THRESHOLD = 5
 
 // Permission sets
 export const SAFE_TOOLS = new Set([
-  'read_file', 'search_files', 'list_directory', 'web_search', 'browser_get_text',
+  'read_file', 'search_files', 'list_directory', 'web_search', 'fetch_url', 'browser_get_text',
   'browser_get_links', 'browser_get_forms', 'browser_screenshot', 'browser_wait',
   'update_working_memory', 'plan_tasks', 'update_task_status', 'undo_last_write',
   'remember_fact', 'load_skill'

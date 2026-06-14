@@ -23,6 +23,7 @@ interface Window {
     saveConversations: (data: any) => Promise<{ error: string | null }>
     loadConversations: () => Promise<any>
     webSearch: (query: string) => Promise<{ result: string | null; error: string | null }>
+    fetchUrl: (url: string) => Promise<{ success?: boolean; url?: string; title?: string; text?: string; thin?: boolean; truncated?: boolean; error?: string }>
     listDirectory: (path: string) => Promise<{ items: any[] | null; error: string | null }>
     openTarget: (target: string) => Promise<{ error: string | null }>
     checkOllamaStatus: () => Promise<boolean>

@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('electron', {
 
   // New tools
   webSearch: (query) => ipcRenderer.invoke('web-search', query),
+  fetchUrl: (url) => ipcRenderer.invoke('fetch-url', url),
   listDirectory: (path) => ipcRenderer.invoke('list-directory', path),
   openTarget: (target) => ipcRenderer.invoke('open-target', target),
 

@@ -14,6 +14,7 @@ const { resolveNavOutcome } = require('./browser-nav')
 const { planScreenshot, SHOT_JPEG_QUALITY } = require('./screenshot-util')
 const { initAutoUpdater, quitAndInstall } = require('./updater')
 const { dedupeResults, formatResults, cacheKey, isFresh } = require('./web-search-util')
+const { htmlToText, extractTitle, looksThin } = require('./web-fetch-util')
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -793,6 +794,68 @@ ipcMain.handle('web-search', async (event, query) => {
         fbReq.setTimeout(WEB_SEARCH_TIMEOUT_MS, () => { fbReq.destroy(); resolve({ result: `Sem resultados para "${query}".`, error: null }) })
       }
     }
+  })
+})
+
+// ─── IPC: Fetch URL (estilo WebFetch — ler página SEM abrir navegador) ───
+// HTTP GET puro + extração de texto (web-fetch-util). É o caminho padrão para
+// LER/varrer uma página: rápido e, ao contrário do browser, não abre janela.
+// O modelo só cai para browser_navigate quando precisa de JS/interação (sinal
+// `thin: true`) ou de clicar/preencher/screenshot.
+ipcMain.handle('fetch-url', async (event, url) => {
+  if (!url || typeof url !== 'string') return { error: 'Invalid URL' }
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url
+  const FETCH_TIMEOUT_MS = 15000
+  const MAX_BYTES = 2_000_000
+  const MAX_TEXT = BROWSER_CONFIG.MAX_TEXT_LENGTH
+  const headers = {
+    'User-Agent': BROWSER_CONFIG.USER_AGENT,
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+  }
+  return new Promise((resolve) => {
+    let redirects = 0
+    let done = false
+    const finish = (obj) => { if (!done) { done = true; resolve(obj) } }
+    const get = (u) => {
+      let lib
+      try { lib = u.startsWith('http://') ? http : https } catch { return finish({ error: 'Invalid URL' }) }
+      const req = lib.get(u, { headers }, (res) => {
+        // Follow redirects (cap 5) — drain body so the socket is freed.
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume()
+          if (++redirects > 5) return finish({ error: 'Too many redirects' })
+          let next
+          try { next = new URL(res.headers.location, u).toString() } catch { return finish({ error: 'Bad redirect location' }) }
+          return get(next)
+        }
+        const ctype = String(res.headers['content-type'] || '')
+        if (ctype && !/text\/html|text\/plain|application\/(xhtml|xml|json)|\+xml/i.test(ctype)) {
+          res.resume()
+          return finish({ error: `Unsupported content-type "${ctype.split(';')[0].trim()}" — use browser_navigate or open_file_or_url`, url: u })
+        }
+        let data = ''
+        let bytes = 0
+        let truncatedBytes = false
+        res.on('data', (c) => {
+          bytes += c.length
+          if (bytes > MAX_BYTES) { truncatedBytes = true; try { req.destroy() } catch { /* ignore */ } return }
+          data += c.toString('utf8')
+        })
+        res.on('end', () => deliver(u, data, truncatedBytes))
+        res.on('aborted', () => deliver(u, data, true))
+      })
+      req.on('error', (e) => finish({ error: e.message }))
+      req.setTimeout(FETCH_TIMEOUT_MS, () => { try { req.destroy() } catch { /* ignore */ } finish({ error: 'fetch timeout' }) })
+    }
+    const deliver = (finalUrl, html, truncatedBytes) => {
+      const title = extractTitle(html)
+      let text = htmlToText(html)
+      const truncated = truncatedBytes || text.length > MAX_TEXT
+      if (text.length > MAX_TEXT) text = text.slice(0, MAX_TEXT)
+      finish({ success: true, url: finalUrl, title, text, thin: looksThin(text), truncated })
+    }
+    get(url)
   })
 })
 
@@ -1578,8 +1641,19 @@ const BROWSER_CONFIG = {
 /** @type {Map<string, Electron.BrowserWindow>} */
 const browserTabs = new Map()
 let activeTabId = 'main'
+// Headless por padrão (estilo Claude: ler/varrer NÃO abre janela). A janela só
+// aparece para ferramentas visuais (screenshot / clique por coordenada). Para
+// só LER uma página, o modelo usa `fetch_url` (HTTP puro, sem motor de browser).
+let browserVisible = false
 
-function getOrCreateTab(tabId = 'main', visible = true) {
+/** Garante a janela visível antes de uma operação que precisa de pintura
+ *  (capturePage não funciona de forma confiável em janela oculta). Usa
+ *  showInactive para não roubar o foco do app. */
+function ensureTabVisible(bw) {
+  try { if (bw && !bw.isDestroyed() && !bw.isVisible()) bw.showInactive() } catch { /* ignore */ }
+}
+
+function getOrCreateTab(tabId = 'main', visible = browserVisible) {
   if (browserTabs.has(tabId)) {
     const existing = browserTabs.get(tabId)
     if (!existing.isDestroyed()) {
@@ -1648,7 +1722,7 @@ function settle(ms) {
 }
 
 ipcMain.handle('browser-launch', async (event, opts) => {
-  const { visible = true, tabId = 'main' } = opts || {}
+  const { visible = browserVisible, tabId = 'main' } = opts || {}
   try {
     const bw = getOrCreateTab(tabId, visible)
     activeTabId = tabId
@@ -1661,7 +1735,7 @@ ipcMain.handle('browser-launch', async (event, opts) => {
 ipcMain.handle('browser-navigate', async (event, url) => {
   let bw
   try {
-    bw = getOrCreateTab(activeTabId || 'main', true)
+    bw = getOrCreateTab(activeTabId || 'main')
     activeTabId = activeTabId || 'main'
   } catch (e) {
     return { error: `Browser launch error: ${e.message}` }
@@ -1672,8 +1746,9 @@ ipcMain.handle('browser-navigate', async (event, url) => {
     url = 'https://' + url
   }
 
-  // Show the browser window so the user sees the navigation
-  if (!bw.isVisible()) bw.show()
+  // Headless por padrão: só mostra a janela se o usuário optou por "ver o agente
+  // navegar". Para só ler uma página, prefira fetch_url (sem janela alguma).
+  if (browserVisible && !bw.isVisible()) bw.show()
 
   // Race loadURL against NAV_TIMEOUT — but DON'T let a rejection abort the
   // whole handler. A redirect (ERR_ABORTED) or a page with slow trackers often
@@ -1757,6 +1832,7 @@ ipcMain.handle('browser-screenshot', async () => {
   const bw = getActiveTab()
   if (!bw) return { error: 'No active browser tab' }
   try {
+    ensureTabVisible(bw)  // capturePage exige a janela pintada (mesmo se headless)
     const image = await bw.webContents.capturePage()
     const src = image.getSize()
     // Downscale wide viewports + encode JPEG (~10× smaller than the old full
@@ -2017,6 +2093,7 @@ ipcMain.handle('browser-screenshot-vision', async () => {
   const bw = getActiveTab()
   if (!bw) return { error: 'No active browser tab' }
   try {
+    ensureTabVisible(bw)  // capturePage exige a janela pintada (mesmo se headless)
     const image = await bw.webContents.capturePage()
     const buf = image.toPNG()
     const size = image.getSize()

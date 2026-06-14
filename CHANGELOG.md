@@ -7,6 +7,38 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.33.0] — 2026-06-14
+
+### Added — `fetch_url`: ler página sem abrir navegador (estilo WebFetch)
+
+Nova ferramenta `fetch_url` (read-only, em `SAFE_TOOLS`): faz um HTTP GET puro e
+devolve título + texto extraído da página, **sem subir o motor do navegador nem
+abrir janela**. É o caminho padrão para ler/varrer uma página — espelha o
+WebFetch do Claude. Sinaliza `(thin/JS-rendered)` quando o texto vem fino (SPA),
+indicando ao modelo para cair para `browser_navigate`. Suporta redirects (até 5),
+timeout de 15s, cap de 2 MB e content-type não-texto recusado com dica.
+
+- Pure helper testável `electron/web-fetch-util.js` (`htmlToText`,
+  `extractTitle`, `decodeEntities`, `looksThin`) + 10 testes.
+- IPC `fetch-url` em `main.js`; `fetchUrl` no preload e nos tipos.
+
+### Changed — Navegador embutido agora roda OCULTO por padrão
+
+Antes, `browser_navigate` forçava `show()` a cada navegação — daí "qualquer ação
+abre a página". Agora o navegador é **headless por padrão** (`browserVisible =
+false`): navegar/ler não abre janela. A janela só aparece para ferramentas
+visuais (screenshot / clique por coordenada), via `ensureTabVisible`
+(`showInactive`, sem roubar foco). Descrições de `browser_navigate` /
+`browser_get_text` reescritas para direcionar: **ler → `fetch_url`; interagir →
+`browser_navigate`**. (`web_search` já era headless.)
+
+Como o Claude gerencia: WebSearch (API) e WebFetch (HTTP→texto) sem navegador;
+navegador real só para interação. Esta versão alinha o app a esse modelo.
+
+Nota: dirigir o Chrome instalado do sistema (CDP/puppeteer) seria um recurso
+maior e foi descartado — o headless por padrão já resolve o popup. 644 testes,
+typecheck e build de produção OK.
+
 ## [2.32.0] — 2026-06-14
 
 ### Added — Auto-fechar o plano ao concluir (estilo Claude)

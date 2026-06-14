@@ -110,6 +110,17 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         const result = await window.electron.webSearch(args.query)
         return result.result || result.error || 'Sem resultados'
       }
+      if (name === 'fetch_url') {
+        const result = await window.electron.fetchUrl(args.url)
+        if (result.error) return `Fetch error: ${result.error}`
+        const header = [
+          result.title ? `# ${result.title}` : '',
+          `URL: ${result.url}`,
+          result.thin ? '(thin/JS-rendered — if content is missing, use browser_navigate)' : '',
+          result.truncated ? '(truncated)' : '',
+        ].filter(Boolean).join('\n')
+        return `${header}\n\n${result.text || '(empty page)'}`
+      }
       if (name === 'list_directory') {
         const result = await window.electron.listDirectory(args.path)
         if (result.items) {
