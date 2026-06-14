@@ -7,6 +7,24 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.32.0] — 2026-06-14
+
+### Added — Auto-fechar o plano ao concluir (estilo Claude)
+
+No Claude Code o todo-list não fica num painel fixo que você fecha: ele é
+efêmero e, pelo ciclo de vida oficial, é *removido quando todas as tarefas do
+grupo concluem*. Adotamos esse comportamento: quando **todas** as tarefas do
+`task-plan-panel` chegam a `done`, o painel some sozinho após ~4s (atraso para
+ver o "tudo verde" antes). Durante esses segundos, a pílula de progresso e o
+título ficam **verdes** (classe `is-complete`) sinalizando a conclusão.
+
+- `useEffect` em `App.tsx` observa `activeConv.taskPlan`; quando todo `done`,
+  agenda a limpeza de `taskPlan` (mesmo efeito do X manual). O timer é cancelado
+  se um novo plano substituir o atual antes do prazo.
+- O botão **X** continua para fechar antes da hora.
+
+Typecheck, build de produção e 634 testes OK.
+
 ## [2.31.0] — 2026-06-14
 
 ### Added — Botão de fechar o painel de plano de tarefas

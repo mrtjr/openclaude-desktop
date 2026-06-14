@@ -1051,6 +1051,9 @@ body .update-banner {
 }
 .task-plan-close:hover { color: var(--red); background: rgba(255,255,255,0.06); }
 [data-theme="light"] .task-plan-close:hover { background: rgba(0,0,0,0.06); }
+/* tudo concluído — destaque verde nos segundos antes do auto-fechar */
+.task-plan-panel.is-complete .task-plan-progress { color: var(--green); background: rgba(82,183,136,0.15); }
+.task-plan-panel.is-complete .task-plan-title { color: var(--green); }
 /* barra de progresso fina — visível inclusive colapsado */
 .task-plan-bar { height: 3px; background: rgba(255,255,255,0.06); }
 .task-plan-bar-fill {

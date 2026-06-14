@@ -516,6 +516,22 @@ export default function App() {
   const isActiveConvLoading = chat.isLoading && chat.streamingConvId === convManager.activeConvId
   const tokenInfo = useTokenCounter(activeConv, providerConfig.model, input)
 
+  // Auto-fechar o plano quando TODAS as tarefas concluem (estilo Claude: o
+  // todo-list some sozinho ao terminar). Pequeno atraso pra ver o "tudo verde"
+  // antes de sumir. O botão X continua para fechar antes da hora.
+  useEffect(() => {
+    const plan = activeConv?.taskPlan
+    if (!plan || plan.tasks.length === 0) return
+    if (!plan.tasks.every(t => t.status === 'done')) return
+    const convId = activeConv.id
+    const timer = setTimeout(() => {
+      convManager.setConversations(prev => prev.map(c =>
+        c.id === convId ? { ...c, taskPlan: undefined } : c
+      ))
+    }, 4000)
+    return () => clearTimeout(timer)
+  }, [activeConv?.taskPlan, activeConv?.id, convManager.setConversations])
+
   // ─── Context breakdown (Claude-style /context panel, v2.12.6) ───
   // Memoized partition of TOOLS into eager + deferred based on the
   // user's setting. Passed to the chat pipeline so the request body
@@ -1758,8 +1774,9 @@ export default function App() {
             const doneCount = tasks.filter(t => t.status === 'done').length
             const pct = total ? Math.round((doneCount / total) * 100) : 0
             const current = tasks.find(t => t.status === 'in_progress')
+            const allDone = total > 0 && doneCount === total
             return (
-              <div className={`task-plan-panel ${taskPlanCollapsed ? 'collapsed' : ''}`}>
+              <div className={`task-plan-panel ${taskPlanCollapsed ? 'collapsed' : ''} ${allDone ? 'is-complete' : ''}`}>
                 <div
                   className="task-plan-header"
                   onClick={() => setTaskPlanCollapsed(c => !c)}
