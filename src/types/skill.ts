@@ -1,0 +1,29 @@
+// ─── Skills — capacidades reutilizáveis invocadas pelo modelo (v2.27.0) ──────
+//
+// Uma skill é diferente de uma persona (que troca a identidade inteira, uma por
+// vez) e do prompt-vault (trechos manuais). É uma capacidade ON-DEMAND: nome +
+// descrição ficam sempre num manifesto barato no system prompt; as instruções
+// completas só entram no contexto quando o modelo chama load_skill (ou quando a
+// skill está "pinned"/casada por palavra-chave). Espelha o padrão de
+// progressive disclosure do tool-deferral.
+
+export interface Skill {
+  id: string
+  /** Identificador curto que o modelo usa em load_skill (ex.: "code-review"). */
+  name: string
+  /** "Quando usar" — sempre visível no manifesto. */
+  description: string
+  /** Corpo detalhado — carregado sob demanda. */
+  instructions: string
+  /** Palavras-gatilho: se aparecem na mensagem, a skill é auto-sugerida/fixada
+   *  naquele turno (Fase 3). Opcional. */
+  triggers?: string[]
+  /** Aparece no manifesto (disponível para o modelo). */
+  enabled: boolean
+  /** Injeta as instruções completas SEMPRE (sem depender de load_skill) —
+   *  fallback confiável para modelos pequenos. */
+  pinned: boolean
+  /** Skill que vem de fábrica (não pode ser excluída, só desativada). */
+  isBuiltIn?: boolean
+  createdAt: number
+}

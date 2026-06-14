@@ -937,7 +937,7 @@ ipcMain.handle('save-dialog', async (event, { defaultName, filters }) => {
 // existing flow, so it can't regress anything.
 const BACKUP_FILES = [
   'conversations.json', 'memory.json', 'prompt-vault.json', 'rag-index.json',
-  'personas.json', 'workflows.json', 'arena-scores.json', 'agent-memory.json',
+  'personas.json', 'skills.json', 'workflows.json', 'arena-scores.json', 'agent-memory.json',
   'analytics.json', 'audit-log.json', 'dev-insights.json', 'dev-insights-digest.json',
 ]
 
@@ -2610,6 +2610,7 @@ const RAG_INDEX_PATH  = path.join(app.getPath('userData'), 'rag-index.json')
 const ARENA_PATH      = path.join(app.getPath('userData'), 'arena-scores.json')
 const WORKFLOWS_PATH  = path.join(app.getPath('userData'), 'workflows.json')
 const PERSONAS_PATH   = path.join(app.getPath('userData'), 'personas.json')
+const SKILLS_PATH     = path.join(app.getPath('userData'), 'skills.json')
 
 // ─── Prompt Vault ────────────────────────────────────────────────────────────
 ipcMain.handle('vault-load', async () => {
@@ -2634,6 +2635,19 @@ ipcMain.handle('persona-load', async () => {
 
 ipcMain.handle('persona-save', async (event, personas) => {
   try { atomicWriteJSON(PERSONAS_PATH, personas); return { error: null } }
+  catch (e) { return { error: e.message } }
+})
+
+// ─── Skills (capacidades invocadas pelo modelo, v2.27.0) ──────────────────────
+ipcMain.handle('skill-load', async () => {
+  try {
+    if (fs.existsSync(SKILLS_PATH)) return { skills: JSON.parse(fs.readFileSync(SKILLS_PATH, 'utf-8')) }
+    return { skills: [] }
+  } catch (e) { return { skills: [], error: e.message } }
+})
+
+ipcMain.handle('skill-save', async (event, skills) => {
+  try { atomicWriteJSON(SKILLS_PATH, skills); return { error: null } }
   catch (e) { return { error: e.message } }
 })
 

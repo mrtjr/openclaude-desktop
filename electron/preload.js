@@ -166,6 +166,10 @@ contextBridge.exposeInMainWorld('electron', {
   personaLoad: () => ipcRenderer.invoke('persona-load'),
   personaSave: (personas) => ipcRenderer.invoke('persona-save', personas),
 
+  // Skills (capacidades invocadas pelo modelo)
+  skillLoad: () => ipcRenderer.invoke('skill-load'),
+  skillSave: (skills) => ipcRenderer.invoke('skill-save', skills),
+
   // Model Arena
   arenaLoad: () => ipcRenderer.invoke('arena-load'),
   arenaSave: (scores) => ipcRenderer.invoke('arena-save', scores),

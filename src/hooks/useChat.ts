@@ -7,6 +7,8 @@ import { generateId, isSmallModel } from '../utils/formatting'
 import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice, extractThinking } from '../utils/sanitizers'
 import { classifyProviderError, humanizeProviderError, isColdStartTimeout } from '../utils/providerErrors'
 import { initStallState, decideStallRetry } from '../utils/stallRecovery'
+import { renderSkillManifest, renderPinnedSkills, matchSkillsByText } from '../utils/skills'
+import type { Skill } from '../types/skill'
 import { resolveTurnUsage } from '../utils/usage'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
 import { toolCallSummary } from '../utils/toolDisplay'
@@ -33,6 +35,8 @@ interface UseChatOptions {
   onProviderSuccess?: () => void
   onProviderError?: (error: string) => void
   onUsage?: (inputTokens: number, outputTokens: number) => void
+  /** Skills disponíveis — manifesto + pinned injetados no system prompt (v2.27.0). */
+  skills?: Skill[]
 }
 
 export function useChat({
@@ -48,8 +52,11 @@ export function useChat({
   onProviderSuccess,
   onProviderError,
   onUsage,
+  skills,
 }: UseChatOptions) {
   // Use refs for callback props to avoid stale closures in useCallback
+  const skillsRef = useRef(skills)
+  skillsRef.current = skills
   const onProviderSuccessRef = useRef(onProviderSuccess)
   onProviderSuccessRef.current = onProviderSuccess
   const onProviderErrorRef = useRef(onProviderError)
@@ -214,6 +221,21 @@ export function useChat({
         systemPrompt = AGENT_SYSTEM_PROMPT[lang] + (systemPrompt ? (lang === 'pt' ? "\n\nInstruções Adicionais:\n" : "\n\nAdditional Instructions:\n") + systemPrompt : "")
       }
       systemPrompt += LANGUAGE_RULE[lang]
+
+      // Skills (v2.27.0): manifesto barato (nome+desc → o modelo chama
+      // load_skill sob demanda) + instruções completas das fixadas/casadas por
+      // palavra-chave (injetadas direto, fallback p/ modelos que não chamam a
+      // tool). Progressive disclosure, espelha o tool-deferral.
+      {
+        const allSkills = skillsRef.current || []
+        const manifest = renderSkillManifest(allSkills)
+        if (manifest) systemPrompt += `\n\n${manifest}`
+        const autoMatched = matchSkillsByText(allSkills, String(inputText || ''))
+        const pinnedBlock = renderPinnedSkills(allSkills)
+        const autoBlock = autoMatched.map(s => `[SKILL ATIVA: ${s.name}]\n${s.instructions}`).join('\n\n')
+        const full = [pinnedBlock, autoBlock].filter(Boolean).join('\n\n')
+        if (full) systemPrompt += `\n\n${full}`
+      }
 
       // Tool deferral (v2.12.6; auto-decided since v2.12.11): move
       // rarely-used tools out of the request schema list into a compact

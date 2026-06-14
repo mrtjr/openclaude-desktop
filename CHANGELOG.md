@@ -7,6 +7,40 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.27.0] — 2026-06-14
+
+### Added — Skills: capacidades reutilizáveis invocadas pelo modelo (Fases 1–3)
+
+Novo sistema de **Skills**, distinto de personas (identidade exclusiva) e do
+prompt-vault (trechos manuais). Uma skill é uma capacidade *on-demand* com
+progressive disclosure — espelha o padrão de tool-deferral, mantendo o contexto
+barato.
+
+**Fase 1 — Núcleo no chat:**
+- Modelo `Skill` (nome, descrição, instruções, gatilhos, enabled, pinned) +
+  persistência `skills.json` (IPC `skill-load`/`skill-save`, no backup).
+- **Manifesto no system prompt**: nome+descrição das skills ativas + instrução
+  para o modelo chamar `load_skill("nome")` quando relevante (custo de token
+  mínimo até usar — preenche o slot "skills" do painel de contexto, antes stub).
+- **Tool `load_skill`** (SAFE): devolve as instruções completas sob demanda;
+  execução pura em useToolExecution.
+- 3 skills builtin (code-review, pesquisa-com-fontes, commit-e-pr).
+
+**Fase 2 — Configuração (criar skills):**
+- Painel **SkillManager** (Command Palette → "Skills"): criar/editar/ativar/
+  fixar/excluir, com formulário de nome/descrição/instruções/gatilhos.
+
+**Fase 3 — Avançado:**
+- **Pin manual**: injeta as instruções completas sempre (fallback confiável
+  para modelos pequenos que não chamam `load_skill` sozinhos).
+- **Gatilhos por palavra-chave**: se uma palavra do gatilho aparece na mensagem,
+  a skill é auto-injetada naquele turno.
+- **Import/Export** de skills em JSON.
+
+- Helpers puros/testáveis em `utils/skills.ts`; 15 testes novos (632 no total).
+- Nota de escopo: allowlist de tools por skill foi deixada como refinamento
+  futuro (mexeria no pipeline crítico de partição de tools).
+
 ## [2.26.0] — 2026-06-14
 
 ### Fixed — Robustez: auto-retry de timeout de cold-start (o erro nº1 da telemetria)

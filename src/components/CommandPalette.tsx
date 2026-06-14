@@ -26,6 +26,7 @@ interface CommandPaletteProps {
   // Feature toggles
   onOpenVault: () => void
   onOpenPersona: () => void
+  onOpenSkills: () => void
   onOpenArena: () => void
   onOpenCodeWorkspace: () => void
   onOpenVision: () => void
@@ -95,6 +96,7 @@ export default function CommandPalette(props: CommandPaletteProps) {
     { id: 'parliament', label: language === 'pt' ? 'Parlamento' : 'Parliament', description: language === 'pt' ? 'Debate multi-agente paralelo' : 'Parallel multi-agent debate', icon: Scale, category: 'ai', action: props.onOpenParliament },
     { id: 'orion', label: 'ORION', description: language === 'pt' ? 'Controle visual do computador' : 'Visual computer control', icon: Monitor, category: 'ai', action: props.onOpenOrion, special: true },
     // Knowledge
+    { id: 'skills', label: 'Skills', description: language === 'pt' ? 'Capacidades que o modelo carrega sob demanda' : 'Capabilities the model loads on demand', icon: BookMarked, category: 'knowledge', action: props.onOpenSkills },
     { id: 'vault', label: 'Prompt Vault', description: language === 'pt' ? 'Biblioteca de prompts reutilizáveis' : 'Reusable prompts library', icon: BookMarked, category: 'knowledge', action: props.onOpenVault },
     { id: 'rag', label: `RAG${props.ragEnabled ? ' ●' : ''}`, description: language === 'pt' ? 'Busca semântica em documentos' : 'Semantic document search', icon: Database, category: 'knowledge', action: props.onOpenRAG, active: props.ragEnabled },
     { id: 'workspace', label: language === 'pt' ? 'Código' : 'Code', description: language === 'pt' ? 'Editor de código com IA' : 'AI code editor', icon: FolderOpen, category: 'knowledge', action: props.onOpenCodeWorkspace },

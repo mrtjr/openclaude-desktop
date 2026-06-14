@@ -99,6 +99,20 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'load_skill',
+      description: 'Load the full instructions of an available skill (listed in [SKILLS DISPONÍVEIS]) when it is relevant to the task. Returns the skill\'s detailed playbook to follow. Call this BEFORE acting on a task a skill covers.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'The exact skill name from the manifest' }
+        },
+        required: ['name']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'edit_file',
       description: 'Make a surgical edit to an existing file by replacing an exact text snippet. old_string must appear EXACTLY ONCE in the file (include enough surrounding context to be unique). Far cheaper and safer than rewriting the whole file with write_file.',
       parameters: {
@@ -452,7 +466,7 @@ export const SAFE_TOOLS = new Set([
   'read_file', 'search_files', 'list_directory', 'web_search', 'browser_get_text',
   'browser_get_links', 'browser_get_forms', 'browser_screenshot', 'browser_wait',
   'update_working_memory', 'plan_tasks', 'update_task_status', 'undo_last_write',
-  'remember_fact'
+  'remember_fact', 'load_skill'
 ])
 
 export const DANGEROUS_TOOLS = new Set([

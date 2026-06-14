@@ -11,6 +11,8 @@ import { isRiskyDesktopAction } from '../utils/desktopPolicy'
 import { paginateFileContent } from '../utils/readFile'
 import { formatClickResult, formatNavResult } from '../utils/browserResult'
 import { logInsight } from '../services/devInsights'
+import { findSkill, formatLoadSkillResult } from '../utils/skills'
+import type { Skill } from '../types/skill'
 import type { ModalKeyPool } from './useModalKeyPool'
 import type { ParallelChatResult, ParallelChatTask } from '../types/ipc'
 
@@ -23,9 +25,11 @@ interface UseToolExecutionOptions {
   /** Working folder of the active conversation's project — execute_command
    *  runs there by default (the model can still override via args.cwd). */
   projectCwd?: string
+  /** Skills disponíveis — usadas pela ferramenta load_skill (v2.27.0). */
+  skills?: Skill[]
 }
 
-export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd }: UseToolExecutionOptions) {
+export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills }: UseToolExecutionOptions) {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
 
   // Use refs to avoid stale closures
@@ -33,6 +37,8 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
   activeConvIdRef.current = activeConvId
   const projectCwdRef = useRef(projectCwd)
   projectCwdRef.current = projectCwd
+  const skillsRef = useRef(skills)
+  skillsRef.current = skills
 
   const executeToolRaw = useCallback(async (name: string, args: Record<string, any>): Promise<string> => {
     const convId = activeConvIdRef.current
@@ -46,6 +52,11 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         if (!query) return 'tool_search: missing "query" parameter'
         const matches = resolveToolSearch(query, TOOLS as any).slice(0, maxResults)
         return formatToolSearchResult(matches)
+      }
+      // load_skill (v2.27.0): devolve as instruções completas de uma skill do
+      // manifesto. Lookup puro sobre a lista de skills ativas.
+      if (name === 'load_skill') {
+        return formatLoadSkillResult(findSkill(skillsRef.current || [], String(args.name || '')), String(args.name || ''))
       }
       if (name === 'execute_command') {
         const cwd = resolveExecCwd(args.cwd, projectCwdRef.current)

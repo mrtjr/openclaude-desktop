@@ -46,6 +46,9 @@ import { PLACEHOLDER_HINTS, SUGGESTIONS } from './constants/prompts'
 import { formatMarkdown, getRelativeTime, groupByBucket, bucketLabel } from './utils/formatting'
 import { streamPhaseLabel } from './utils/streamPhase'
 import { buildSwitchOptions, groupSwitchOptions, type SwitchOption } from './utils/modelSwitcher'
+import { mergeSkills, skillManifestHeaders } from './utils/skills'
+import type { Skill } from './types/skill'
+const SkillManager = lazy(() => import('./SkillManager'))
 
 // ─── Custom hooks ───────────────────────────────────────────────────
 import { useProviderConfig, getDisplayModel } from './hooks/useProviderConfig'
@@ -160,6 +163,19 @@ export default function App() {
   const [showCodeWorkspace, setShowCodeWorkspace] = useState(false)
   const [activePersonaId, setActivePersonaId] = useState<string | null>(null)
   const [activePersona, setActivePersona] = useState<Persona | null>(null)
+  // Skills (v2.27.0): builtins + criadas pelo usuário, mescladas. Persistidas
+  // via IPC (skill-load/skill-save), espelhando personas.
+  const [skills, setSkills] = useState<Skill[]>(() => mergeSkills([]))
+  const [showSkills, setShowSkills] = useState(false)
+  useEffect(() => {
+    window.electron.skillLoad?.()
+      .then((res: any) => { if (res?.skills) setSkills(mergeSkills(res.skills)) })
+      .catch(() => { /* primeira execução / sem arquivo */ })
+  }, [])
+  const persistSkills = useCallback((next: Skill[]) => {
+    setSkills(next)
+    window.electron.skillSave?.(next).catch((e: any) => console.warn('[skills] save error:', e))
+  }, [])
   const [ragEnabled, setRagEnabled] = useState(false)
   const [showFeatureMenu, setShowFeatureMenu] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
@@ -454,6 +470,7 @@ export default function App() {
     selectedModel,
     modalKeyPool,
     projectCwd: activeProjectCwd,
+    skills,
   })
 
   const chat = useChat({
@@ -491,6 +508,7 @@ export default function App() {
       }
     },
     onUsage: (inputTokens, outputTokens) => usageTracking.recordUsage(effectiveSettings.provider, providerConfig.model, inputTokens, outputTokens),
+    skills,
   })
 
   const activeConv = convManager.activeConv
@@ -543,7 +561,7 @@ export default function App() {
     eagerTools: toolPartition.eager,
     deferredToolNames: toolPartition.deferredNames,
     deferredToolSchemas: (TOOLS as any[]).filter((t: any) => toolPartition.deferredNames.some(d => d.name === t.function.name)) as any,
-    skillHeaders: activePersona ? `${activePersona.name}: ${activePersona.description || ''}` : '',
+    skillHeaders: skillManifestHeaders(skills),
   })
 
   useMemoryDreaming({
@@ -1209,6 +1227,7 @@ export default function App() {
         language={settings.language}
         onOpenVault={() => setShowVault(true)}
         onOpenPersona={() => setShowPersona(true)}
+        onOpenSkills={() => setShowSkills(true)}
         onOpenArena={() => setShowArena(true)}
         onOpenCodeWorkspace={() => setShowCodeWorkspace(true)}
         onOpenVision={() => setShowVision(true)}
@@ -1253,6 +1272,7 @@ export default function App() {
       <Suspense fallback={<div className="lazy-panel-fallback" role="status" aria-label="Carregando painel"><Loader2 size={20} className="spin" /></div>}>
         {showAnalytics && <AnalyticsDashboard isOpen={showAnalytics} onClose={() => setShowAnalytics(false)} language={settings.language} />}
         {showDevInsights && <DevInsightsPanel isOpen={showDevInsights} onClose={() => setShowDevInsights(false)} language={settings.language} providerConfig={providerConfig} />}
+        {showSkills && <SkillManager isOpen={showSkills} onClose={() => setShowSkills(false)} skills={skills} onSave={persistSkills} language={settings.language} />}
         {editingProject && <ProjectEditModal project={editingProject} onSave={handleSaveProject} onClose={() => setEditingProject(null)} />}
         {openArtifact && (
           <Suspense fallback={null}>

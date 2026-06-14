@@ -106,6 +106,8 @@ interface Window {
     // Persona Engine
     personaLoad: () => Promise<{ personas: import('./PersonaEngine').Persona[] }>
     personaSave: (personas: import('./PersonaEngine').Persona[]) => Promise<{ error: string | null }>
+    skillLoad?: () => Promise<{ skills: import('./types/skill').Skill[]; error?: string }>
+    skillSave?: (skills: import('./types/skill').Skill[]) => Promise<{ error: string | null }>
     // Model Arena
     arenaLoad: () => Promise<{ scores: import('./ModelArena').ArenaScore[] }>
     arenaSave: (scores: import('./ModelArena').ArenaScore[]) => Promise<{ error: string | null }>
