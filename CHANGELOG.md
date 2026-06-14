@@ -7,6 +7,32 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.28.0] — 2026-06-14
+
+### Changed — Skills builtin de code e pesquisa reescritas (pesquisa + verificação adversarial)
+
+As duas skills builtin mais importantes foram elevadas a playbooks de alto nível,
+a partir de pesquisa web em fontes autoritativas (Anthropic Engineering —
+context engineering / harnesses / building effective agents / agent skills;
+SWE-agent ACI; SWE-bench fail-to-pass; Google eng-practices; lateral reading/SIFT),
+sintetizadas e passadas por verificação adversarial.
+
+- **`code`** (antes "code-review", raso): agora um ciclo completo de coding —
+  entender (search_files/read_file) → planejar (plan_tasks) → reproduzir →
+  mudança mínima e cirúrgica (edit_file, não write_file; undo_last_write no
+  erro) → verificar com ground truth (execute_command) → disciplina em erros →
+  auto-revisar o diff (git_command) com escada de severidade. Triggers de
+  implementação (implementar/corrigir/bug/refatorar…).
+- **`pesquisa-com-fontes`** (antes rasa): pesquisa robusta — decompor/calibrar
+  esforço → busca em leque com parcimônia (sem repetir query, cache de 5min) →
+  citar dos resultados do web_search (só navegar quando load-bearing) →
+  triangular 2-3 fontes independentes → verificação adversarial → citação
+  anti-alucinação em passada separada → persistir com remember_fact.
+- A verificação adversarial corrigiu imprecisões sobre as tools reais do app
+  (web_search já traz URL; remember_fact vs update_working_memory; git_command;
+  undo_last_write) e o overlap de triggers entre as skills.
+- IDs estáveis (merge/reset preservados); 632 testes verdes.
+
 ## [2.27.0] — 2026-06-14
 
 ### Added — Skills: capacidades reutilizáveis invocadas pelo modelo (Fases 1–3)

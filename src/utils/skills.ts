@@ -9,17 +9,24 @@ import type { Skill } from '../types/skill'
 export const BUILTIN_SKILLS: Skill[] = [
   {
     id: 'builtin-code-review',
-    name: 'code-review',
-    description: 'Revisar um diff/código em busca de bugs, segurança e simplificações antes de finalizar.',
-    instructions: [
-      'Ao revisar código:',
-      '1. Procure bugs de correção (off-by-one, null/undefined, condições invertidas, await faltando).',
-      '2. Segurança: injeção, segredos hardcoded, validação de entrada, caminhos não sanitizados.',
-      '3. Eficiência e reuso: N+1, recomputo desnecessário, código duplicado que já existe no projeto.',
-      '4. Para cada achado: arquivo:linha, severidade, e a correção concreta.',
-      '5. Termine com um veredito curto: pode mergear? o que bloquear primeiro?',
-    ].join('\n'),
-    triggers: ['revisar', 'review', 'revisão', 'code review', 'pull request', 'pr '],
+    name: 'code',
+    description: 'Implementar/corrigir código com disciplina: entender, planejar, mudança mínima, verificar e auto-revisar.',
+    instructions: `Ciclo de coding de alto nível (uma tarefa por vez):
+
+1. ENTENDER antes de tocar. Use search_files para achar definições/usos e read_file no arquivo-alvo e vizinhos; absorva as convenções existentes. Nunca edite às cegas. Carregue só o trecho necessário (alto sinal), não o codebase inteiro.
+
+2. PLANEJAR. Para tarefa com mais de 1-2 passos, registre o plano com plan_tasks (inclua uma tarefa 'Verificar') e marque progresso com update_task_status. Pense em trade-offs, edge cases e blast radius. Não code se o escopo estiver vago.
+
+3. REPRODUZIR. Confirme o bug/requisito ANTES de corrigir: rode o caso que falha via execute_command ou escreva um teste que falhe agora e passe depois. Sem repro, você corrige no escuro.
+
+4. MUDANÇA MÍNIMA E CIRÚRGICA. A menor alteração que resolve. Prefira SEMPRE edit_file (diff localizado) a write_file (reescreve o arquivo inteiro). Não reformate, não renomeie nem 'melhore de passagem' (anti over-engineering). Se um write der errado, use undo_last_write.
+
+5. VERIFICAR com ground truth. Rode build/lint/testes via execute_command e leia a saída de verdade. Confirme que o repro passou E que nenhuma regressão surgiu. Para UI/comportamento, teste o fluxo real.
+
+6. DISCIPLINA EM ERROS. Leia a mensagem completa; corrija a causa raiz, não o sintoma. Se edit_file falhar (string não encontrada), re-leia o arquivo (o estado mudou) em vez de repetir. Após 2-3 tentativas sem progresso, reavalie a hipótese — não entre em loop.
+
+7. AUTO-REVISAR antes de entregar. Releia o diff (git_command 'diff'). Cheque correção, segurança (entrada validada, segredos, PII em log), legibilidade e nomes; remova código morto e debug. Classifique achados: BLOQUEADOR > CRÍTICO > MAIOR > nit. Guarde estado da tarefa em update_working_memory; comandos de build/test estáveis em remember_fact.`,
+    triggers: ['implementar', 'corrigir', 'bug', 'código', 'coding', 'refatorar', 'feature', 'code', 'fix', 'consertar'],
     enabled: true,
     pinned: false,
     isBuiltIn: true,
@@ -28,15 +35,25 @@ export const BUILTIN_SKILLS: Skill[] = [
   {
     id: 'builtin-cite-sources',
     name: 'pesquisa-com-fontes',
-    description: 'Pesquisar na web e responder citando as fontes (URLs) usadas.',
-    instructions: [
-      'Ao pesquisar e responder:',
-      '1. Use web_search com consultas específicas; pare assim que tiver o suficiente.',
-      '2. Cruze pelo menos duas fontes para fatos importantes.',
-      '3. Cite as fontes como links no fim, em "Fontes:".',
-      '4. Separe claramente o que é fato verificado do que é inferência sua.',
-    ].join('\n'),
-    triggers: ['pesquise', 'pesquisar', 'fontes', 'cite', 'busque na web', 'search'],
+    description: 'Pesquisar com busca eficiente, triangular fontes e responder citando URLs reais, sem alucinar.',
+    instructions: `Pesquisa robusta — do amplo ao específico, com citação verificável:
+
+1. DECOMPOR E CALIBRAR. Quebre a pergunta em 3-5 subperguntas; registre com plan_tasks. Escale o esforço à dificuldade: fato simples = 1-2 buscas; tema complexo = várias linhas. Não subdivida pergunta trivial.
+
+2. BUSCAR EM LEQUE, COM PARCIMÔNIA. Use web_search com consultas ESPECÍFICAS e VARIADAS (termos exatos, nomes, datas) — não reformulações da mesma (queries idênticas vêm do cache de 5min e não trazem nada novo). Comece largo, depois estreite. Pare quando novas buscas só repetem o que já tem ou a afirmação já está triangulada.
+
+3. CITAR A PARTIR DOS RESULTADOS. web_search já devolve título, trecho e URL — suficiente para citar sem abrir cada link. Só escale para browser_navigate + browser_get_text quando a afirmação for load-bearing, o trecho for ambíguo ou você precisar da fonte primária (paper, doc oficial, dado bruto).
+
+4. AVALIAR A FONTE. Cheque autor, data e viés. Prefira fontes autoritativas a content-farms/SEO — o ranking do buscador não é prova.
+
+5. TRIANGULAR. Só afirme o que for confirmado por 2-3 fontes INDEPENDENTES (não cópias da mesma origem). Se as fontes divergem, reporte a divergência em vez de escolher uma em silêncio.
+
+6. VERIFICAR ADVERSARIALMENTE. Após rascunhar conclusões, gere perguntas contra suas próprias afirmações e busque contra-evidência; revise a conclusão se ela não se sustentar.
+
+7. CITAR (anti-alucinação) — passada SEPARADA. Ao final, ligue cada afirmação não-trivial à URL/trecho realmente consultado, em 'Fontes:'. Sem fonte = não afirme (marque incerto ou omita). Nunca invente URLs, números, datas ou citações. Separe fato citado de inferência sua (rotulada).
+
+8. PERSISTIR. Guarde achados duráveis e fontes-chave com remember_fact; estado da investigação em andamento com update_working_memory.`,
+    triggers: ['pesquise', 'pesquisar', 'pesquisa', 'fontes', 'cite', 'busque na web', 'investigar', 'fact-check', 'verificar fonte'],
     enabled: true,
     pinned: false,
     isBuiltIn: true,
