@@ -580,12 +580,14 @@ export function useChat({
                   provider: finalProvider, apiKey: finalApiKey, model: finalModel,
                   messages: requestMessages, tools: toolsForRequest,
                   temperature: settings.temperature, max_tokens: settings.maxTokens,
-                  modalHostname, customBaseUrl
+                  modalHostname, customBaseUrl,
+                  reasoningEffort: settings.reasoningEffort // esforço de raciocínio (v2.25.0)
                 })
               : window.electron.ollamaChatStream({
                   model: finalModel, messages: requestMessages, tools: toolsForRequest,
                   temperature: settings.temperature, max_tokens: settings.maxTokens,
-                  numCtx: modelLimit // janela real do local (evita timeout por contexto gigante)
+                  numCtx: modelLimit, // janela real do local (evita timeout por contexto gigante)
+                  reasoningEffort: settings.reasoningEffort
                 })
             // O handler do main RESOLVE com {error} (não rejeita) em early-returns
             // que acontecem antes de qualquer chunk `done` (ex.: baseUrl custom
@@ -784,13 +786,15 @@ export function useChat({
               provider: finalProvider, apiKey: finalApiKey, model: finalModel,
               messages: requestMessages, tools: toolsForRequest,
               temperature: settings.temperature, max_tokens: settings.maxTokens,
-              modalHostname, customBaseUrl
+              modalHostname, customBaseUrl,
+              reasoningEffort: settings.reasoningEffort // esforço de raciocínio (v2.25.0)
             })
           } else {
             response = await window.electron.ollamaChat({
               model: finalModel, messages: requestMessages, tools: toolsForRequest,
               temperature: settings.temperature, max_tokens: settings.maxTokens,
-              numCtx: modelLimit // janela real do local (evita timeout por contexto gigante)
+              numCtx: modelLimit, // janela real do local (evita timeout por contexto gigante)
+              reasoningEffort: settings.reasoningEffort
             })
           }
 

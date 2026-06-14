@@ -56,6 +56,10 @@ export interface AppSettings {
    *  teórica (128k+) é inviável num GPU de consumidor; isto limita o que é
    *  enviado E vira o num_ctx do Ollama. Suba se sua VRAM/modelo aguentar. */
   ollamaNumCtx: number
+  /** v2.25.0 — esforço de raciocínio. 'default' não envia nada (comportamento
+   *  do provider). 'off' desliga o thinking (mais rápido); 'low/medium/high'
+   *  ajustam profundidade onde o provider suporta (GLM/Ollama são on/off). */
+  reasoningEffort: 'default' | 'off' | 'low' | 'medium' | 'high'
   memoryEnabled: boolean
   analyticsEnabled: boolean
   permissionLevel: PermissionLevel
@@ -104,6 +108,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   customLabel: 'Custom (OpenAI-compatible)',
   contextLimit: 50,
   ollamaNumCtx: 8192,
+  reasoningEffort: 'default',
   memoryEnabled: false,
   analyticsEnabled: true,
   permissionLevel: 'ask',

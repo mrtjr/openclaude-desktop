@@ -310,6 +310,29 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                 </p>
               </div>
 
+              {/* Esforço de raciocínio (v2.25.0) */}
+              <div className="settings-group">
+                <label className="settings-label">
+                  <span>{local.language === 'en' ? 'Reasoning effort' : 'Esforço de raciocínio'}</span>
+                </label>
+                <select
+                  value={local.reasoningEffort ?? 'default'}
+                  onChange={(e) => setLocal(s => ({ ...s, reasoningEffort: e.target.value as AppSettings['reasoningEffort'] }))}
+                  className="settings-input"
+                >
+                  <option value="default">{local.language === 'en' ? 'Provider default' : 'Padrão do provider'}</option>
+                  <option value="off">{local.language === 'en' ? 'Off (faster)' : 'Desligado (mais rápido)'}</option>
+                  <option value="low">{local.language === 'en' ? 'Low' : 'Baixo'}</option>
+                  <option value="medium">{local.language === 'en' ? 'Medium' : 'Médio'}</option>
+                  <option value="high">{local.language === 'en' ? 'High' : 'Alto'}</option>
+                </select>
+                <p className="settings-hint">
+                  {local.language === 'en'
+                    ? 'Controls how much the model "thinks". Off skips reasoning (faster, good for simple tasks). Depth levels (low/medium/high) only apply where supported (OpenAI/Anthropic); GLM (Modal) and Ollama are on/off. Default sends nothing — provider behavior.'
+                    : 'Controla quanto o modelo "pensa". Desligado pula o raciocínio (mais rápido, bom para tarefas simples). Os níveis (baixo/médio/alto) só valem onde há suporte (OpenAI/Anthropic); GLM (Modal) e Ollama são liga/desliga. Padrão não envia nada — comportamento do provider.'}
+                </p>
+              </div>
+
               {/* System prompt */}
               <div className="settings-group">
                 <label className="settings-label">

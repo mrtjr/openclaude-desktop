@@ -7,6 +7,30 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.25.0] — 2026-06-14
+
+### Added — Controle de esforço de raciocínio por provider
+
+Evolução do raciocínio escolhida pelo usuário. Um único setting (`reasoningEffort`)
+controla quanto o modelo "pensa", mapeado para o parâmetro correto de cada
+provider — verificado contra as APIs de 2026:
+
+- **GLM-5.1 (Modal/vLLM)**: `chat_template_kwargs.enable_thinking` (binário —
+  desligar acelera tarefas simples, atacando de quebra a latência/cold-start).
+- **Ollama**: `think` on/off (melhor-esforço no endpoint OpenAI-compat).
+- **OpenAI / OpenRouter / Custom**: `reasoning_effort` (low/medium/high).
+- **Anthropic**: `thinking.budget_tokens` por nível — e remove `temperature`
+  (incompatível) + garante `max_tokens > budget`.
+
+- **Seguro por padrão**: `default` (o padrão) **não envia nada** — comportamento
+  atual preservado, sem risco de quebrar o GLM. O usuário escolhe
+  desligar/baixo/médio/alto em Configurações.
+- Mapeador puro/testável em `electron/reasoning-control.js` (mesmo padrão do
+  `provider-timeouts.js`), aplicado nos 4 handlers (provider stream/non-stream
+  + Ollama stream/non-stream). 8 testes novos (613 no total).
+- Nota honesta: profundidade (baixo/médio/alto) só vale onde o provider suporta
+  (OpenAI/Anthropic); GLM e Ollama são liga/desliga.
+
 ## [2.24.0] — 2026-06-13
 
 ### Fixed — Timeout ao usar modelo local com contexto grande (janela de contexto real para Ollama)

@@ -8,6 +8,7 @@ const https = require('https')
 const os = require('os')
 const { atomicWriteJSON, readJSONWithFallback } = require('./atomic-write')
 const { providerTimeoutMs, createStallWatchdog } = require('./provider-timeouts')
+const { reasoningRequestParams } = require('./reasoning-control')
 const { cachedSystem, withCachedTools } = require('./anthropic-cache')
 const { resolveNavOutcome } = require('./browser-nav')
 const { planScreenshot, SHOT_JPEG_QUALITY } = require('./screenshot-util')
@@ -255,16 +256,18 @@ ipcMain.handle('compact-context', async (event, { messages, model, language, pro
 })
 
 // ─── IPC: Ollama chat (non-streaming) ────────────────────────────────
-ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperature, max_tokens, numCtx }) => {
+ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperature, max_tokens, numCtx, reasoningEffort }) => {
   return new Promise((resolve, reject) => {
-    const body = JSON.stringify({
+    const bodyObj = {
       model,
       messages,
       tools: tools || [],
       stream: false,
       options: { temperature: temperature ?? 0.7, ...(numCtx ? { num_ctx: numCtx } : {}) },
       ...(max_tokens ? { max_tokens } : {})
-    })
+    }
+    applyReasoning(bodyObj, 'ollama', model, reasoningEffort) // think on/off (v2.25.0)
+    const body = JSON.stringify(bodyObj)
 
     const options = {
       hostname: 'localhost',
@@ -301,9 +304,9 @@ ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperatur
 })
 
 // ─── IPC: Ollama chat streaming ──────────────────────────────────────
-ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, temperature, max_tokens, numCtx }) => {
+ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, temperature, max_tokens, numCtx, reasoningEffort }) => {
   return new Promise((resolve, reject) => {
-    const body = JSON.stringify({
+    const bodyObj = {
       model,
       messages,
       tools: tools || [],
@@ -314,7 +317,9 @@ ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, tem
       // renderer manda a janela REALISTA (settings.ollamaNumCtx). v2.24.0.
       options: { temperature: temperature ?? 0.7, ...(numCtx ? { num_ctx: numCtx } : {}) },
       ...(max_tokens ? { max_tokens } : {})
-    })
+    }
+    applyReasoning(bodyObj, 'ollama', model, reasoningEffort) // think on/off (v2.25.0)
+    const body = JSON.stringify(bodyObj)
 
     const options = {
       hostname: 'localhost',
@@ -1081,7 +1086,7 @@ function parseCustomBase(baseUrl) {
 }
 
 // ─── IPC: Multi-provider chat (OpenAI, Gemini, Anthropic) ──────────
-ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, messages, tools, temperature, max_tokens, stream, modalHostname, customBaseUrl }) => {
+ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, messages, tools, temperature, max_tokens, stream, modalHostname, customBaseUrl, reasoningEffort }) => {
   return new Promise((resolve, reject) => {
     let hostname, apiPath, headers, bodyObj
     let transport = https
@@ -1179,6 +1184,8 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
       return resolve({ error: `Provider "${provider}" not supported` })
     }
 
+    applyReasoning(bodyObj, provider, model, reasoningEffort)
+
     const body = JSON.stringify(bodyObj)
     const reqOptions = {
       hostname,
@@ -1238,8 +1245,18 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
   })
 })
 
+// Mescla os params de esforço de raciocínio no corpo do request (mutável).
+// 'default'/ausente = no-op. Ver electron/reasoning-control.js. v2.25.0.
+function applyReasoning(bodyObj, provider, model, effort) {
+  const rp = reasoningRequestParams(provider, model, effort)
+  if (rp.extra && Object.keys(rp.extra).length) Object.assign(bodyObj, rp.extra)
+  if (rp.dropTemperature) delete bodyObj.temperature
+  if (rp.minMaxTokens && (!bodyObj.max_tokens || bodyObj.max_tokens < rp.minMaxTokens)) bodyObj.max_tokens = rp.minMaxTokens
+  return bodyObj
+}
+
 // ─── IPC: Multi-provider chat STREAMING (OpenAI/OpenRouter/Modal/Anthropic) ─
-ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, messages, tools, temperature, max_tokens, modalHostname, customBaseUrl }) => {
+ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, messages, tools, temperature, max_tokens, modalHostname, customBaseUrl, reasoningEffort }) => {
   return new Promise((resolve) => {
     let hostname, apiPath, headers, bodyObj
     let transport = https
@@ -1301,6 +1318,12 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
     } else {
       return resolve({ error: `Provider "${provider}" does not support streaming` })
     }
+
+    // Esforço de raciocínio (v2.25.0). 'default' não muda nada; caso contrário
+    // mescla os params específicos do provider (enable_thinking / reasoning_effort
+    // / thinking budget). Anthropic com thinking: remove temperature e garante
+    // max_tokens > budget.
+    applyReasoning(bodyObj, provider, model, reasoningEffort)
 
     const body = JSON.stringify(bodyObj)
     const reqOptions = { hostname, ...(port ? { port } : {}), path: apiPath, method: 'POST', headers: { ...headers, 'Content-Length': Buffer.byteLength(body) } }
