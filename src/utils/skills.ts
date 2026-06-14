@@ -77,6 +77,33 @@ export const BUILTIN_SKILLS: Skill[] = [
     isBuiltIn: true,
     createdAt: 0,
   },
+  {
+    id: 'builtin-pentest',
+    name: 'pentest',
+    description: 'Pentest ÉTICO com escopo autorizado: recon → enumeração → análise de vulnerabilidades → PoC controlada → relatório com remediação.',
+    instructions: `Ciclo de penetration testing ÉTICO — só com autorização explícita do dono do sistema:
+
+0. AUTORIZAÇÃO E ESCOPO — pré-requisito inegociável, antes de QUALQUER ação. Confirme: existe autorização (do dono/contrato/CTF/lab próprio)? Quais alvos (IPs/domínios/apps) estão NO escopo e quais ficam DE FORA? Qual a janela de tempo e as regras de engajamento (rate-limit, proibido DoS, proibido exfiltrar dados reais)? Sem escopo claro e autorizado, PARE e pergunte — nunca teste sistema de terceiros sem permissão. Guarde o escopo com remember_fact.
+
+1. RECON. Mapeie a superfície de ataque DENTRO do escopo: passivo primeiro (OSINT, web_search por exposições/credenciais vazadas/subdomínios, DNS), depois ativo. Use execute_command só para ferramentas locais autorizadas. Registre o plano com plan_tasks (inclua uma tarefa 'Relatório') e marque progresso com update_task_status.
+
+2. ENUMERAÇÃO. Aprofunde nos serviços/portas/endpoints/parâmetros achados: versões exatas, tecnologias, usuários, configs e segredos expostos. Para código/config no repo, use search_files + read_file. Catalogue cada achado com a evidência bruta (saída do comando, request/response).
+
+3. ANÁLISE DE VULNERABILIDADES. Cruze os achados com OWASP Top 10 / CWE e CVEs conhecidos (web_search pela versão EXATA do componente). Separe vuln confirmada de hipótese. Classifique por severidade (Crítica/Alta/Média/Baixa) via impacto × probabilidade — use CVSS quando aplicável.
+
+4. PoC CONTROLADA — só dentro do escopo e das regras. Prove a vulnerabilidade com o MENOR teste que demonstra o risco: nada destrutivo, sem tocar dados reais, sem pivotar para fora do escopo, sem persistir acesso. Documente os passos exatos de reprodução. Em dúvida sobre o blast radius, pare e confirme ANTES.
+
+5. VERIFICAR — sem falso positivo. Todo achado reportado precisa de evidência reproduzível. Verifique adversarialmente: tente refutar o próprio achado (é explorável de verdade? há mitigação ativa?) antes de afirmá-lo. Sem evidência sólida = não reporte como confirmado (marque 'a investigar').
+
+6. RELATÓRIO E REMEDIAÇÃO. Para cada achado: título, severidade, evidência/PoC, impacto e remediação CONCRETA (com código/config quando der). Ordene por severidade e abra com um resumo executivo. Recomende defesa em profundidade, não só o patch pontual. Pratique disclosure responsável.
+
+7. PERSISTIR E LIMPAR. Guarde achados duráveis com remember_fact e o estado da investigação com update_working_memory. Reverta qualquer artefato de teste (arquivo, conta, payload) que tenha criado no alvo.`,
+    triggers: ['pentest', 'penetration', 'pentesting', 'vulnerabilidade', 'vulnerabilidades', 'owasp', 'red team', 'exploit', 'cve', 'recon', 'enumeração', 'segurança ofensiva'],
+    enabled: true,
+    pinned: false,
+    isBuiltIn: true,
+    createdAt: 0,
+  },
 ]
 
 /** Lookup por nome (case-insensitive) ou id. Null se não achar. */

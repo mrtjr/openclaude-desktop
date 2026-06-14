@@ -7,6 +7,29 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.29.0] — 2026-06-14
+
+### Added — Skill builtin de pentest (segurança ofensiva ética)
+
+Nova skill builtin `pentest`: um ciclo de penetration testing ético, ativada
+sob demanda (load_skill) ou por palavra-chave (pentest/vulnerabilidade/OWASP/
+exploit/CVE/red team…). Complementa a persona **Sentinela** — a persona troca a
+identidade do assistente; a skill é uma capacidade carregável que injeta só o
+playbook quando relevante.
+
+- **Gate de autorização (passo 0) inegociável**: antes de qualquer recon ou PoC,
+  exige autorização explícita do dono, escopo (alvos in/out), janela e regras de
+  engajamento (sem DoS, sem exfiltrar dados reais). Sem escopo claro → PARE.
+- Ciclo: recon (passivo→ativo) → enumeração → análise de vulnerabilidades
+  (OWASP/CWE/CVE + CVSS) → PoC controlada (mínima, não destrutiva) → verificação
+  adversarial sem falso positivo → relatório com remediação concreta e disclosure
+  responsável → persistir/limpar artefatos.
+- Reusa as ferramentas do harness (web_search, execute_command, search_files,
+  plan_tasks, remember_fact…), no mesmo padrão das skills `code` e
+  `pesquisa-com-fontes`.
+- Testes: presença da skill, ênfase em autorização/escopo, passo 0 antes do 1, e
+  unicidade de nomes/ids dos builtins.
+
 ## [2.28.0] — 2026-06-14
 
 ### Changed — Skills builtin de code e pesquisa reescritas (pesquisa + verificação adversarial)

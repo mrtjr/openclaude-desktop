@@ -119,4 +119,18 @@ describe('BUILTIN_SKILLS — sanidade', () => {
       expect(s.isBuiltIn).toBe(true)
     }
   })
+  it('nomes e ids são únicos', () => {
+    const names = BUILTIN_SKILLS.map(s => s.name)
+    const ids = BUILTIN_SKILLS.map(s => s.id)
+    expect(new Set(names).size).toBe(names.length)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+  it('skill de pentest existe e exige autorização/escopo antes de testar', () => {
+    const pentest = BUILTIN_SKILLS.find(s => s.name === 'pentest')
+    expect(pentest).toBeTruthy()
+    expect(pentest!.instructions.toLowerCase()).toContain('autorização')
+    expect(pentest!.instructions.toLowerCase()).toContain('escopo')
+    // o passo 0 (gate de autorização) vem ANTES de qualquer recon/PoC
+    expect(pentest!.instructions.indexOf('0.')).toBeLessThan(pentest!.instructions.indexOf('1.'))
+  })
 })
