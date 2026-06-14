@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classifyProviderError, humanizeProviderError } from '../src/utils/providerErrors'
+import { classifyProviderError, humanizeProviderError, isColdStartTimeout } from '../src/utils/providerErrors'
 
 describe('classifyProviderError', () => {
   const cases: Array<[string, string, boolean]> = [
@@ -71,5 +71,25 @@ describe('humanizeProviderError', () => {
     const out = humanizeProviderError('Stream travado: provider parou de enviar conteúdo por 150s (só keep-alive)', 'pt')
     expect(out).toMatch(/travou no meio/)
     expect(out).not.toMatch(/Erro do provedor:/) // não é mais "unknown"
+  })
+})
+
+describe('isColdStartTimeout — auto-retry de timeout de cold-start (v2.26.0)', () => {
+  it('timeout SEM conteúdo → refaz (a 1ª tentativa aqueceu o container)', () => {
+    expect(isColdStartTimeout('timeout', false)).toBe(true)
+  })
+  it('timeout COM conteúdo já transmitido → NÃO refaz (duplicaria)', () => {
+    expect(isColdStartTimeout('timeout', true)).toBe(false)
+  })
+  it('só timeout dispara; outros erros não', () => {
+    expect(isColdStartTimeout('network', false)).toBe(false)
+    expect(isColdStartTimeout('auth', false)).toBe(false)
+    expect(isColdStartTimeout('stall', false)).toBe(false)
+    expect(isColdStartTimeout('overloaded', false)).toBe(false)
+  })
+  it('a string real de timeout do provider classifica e habilita o retry', () => {
+    const cls = classifyProviderError('Provider request timeout after 300s')
+    expect(cls.kind).toBe('timeout')
+    expect(isColdStartTimeout(cls.kind, false)).toBe(true)
   })
 })

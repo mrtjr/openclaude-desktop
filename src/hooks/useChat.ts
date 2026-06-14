@@ -5,7 +5,7 @@ import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIM
 import { partitionTools, renderDeferredManifest, decideDeferral } from '../services/toolDeferral'
 import { generateId, isSmallModel } from '../utils/formatting'
 import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice, extractThinking } from '../utils/sanitizers'
-import { classifyProviderError, humanizeProviderError } from '../utils/providerErrors'
+import { classifyProviderError, humanizeProviderError, isColdStartTimeout } from '../utils/providerErrors'
 import { initStallState, decideStallRetry } from '../utils/stallRecovery'
 import { resolveTurnUsage } from '../utils/usage'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
@@ -388,6 +388,13 @@ export function useChat({
       // por turno (ver utils/stallRecovery.ts). Este estado é o ÚNICO guard de
       // término do stall; NÃO resetar por passo (removeria o limite por-turno).
       let stallState = initStallState()
+      // Auto-retry de timeout de cold-start (v2.26.0). O timeout nº1 da
+      // telemetria é cold-start do GLM no Modal: a 1ª tentativa aquece o
+      // container, a 2ª responde. 1 retry basta (e timeout != provider morto —
+      // morto dá ECONNREFUSED/network, não timeout). Só quando nada foi
+      // transmitido (senão duplicaria).
+      let timeoutRetriesUsed = 0
+      const MAX_TIMEOUT_RETRIES = 1
       const isToolsUnsupportedError = (msg: string | undefined): boolean => {
         if (!msg) return false
         const m = msg.toLowerCase()
@@ -641,6 +648,19 @@ export function useChat({
                 continue
               }
             }
+            // Timeout de cold-start: a 1ª tentativa aqueceu o container; refaz
+            // o passo. Só sem conteúdo transmitido (senão duplicaria). Atinge
+            // 14/17 erros da telemetria (Modal/GLM), que hoje não têm retry.
+            if (isColdStartTimeout(cls.kind, !!accumulated) && timeoutRetriesUsed < MAX_TIMEOUT_RETRIES && !stopRequestedRef.current) {
+              timeoutRetriesUsed++
+              logInsight('chat', 'retry', { kind: 'timeout', attempt: timeoutRetriesUsed })
+              setIsStreaming(false)
+              setStreamingText(''); setStreamingPhase(null)
+              showToast(lang === 'en' ? 'Provider warming up — retrying…' : 'Provedor aquecendo — tentando de novo…')
+              await new Promise(r => setTimeout(r, 1500))
+              steps--
+              continue
+            }
             // Transient failure: back off and retry once. Guarded by
             // `!accumulated` so we never re-send after partial output already
             // streamed (no double output / double billing). `cls.kind !== 'stall'`
@@ -810,8 +830,18 @@ export function useChat({
               steps--
               continue
             }
-            // Transient failure auto-retry (mirrors the streaming path).
             const cls = classifyProviderError(response.error)
+            // Timeout de cold-start (não-stream): a 1ª tentativa aqueceu o
+            // container; refaz. (Não-stream é tudo-ou-nada → sem conteúdo parcial.)
+            if (isColdStartTimeout(cls.kind, false) && timeoutRetriesUsed < MAX_TIMEOUT_RETRIES && !stopRequestedRef.current) {
+              timeoutRetriesUsed++
+              logInsight('chat', 'retry', { kind: 'timeout', attempt: timeoutRetriesUsed })
+              showToast(lang === 'en' ? 'Provider warming up — retrying…' : 'Provedor aquecendo — tentando de novo…')
+              await new Promise(r => setTimeout(r, 1500))
+              steps--
+              continue
+            }
+            // Transient failure auto-retry (mirrors the streaming path).
             if (cls.retryable && transientRetriesUsed < MAX_TRANSIENT_RETRIES) {
               transientRetriesUsed++
               logInsight('chat', 'retry', { kind: cls.kind })

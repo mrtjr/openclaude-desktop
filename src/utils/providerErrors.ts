@@ -77,6 +77,16 @@ export function classifyProviderError(raw: string | undefined): ProviderErrorInf
   return { kind: 'unknown', retryable: false }
 }
 
+/** Um timeout SEM conteúdo transmitido é quase sempre cold-start do provider
+ *  (o servidor aceitou a conexão mas está subindo o container — ex.: GLM-5.1
+ *  744B no Modal). Vale retry: a 1ª tentativa que falhou JÁ AQUECEU o container,
+ *  então a 2ª pega ele pronto e responde rápido. Um timeout COM conteúdo já
+ *  transmitido NÃO deve refazer (duplicaria a resposta). Conserta o erro nº1 da
+ *  telemetria (13 timeouts, 0 retries) — v2.26.0. */
+export function isColdStartTimeout(kind: ProviderErrorKind, hasContent: boolean): boolean {
+  return kind === 'timeout' && !hasContent
+}
+
 const MESSAGES: Record<ProviderErrorKind, { pt: string; en: string }> = {
   auth: {
     pt: 'Chave de API inválida ou ausente. Verifique a chave do provedor em Configurações.',

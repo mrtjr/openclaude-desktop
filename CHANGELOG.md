@@ -7,6 +7,34 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.26.0] — 2026-06-14
+
+### Fixed — Robustez: auto-retry de timeout de cold-start (o erro nº1 da telemetria)
+
+Decisão guiada por dados. A telemetria mostrava o problema de robustez mais
+grave do projeto: **17 de 23 turnos com erro (74%)**, e o drill-down revelou
+**14 deles no Modal/GLM-5.1, dominados por timeout (13), com ZERO retries** —
+porque timeout era classificado como `retryable: false`. Cada timeout matava o
+turno sem nenhuma tentativa.
+
+A causa é cold-start: o GLM-5.1 (744B MoE) demora a subir o container no Modal.
+Mas a 1ª tentativa que "falhou" **já aqueceu o container** — então uma 2ª
+tentativa pega ele pronto e responde. A política de não-retry era o bug.
+
+- **`isColdStartTimeout(kind, hasContent)`** (puro/testável): um timeout SEM
+  conteúdo transmitido é tratado como cold-start e refeito. COM conteúdo já no
+  ar, não (evita resposta duplicada).
+- Branch dedicado nos caminhos streaming e não-streaming (mesma arquitetura da
+  recuperação de stall, v2.22.0), com orçamento próprio (`MAX_TIMEOUT_RETRIES=1`)
+  e toast "Provedor aquecendo — tentando de novo…". Timeout ≠ provider morto
+  (morto dá ECONNREFUSED/network, não timeout), então o retry é bem-mirado.
+- `logInsight` registra o retry de timeout — o próximo digest vai mostrar a
+  conversão de timeout→sucesso.
+- 4 testes novos (617 no total).
+
+Nota: a eliminação definitiva do cold-start é server-side (Modal `min_containers=1`),
+config na sua conta. Este ciclo torna o app **resiliente** a ele.
+
 ## [2.25.0] — 2026-06-14
 
 ### Added — Controle de esforço de raciocínio por provider
