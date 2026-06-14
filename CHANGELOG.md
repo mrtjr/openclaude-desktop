@@ -7,6 +7,19 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.31.0] — 2026-06-14
+
+### Added — Botão de fechar o painel de plano de tarefas
+
+Antes só dava para *minimizar* o `task-plan-panel` (o cabeçalho continuava
+visível); não havia como removê-lo da tela. Agora o cabeçalho tem um botão **X**
+(ao lado do contador) que fecha o plano de vez — limpa `taskPlan` da conversa
+ativa via `setConversations`. O clique no X usa `stopPropagation` para não
+disparar o minimizar do cabeçalho. O painel reaparece se o modelo criar um novo
+plano (`plan_tasks`); enquanto fechado, `update_task_status` é no-op (não
+ressuscita o painel). CSS `.task-plan-close` restaurado (hover vermelho, suporte
+a tema claro). Typecheck, build e 634 testes OK.
+
 ## [2.30.0] — 2026-06-14
 
 ### Fixed — Painel de plano de tarefas: drift CSS↔JSX (itens sem estilo)

@@ -1775,6 +1775,19 @@ export default function App() {
                     <ListChecks size={14} /><span className="task-plan-goal">{activeConv.taskPlan.goal}</span>
                   </span>
                   <span className="task-plan-progress">{doneCount}/{total}</span>
+                  <button
+                    className="task-plan-close"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      convManager.setConversations(prev => prev.map(c =>
+                        c.id === activeConv.id ? { ...c, taskPlan: undefined } : c
+                      ))
+                    }}
+                    title="Fechar plano"
+                    aria-label="Fechar plano"
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
                 <div className="task-plan-bar"><div className="task-plan-bar-fill" style={{ width: `${pct}%` }} /></div>
                 {taskPlanCollapsed && current && (

@@ -1044,6 +1044,13 @@ body .update-banner {
   color: var(--text-muted); background: rgba(255,255,255,0.05);
   padding: 2px 8px; border-radius: 20px;
 }
+.task-plan-close {
+  flex-shrink: 0; background: none; border: none; color: var(--text-muted);
+  cursor: pointer; padding: 3px; border-radius: 6px; display: flex;
+  transition: color 0.15s, background 0.15s;
+}
+.task-plan-close:hover { color: var(--red); background: rgba(255,255,255,0.06); }
+[data-theme="light"] .task-plan-close:hover { background: rgba(0,0,0,0.06); }
 /* barra de progresso fina — visível inclusive colapsado */
 .task-plan-bar { height: 3px; background: rgba(255,255,255,0.06); }
 .task-plan-bar-fill {
