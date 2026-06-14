@@ -1024,35 +1024,65 @@ body .update-banner {
 .msg-action-btn:hover { background: rgba(255,255,255,0.06); color: var(--text-primary); }
 [data-theme="light"] .msg-action-btn:hover { background: rgba(0,0,0,0.06); }
 
-/* ── Task Plan panel ──────────────────────────────────────────── */
+/* ── Task Plan panel — checklist estilo Claude (estado claro + progresso) ── */
 .task-plan-panel {
   max-width: 820px; margin: 0 auto 12px;
   background: var(--bg-secondary); border: 1px solid var(--border);
   border-radius: 12px; overflow: hidden;
   box-shadow: var(--shadow-sm);
 }
+.task-plan-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; background: rgba(255,255,255,0.025);
+}
+.task-plan-chevron { flex-shrink: 0; color: var(--text-muted); transition: transform 0.15s ease; }
+.task-plan-title { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; color: var(--accent); }
+.task-plan-title > svg { flex-shrink: 0; }
+.task-plan-goal { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task-plan-progress {
+  flex-shrink: 0; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+  color: var(--text-muted); background: rgba(255,255,255,0.05);
+  padding: 2px 8px; border-radius: 20px;
+}
+/* barra de progresso fina — visível inclusive colapsado */
+.task-plan-bar { height: 3px; background: rgba(255,255,255,0.06); }
+.task-plan-bar-fill {
+  height: 100%; border-radius: 0 2px 2px 0;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 100%);
+  transition: width 0.3s ease;
+}
+/* tarefa atual — mostrada quando colapsado para não perder o foco de vista */
+.task-plan-current { display: flex; align-items: center; gap: 8px; padding: 9px 14px; font-size: 12px; color: var(--text-secondary); }
+.task-plan-current > svg { flex-shrink: 0; color: var(--accent); }
+
 .task-plan-list {
-  overflow: hidden;
+  padding: 8px; display: flex; flex-direction: column; gap: 2px;
+  overflow: hidden auto; max-height: 320px; opacity: 1;
   transition: max-height 0.22s ease, opacity 0.18s ease, padding 0.18s ease;
-  max-height: 600px; opacity: 1;
 }
 .task-plan-panel.collapsed .task-plan-list { max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0; }
-.task-plan-panel.collapsed .task-plan-header { border-bottom-color: transparent; }
-.task-plan-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 16px; background: rgba(255,255,255,0.025);
-  border-bottom: 1px solid var(--border);
+
+.task-plan-item {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; color: var(--text-secondary);
+  padding: 6px 8px; border-radius: 8px;
 }
-.task-plan-title { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--accent); }
-.task-plan-progress { font-size: 11px; color: var(--text-muted); }
-.task-plan-close { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 2px; border-radius: 4px; transition: all 0.15s; display: flex; }
-.task-plan-close:hover { color: var(--text-primary); background: rgba(255,255,255,0.06); }
-.task-list { padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; }
-.task-item { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--text-secondary); padding: 4px 0; }
-.task-item.done { color: var(--text-muted); text-decoration: line-through; }
-.task-item.in-progress { color: var(--text-primary); font-weight: 500; }
-.task-item.failed { color: var(--red); }
-.task-status-icon { flex-shrink: 0; }
+.task-plan-item > svg { flex-shrink: 0; }
+.task-plan-item-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* pendente — apagado */
+.task-plan-item.is-pending { color: var(--text-muted); }
+.task-plan-item.is-pending > svg { opacity: 0.55; }
+/* em progresso — destacado (acento + leve fundo), exatamente uma por vez */
+.task-plan-item.is-in_progress { color: var(--text-primary); font-weight: 600; background: var(--accent-dim); }
+.task-plan-item.is-in_progress > svg { color: var(--accent); }
+/* concluído — esmaecido + riscado */
+.task-plan-item.is-done { color: var(--text-muted); }
+.task-plan-item.is-done .task-plan-item-title { text-decoration: line-through; }
+.task-plan-item.is-done > svg { color: var(--green); }
+/* falhou — vermelho */
+.task-plan-item.is-failed { color: var(--red); }
+.task-plan-item.is-failed > svg { color: var(--red); }
+.task-result { margin-left: auto; font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 38%; }
 
 /* ── Voice controls ──────────────────────────────────────────── */
 .voice-btn {

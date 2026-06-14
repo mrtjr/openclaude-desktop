@@ -7,6 +7,37 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.30.0] — 2026-06-14
+
+### Fixed — Painel de plano de tarefas: drift CSS↔JSX (itens sem estilo)
+
+O widget `task-plan-panel` (acima do compositor) renderizava os itens da lista
+sem estilo nenhum: o JSX usava as classes `task-plan-list` / `task-plan-item` /
+`task-${status}` (ex.: `task-done`, `task-in_progress`), mas o CSS só estilizava
+`.task-list` / `.task-item.done` / `.task-item.in-progress` (com hífen). Nenhuma
+regra de item casava — daí "ficava errado": tudo na mesma cor, sem destaque do
+ativo nem riscado no concluído.
+
+### Changed — Redesign do checklist no padrão do Claude (Agent SDK / TodoWrite)
+
+A partir da doc oficial de todo-tracking (estados pending→in_progress→completed,
+exatamente uma tarefa ativa, ativa destacada, concluídas com check+riscado,
+progresso "X/Y"):
+
+- Classes do JSX e do CSS realinhadas (`is-${status}`); CSS órfão `.task-item`/
+  `.task-list` removido.
+- Estados visuais claros: **pendente** apagado (círculo vazio), **em progresso**
+  destacado (acento + leve fundo + spinner), **concluído** esmaecido + riscado +
+  check verde, **falhou** em vermelho.
+- **Barra de progresso fina** sob o cabeçalho, visível inclusive colapsado.
+- Quando colapsado, mostra a **tarefa atual** (não perde o foco de vista).
+- Cabeçalho com `goal` truncado por ellipsis + contador "X/Y" em pílula
+  (tabular-nums).
+
+Só JSX (`App.tsx`) + CSS (`index.css`); sem mudança de modelo de dados. 634
+testes passando, typecheck e build de produção OK. Próximo passo possível:
+adotar `activeForm` (gerúndio da tarefa ativa) — exige um campo no `plan_tasks`.
+
 ## [2.29.0] — 2026-06-14
 
 ### Added — Skill builtin de pentest (segurança ofensiva ética)

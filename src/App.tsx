@@ -1751,39 +1751,49 @@ export default function App() {
             </button>
           )}
 
-          {/* Task Plan Panel */}
-          {activeConv?.taskPlan && (
-            <div className={`task-plan-panel ${taskPlanCollapsed ? 'collapsed' : ''}`}>
-              <div
-                className="task-plan-header"
-                onClick={() => setTaskPlanCollapsed(c => !c)}
-                style={{ cursor: 'pointer', userSelect: 'none' }}
-                title={taskPlanCollapsed ? 'Expandir' : 'Minimizar'}
-              >
-                <ChevronDown
-                  size={14}
-                  style={{
-                    transform: taskPlanCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.15s ease',
-                    flexShrink: 0
-                  }}
-                />
-                <ListChecks size={14} /><span>{activeConv.taskPlan.goal}</span>
-                <span className="task-plan-progress">{activeConv.taskPlan.tasks.filter(t => t.status === 'done').length}/{activeConv.taskPlan.tasks.length}</span>
+          {/* Task Plan Panel — checklist estilo Claude (estados claros + progresso) */}
+          {activeConv?.taskPlan && (() => {
+            const tasks = activeConv.taskPlan.tasks
+            const total = tasks.length
+            const doneCount = tasks.filter(t => t.status === 'done').length
+            const pct = total ? Math.round((doneCount / total) * 100) : 0
+            const current = tasks.find(t => t.status === 'in_progress')
+            return (
+              <div className={`task-plan-panel ${taskPlanCollapsed ? 'collapsed' : ''}`}>
+                <div
+                  className="task-plan-header"
+                  onClick={() => setTaskPlanCollapsed(c => !c)}
+                  style={{ cursor: 'pointer', userSelect: 'none' }}
+                  title={taskPlanCollapsed ? 'Expandir' : 'Minimizar'}
+                >
+                  <ChevronDown
+                    className="task-plan-chevron"
+                    size={14}
+                    style={{ transform: taskPlanCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}
+                  />
+                  <span className="task-plan-title">
+                    <ListChecks size={14} /><span className="task-plan-goal">{activeConv.taskPlan.goal}</span>
+                  </span>
+                  <span className="task-plan-progress">{doneCount}/{total}</span>
+                </div>
+                <div className="task-plan-bar"><div className="task-plan-bar-fill" style={{ width: `${pct}%` }} /></div>
+                {taskPlanCollapsed && current && (
+                  <div className="task-plan-current"><Loader2 size={12} className="spin" /><span>{current.title}</span></div>
+                )}
+                <div className="task-plan-list" aria-hidden={taskPlanCollapsed}>
+                  {tasks.map(task => (
+                    <div key={task.id} className={`task-plan-item is-${task.status}`}>
+                      {task.status === 'done' ? <CheckCircle2 size={14} /> :
+                       task.status === 'in_progress' ? <Loader2 size={14} className="spin" /> :
+                       task.status === 'failed' ? <AlertCircle size={14} /> : <Circle size={14} />}
+                      <span className="task-plan-item-title">{task.title}</span>
+                      {task.result && <span className="task-result">{task.result}</span>}
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="task-plan-list" aria-hidden={taskPlanCollapsed}>
-                {activeConv.taskPlan.tasks.map(task => (
-                  <div key={task.id} className={`task-plan-item task-${task.status}`}>
-                    {task.status === 'done' ? <CheckCircle2 size={12} /> :
-                     task.status === 'in_progress' ? <Loader2 size={12} className="spin" /> :
-                     task.status === 'failed' ? <AlertCircle size={12} /> : <Circle size={12} />}
-                    <span>{task.title}</span>
-                    {task.result && <span className="task-result">{task.result}</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* Tool Approval Banner */}
           {toolExec.pendingApproval && (
