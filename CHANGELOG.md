@@ -7,6 +7,31 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.34.0] — 2026-06-14
+
+### Fixed — IA entregava relatório com o plano em "0/7" (tarefas nunca concluídas)
+
+Bug relatado: o modelo criava um plano, fazia o trabalho e entregava a resposta
+final SEM chamar `update_task_status` — o painel ficava em 0/7 para sempre. O
+harness só tinha um nudge de "execute o passo 1" logo após `plan_tasks` (uma vez
+só), insuficiente para um plano de vários passos, e nenhuma checagem no fim do
+turno.
+
+- **Espelho local do plano** (`src/utils/planTracker.ts`, puro + testado):
+  `applyPlanToolCalls` reconstrói o estado do plano a partir das tool calls
+  `plan_tasks` / `update_task_status` (igual ao monitor de todos do Claude Agent
+  SDK), e `planIsIncomplete` diz se sobrou tarefa em pending/in_progress.
+- **Nudge de fim de turno (capado)**: quando o modelo dá a resposta final com o
+  plano incompleto, o loop do `useChat` injeta `[CONCLUA O PLANO]` e continua —
+  no máximo 3 vezes, para não loopar. Aplicado nos 4 pontos de término
+  (streaming + não-streaming, resposta final + finish_reason), só em modo agente
+  e respeitando o Parar.
+- **Steering reforçado** no system prompt (pt/en): antes da resposta final,
+  reconcilie o plano — marque cada etapa como done/failed; nunca entregue com
+  tarefas pendentes.
+
+9 testes novos (planTracker). 653 testes, typecheck e build de produção OK.
+
 ## [2.33.0] — 2026-06-14
 
 ### Added — `fetch_url`: ler página sem abrir navegador (estilo WebFetch)

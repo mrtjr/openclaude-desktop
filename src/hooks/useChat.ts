@@ -11,6 +11,7 @@ import { renderSkillManifest, renderPinnedSkills, matchSkillsByText } from '../u
 import type { Skill } from '../types/skill'
 import { resolveTurnUsage } from '../utils/usage'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
+import { applyPlanToolCalls, planIsIncomplete, type LocalTask } from '../utils/planTracker'
 import { toolCallSummary } from '../utils/toolDisplay'
 import { nextStreamPhase, classifyDelta, createPhaseProfiler, type StreamPhase } from '../utils/streamPhase'
 import { runCompaction, mergeSummary, planEmergencyCompaction } from '../services/compaction'
@@ -395,6 +396,29 @@ export function useChat({
       // next iteration injects a one-shot nudge telling the model to
       // execute step 1. Cleared after it fires.
       let nudgeExecutePlan = false
+      // Espelho local do plano deste turno (estilo monitor do Claude SDK): começa
+      // do plano persistido e é atualizado pelas tool calls plan_tasks /
+      // update_task_status conforme acontecem. Serve para detectar, no fim do
+      // turno, se o modelo encerrou com tarefas pendentes (o bug: entregou o
+      // relatório com o plano em 0/7).
+      let localPlanTasks: LocalTask[] = Array.isArray(conv?.taskPlan?.tasks)
+        ? conv!.taskPlan!.tasks.map(t => ({ id: t.id, status: t.status }))
+        : []
+      const trackPlanFromToolCalls = (calls: any[]) => { localPlanTasks = applyPlanToolCalls(localPlanTasks, calls) }
+      // Quando o modelo dá a resposta final com o plano incompleto, injetamos um
+      // nudge "conclua o plano" e seguimos o loop — capado para não loopar.
+      let nudgeFinishPlan = false
+      let planFinishNudges = 0
+      const PLAN_FINISH_NUDGE_CAP = 3
+      const keepGoingToFinishPlan = () => {
+        if (!isAgentMode || stopRequestedRef.current) return false
+        if (planIsIncomplete(localPlanTasks) && planFinishNudges < PLAN_FINISH_NUDGE_CAP) {
+          planFinishNudges++
+          nudgeFinishPlan = true
+          return true
+        }
+        return false
+      }
       // Count of empty-response retries already spent this send. Capped
       // at 1 to avoid infinite "please continue" loops on a truly dead
       // provider. Reset per sendMessage.
@@ -510,6 +534,18 @@ export function useChat({
               : '[CONTINUAR] Você acabou de criar um plano de tarefas. AGORA execute o passo 1 chamando a ferramenta apropriada (ex: web_search, read_file, execute_command). NÃO pare esperando o usuário — o usuário espera que o plano seja executado nesta mesma rodada. Se um passo produzir resultado relevante, chame update_task_status e avance para o próximo.',
           })
           nudgeExecutePlan = false
+        }
+
+        // Nudge de fim de turno: o modelo entregou resposta mas o plano ficou
+        // incompleto. Mandamos concluir/atualizar antes de encerrar.
+        if (nudgeFinishPlan) {
+          requestMessages.push({
+            role: 'system',
+            content: lang === 'en'
+              ? '[FINISH THE PLAN] You produced an answer but the task plan still has unfinished steps. Either keep executing the remaining steps by calling tools NOW, or — if a step is genuinely done — call update_task_status to mark it done (or failed, with a brief reason) before concluding. Do NOT end with steps left pending/in_progress.'
+              : '[CONCLUA O PLANO] Você deu uma resposta, mas o plano de tarefas ainda tem passos não finalizados. Continue executando os passos restantes chamando as ferramentas AGORA, ou — se um passo realmente terminou — chame update_task_status para marcá-lo como done (ou failed, com um motivo curto) antes de concluir. NÃO encerre com passos pendentes/em andamento.',
+          })
+          nudgeFinishPlan = false
         }
 
         if (isAgentMode && isSmallModel(finalModel)) {
@@ -776,6 +812,8 @@ export function useChat({
             if (toolCallsData.some(tc => tc?.function?.name === 'plan_tasks')) {
               nudgeExecutePlan = true
             }
+            // Mantém o espelho local do plano em dia (plan_tasks / update_task_status).
+            trackPlanFromToolCalls(toolCallsData)
             idleSteps = shouldContinue.idleSteps
             if (!shouldContinue.continue) continueLoop = false
 
@@ -810,11 +848,16 @@ export function useChat({
               c.id !== convId ? c : { ...c, messages: [...c.messages, finalMsg] }
             ))
             if (accumulated) speakText(accumulated)
-            sessionTracker.agentCompleted = true
-            continueLoop = false
+            // Plano incompleto? Mantém o loop e injeta o nudge de conclusão (capado).
+            if (keepGoingToFinishPlan()) {
+              allMessages = [...allMessages, { role: 'assistant', content: safeContent }]
+            } else {
+              sessionTracker.agentCompleted = true
+              continueLoop = false
+            }
           }
 
-          if (finishReason === 'stop' && !(toolCallsData.length > 0 && toolCallsData[0]?.function?.name)) {
+          if (finishReason === 'stop' && !(toolCallsData.length > 0 && toolCallsData[0]?.function?.name) && !nudgeFinishPlan) {
             sessionTracker.agentCompleted = true
             continueLoop = false
           }
@@ -936,6 +979,7 @@ export function useChat({
             prevStepToolMs = Date.now() - toolStartTime
             idleSteps = shouldContinue.idleSteps
             if (!shouldContinue.continue) continueLoop = false
+            trackPlanFromToolCalls(toolCalls)
 
             setConversations(prev => prev.map(c =>
               c.id !== convId ? c : { ...c, messages: [...c.messages, thinkingMsg] }
@@ -965,11 +1009,16 @@ export function useChat({
               c.id !== convId ? c : { ...c, messages: [...c.messages, finalMsg] }
             ))
             if (assistantMsg.content) speakText(assistantMsg.content)
-            sessionTracker.agentCompleted = true
-            continueLoop = false
+            // Plano incompleto? Mantém o loop e injeta o nudge de conclusão (capado).
+            if (keepGoingToFinishPlan()) {
+              allMessages = [...allMessages, { role: 'assistant', content: safeContent || '' }]
+            } else {
+              sessionTracker.agentCompleted = true
+              continueLoop = false
+            }
           }
 
-          if (choice.finish_reason === 'stop' && !(toolCalls && toolCalls.length > 0)) {
+          if (choice.finish_reason === 'stop' && !(toolCalls && toolCalls.length > 0) && !nudgeFinishPlan) {
             sessionTracker.agentCompleted = true
             continueLoop = false
           }

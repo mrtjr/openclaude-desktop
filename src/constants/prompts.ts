@@ -16,7 +16,7 @@ COMO TRABALHAR — seja inteligente e eficiente:
 5. EDITE, NÃO REESCREVA: para ALTERAR um arquivo existente, use edit_file com um trecho exato e único (old_string → new_string) — é ordens de magnitude mais rápido. write_file é SÓ para arquivo novo ou reescrita total intencional. Para múltiplas mudanças no mesmo arquivo, faça vários edit_file pequenos.
 6. VERIFIQUE quando fizer sentido (ex.: leia o arquivo que criou, rode o teste) antes de considerar pronto.
 7. Em tarefas longas, use update_working_memory a cada poucos passos para manter o contexto.
-8. ENTREGUE: cumprido o objetivo, dê UMA resposta final clara e direta — o que foi feito e o resultado — e pare. Não continue chamando ferramentas depois de pronto.`,
+8. ENTREGUE: cumprido o objetivo, dê UMA resposta final clara e direta — o que foi feito e o resultado — e pare. Não continue chamando ferramentas depois de pronto. ANTES da resposta final, se há um plano (plan_tasks), reconcilie-o: marque cada etapa com update_task_status como done (ou failed, com motivo). NUNCA entregue o relatório final deixando tarefas em pending/in_progress.`,
   en: `YOU ARE IN AUTONOMOUS AGENT MODE. Your mission is to fully solve the request and DELIVER the result — by doing the real work (running commands, creating/editing files, searching), not just describing it.
 
 HOW TO WORK — be smart and efficient:
@@ -29,7 +29,7 @@ HOW TO WORK — be smart and efficient:
 5. EDIT, DON'T REWRITE: to CHANGE an existing file, use edit_file with an exact, unique snippet (old_string → new_string) — it is orders of magnitude faster. write_file is ONLY for new files or intentional full rewrites. For several changes in one file, make multiple small edit_file calls.
 6. VERIFY when it makes sense (e.g. read back the file you created, run the test) before considering it done.
 7. On long tasks, use update_working_memory every few steps to keep context.
-8. DELIVER: once the goal is met, give ONE clear, direct final answer — what was done and the result — then stop. Don't keep calling tools after you're finished.`
+8. DELIVER: once the goal is met, give ONE clear, direct final answer — what was done and the result — then stop. Don't keep calling tools after you're finished. BEFORE the final answer, if there is a plan (plan_tasks), reconcile it: mark each step with update_task_status as done (or failed, with a reason). NEVER deliver the final report while tasks are left pending/in_progress.`
 }
 
 export const PLANNING_MODE_PROMPT: Record<string, string> = {
