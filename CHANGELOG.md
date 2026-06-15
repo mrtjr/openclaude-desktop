@@ -7,6 +7,24 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.39.1] — 2026-06-15
+
+### Fixed — MCP: vazamento de processo + handshake incompleto (revisão da v2.35.0)
+
+Revisão do próprio trabalho das 5 áreas pegou dois bugs reais no MCP:
+
+- **Vazamento de processo:** `useMcp` nunca desconectava (cleanup só setava
+  `cancelled`) e o backend sobrescrevia a conexão no mesmo id sem matar o
+  processo antigo. Editar/remover um servidor deixava processos filhos zumbis.
+  Agora: o backend mata a conexão anterior do mesmo id ao reconectar, e `useMcp`
+  chama `mcpDisconnect` no cleanup e antes de reconectar (cobre servidores
+  removidos).
+- **Handshake incompleto:** o backend fazia `initialize` → `tools/list` sem a
+  notificação `notifications/initialized` exigida pelo protocolo MCP — servidores
+  estritos podiam travar. Agora a notificação é enviada após o initialize.
+
+673 testes, typecheck e build de produção OK.
+
 ## [2.39.0] — 2026-06-15
 
 ### Added — Subagents nomeados (papéis especializados no delegate_subtasks)

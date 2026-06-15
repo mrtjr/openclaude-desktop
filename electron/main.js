@@ -2155,6 +2155,13 @@ const mcpConnections = new Map()
 
 ipcMain.handle('mcp-connect', async (event, { id, command, args, env }) => {
   try {
+    // Evita vazar processo: se já há uma conexão com esse id (reconexão por
+    // mudança de config), mata a anterior antes de subir a nova.
+    const existing = mcpConnections.get(id)
+    if (existing) {
+      try { existing.proc.kill() } catch (e) { /* best-effort */ }
+      mcpConnections.delete(id)
+    }
     const { spawn } = require('child_process')
     const proc = spawn(command, args || [], {
       env: { ...process.env, ...(env || {}) },
@@ -2178,6 +2185,11 @@ ipcMain.handle('mcp-connect', async (event, { id, command, args, env }) => {
           }
         }, 15000)
       })
+    }
+
+    // Notificação (sem id, sem resposta) — exigida pelo handshake MCP.
+    const sendNotification = (method, params) => {
+      try { proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n') } catch (e) { /* best-effort */ }
     }
 
     proc.stdout.setEncoding('utf8')
@@ -2214,6 +2226,10 @@ ipcMain.handle('mcp-connect', async (event, { id, command, args, env }) => {
       capabilities: {},
       clientInfo: { name: 'OpenClaude Desktop', version: '1.4.0' }
     })
+
+    // Handshake MCP: o cliente DEVE notificar 'initialized' após o initialize
+    // antes de chamar tools/list — sem isso, servidores estritos travam.
+    sendNotification('notifications/initialized', {})
 
     // List tools
     const toolsResult = await sendRequest('tools/list', {})

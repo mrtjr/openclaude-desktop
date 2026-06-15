@@ -33,11 +33,20 @@ export function useMcp(mcpServers: McpServer[] | undefined, enabled: boolean = t
   useEffect(() => {
     let cancelled = false
     const servers = mcpServers || []
+    // Desconecta servidores conectados numa rodada anterior antes de reconectar
+    // (cobre servidores removidos da config; o backend mata same-id ao reconectar).
+    const disconnectPrev = () => {
+      const ids = [...connectedRef.current]
+      connectedRef.current = new Set()
+      for (const id of ids) { try { window.electron.mcpDisconnect?.(id) } catch { /* best-effort */ } }
+    }
     if (!enabled || servers.length === 0) {
-      setMcpTools([]); setStatus([]); connectedRef.current = new Set()
+      disconnectPrev()
+      setMcpTools([]); setStatus([])
       return
     }
     if (!window.electron?.mcpConnect) return
+    disconnectPrev()
 
     ;(async () => {
       const allDefs: McpToolDef[] = []
@@ -70,7 +79,14 @@ export function useMcp(mcpServers: McpServer[] | undefined, enabled: boolean = t
       setStatus(nextStatus)
     })()
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      // Ao desmontar / antes de reconectar: desconecta os servidores desta
+      // rodada para não vazar processos filhos.
+      const ids = [...connectedRef.current]
+      connectedRef.current = new Set()
+      for (const id of ids) { try { window.electron.mcpDisconnect?.(id) } catch { /* best-effort */ } }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig, enabled])
 
