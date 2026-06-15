@@ -7,6 +7,16 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.42.0] — 2026-06-15
+
+### Added — Status de conexão MCP em Settings
+
+Faltava feedback: se um servidor MCP falhava ao conectar, o usuário não via nada.
+Agora a aba **MCP** mostra, por servidor, um ponto colorido (verde=conectado,
+vermelho=erro, cinza=não conectado) e um rótulo — `conectado · N tool(s)` ou a
+mensagem de erro. O `useMcp` já calculava `mcpStatus`; agora ele é passado ao
+SettingsModal e exibido. Typecheck, 673 testes e build OK.
+
 ## [2.41.0] — 2026-06-15
 
 ### Fixed — Painel /context conta as tools MCP (era 0 hardcoded)

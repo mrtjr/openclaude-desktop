@@ -17,16 +17,26 @@ import {
 export { DEFAULT_SETTINGS, loadSettings, saveSettings }
 export type { AppSettings, Provider, Language, PermissionLevel, McpServer, ModalKey }
 
+/** Status de conexão ao vivo de um servidor MCP (vindo do useMcp). */
+export interface McpStatusInfo {
+  name: string
+  connected: boolean
+  toolCount: number
+  error?: string
+}
+
 interface SettingsProps {
   isOpen: boolean
   onClose: () => void
   settings: AppSettings
   onSave: (settings: AppSettings) => void
+  /** Status ao vivo das conexões MCP (v2.42.0) — casado por nome do servidor. */
+  mcpStatus?: McpStatusInfo[]
 }
 
 type SettingsTab = 'general' | 'provider' | 'mcp' | 'hooks'
 
-export default function Settings({ isOpen, onClose, settings, onSave }: SettingsProps) {
+export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus = [] }: SettingsProps) {
   const [local, setLocal] = useState<AppSettings>({ ...settings })
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
   const [newMcpName, setNewMcpName] = useState('')
@@ -445,11 +455,23 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                   </div>
                 ) : (
                   <div className="mcp-server-list">
-                    {(local.mcpServers || []).map((srv, idx) => (
+                    {(local.mcpServers || []).map((srv, idx) => {
+                      const st = mcpStatus.find(s => s.name === srv.name)
+                      const dot = st?.connected ? 'var(--green, #52b788)' : st?.error ? 'var(--red, #e05c5c)' : 'var(--color-text-muted, #888)'
+                      const label = st?.connected
+                        ? (local.language === 'pt' ? `conectado · ${st.toolCount} tool(s)` : `connected · ${st.toolCount} tool(s)`)
+                        : st?.error
+                          ? (local.language === 'pt' ? `erro: ${st.error}` : `error: ${st.error}`)
+                          : (local.language === 'pt' ? 'não conectado' : 'not connected')
+                      return (
                       <div key={idx} className="mcp-server-item">
                         <div className="mcp-server-info">
-                          <span className="mcp-server-name">{srv.name}</span>
+                          <span className="mcp-server-name">
+                            <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: dot, marginRight: 7, verticalAlign: 'middle' }} />
+                            {srv.name}
+                          </span>
                           <span className="mcp-server-cmd">{srv.command}</span>
+                          <span className="mcp-server-cmd" style={{ color: st?.error ? 'var(--red, #e05c5c)' : 'var(--color-text-muted, #888)' }}>{label}</span>
                         </div>
                         <button
                           className="mcp-server-remove"
@@ -459,7 +481,8 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                           <Trash2 size={14} />
                         </button>
                       </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
 

@@ -1227,6 +1227,7 @@ export default function App() {
             onClose={() => setShowSettings(false)}
             settings={settings}
             onSave={(s) => { setSettings(s); showToast('Configuracoes salvas!') }}
+            mcpStatus={mcp.mcpStatus}
           />
         </Suspense>
       )}
