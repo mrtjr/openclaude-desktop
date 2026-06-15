@@ -43,7 +43,7 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 | Single-threaded AI | Collaborative parallel agents |
 | Single perspective AI | Parliament Mode: 5 specialist agents debate in parallel |
 | Text-only interaction | Voice input (STT) and voice output (TTS) |
-| No ecosystem integration | MCP client for Claude-compatible servers |
+| No ecosystem integration | **MCP end-to-end**: connect stdio servers and their tools reach the model (`mcp__server__tool`), routed back automatically |
 | No usage insights | Self-evolution analytics with local-only dashboard |
 | No reusable prompts | Prompt Vault with variables, categories, import/export |
 | Hard to compare models | Model Arena: run same prompt on multiple models at once |
@@ -62,10 +62,24 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 | Can't read PDFs/DOCX | Document parsing: pdf-parse + mammoth via IPC read_document |
 | Can't branch a conversation | Fork any message into a new conversation branch |
 | Agent memory resets on quit | Agent working memory persisted across sessions in JSON |
+| Browser pops up for everything | **Headless by default** + `fetch_url` (HTTP read, no window) — the browser only appears for visual/coordinate actions, like Claude |
+| No deterministic guardrails | **Hooks** (PreToolUse blocks a tool on non-zero exit; PostToolUse runs after success) |
+| File edits are irreversible | **Checkpoint/rewind** per turn — one click reverts all of a turn's file changes (restores modified, deletes created) |
+| Flat sub-agents | **Named subagent roles** (explorer/planner/reviewer) for `delegate_subtasks` |
 
 ---
 
 ## Features
+
+### v2.35–2.45 — Capabilities aligned with Claude Code
+- **MCP end-to-end** — `useMcp` connects the configured stdio servers, lists their tools and exposes them to the model namespaced `mcp__<server>__<tool>`; calls are routed back to the right server. MCP tools require approval by default (they can touch files/network). Live connection status (connected / error / tool count) shows in the MCP settings tab; tools of a server that dies mid-session are pruned automatically.
+- **`fetch_url`** — read a page over plain HTTP (title + extracted text) with **no browser window**, the default way to read/scan; the built-in browser now runs **headless by default** and only appears for screenshots / coordinate clicks. Short 5-min cache like `web_search`.
+- **Hooks** — shell commands on tool events: **PreToolUse** (non-zero exit blocks the tool; gets `OPENCLAUDE_TOOL_NAME`/`ARGS` in env) and **PostToolUse** (runs after success, output appended to the result). Configured in the **Hooks** settings tab.
+- **Checkpoint / rewind** — every turn is snapshotted; if files changed, a toast offers **Revert** that restores modified files and deletes created ones.
+- **Named subagents** — `delegate_subtasks` accepts an `agent` role (explorer/planner/reviewer/general), each a reasoning specialist over the content you pass it.
+- **Reliability** — safe one-shot retry for pre-response `unknown` errors (no partial output), on top of the existing cold-start-timeout and transient retries.
+
+
 
 ### v2.2.1 — Modal API Key Pool, Agent Profiles & Scheduled Tasks
 - **Modal API Key Pool** — manage up to 10 Modal API keys in Settings; `delegate_subtasks` distributes subtasks across keys in parallel, bypassing the GLM-5.1 single-concurrent-request limit

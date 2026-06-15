@@ -7,6 +7,13 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Docs — README alinhado às capacidades reais (v2.35–2.45)
+
+Corrigida a tabela comparativa (MCP agora é ponta a ponta de verdade) e
+adicionado um bloco de Features documentando o que foi entregue desde a v2.35:
+MCP end-to-end, `fetch_url` + navegador headless, hooks Pre/PostToolUse,
+checkpoint/rewind e subagents nomeados. Só documentação — sem mudança no app.
+
 ## [2.45.0] — 2026-06-15
 
 ### Added — Cache no fetch_url (TTL 5 min)
