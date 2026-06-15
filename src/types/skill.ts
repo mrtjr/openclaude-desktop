@@ -26,4 +26,13 @@ export interface Skill {
   /** Skill que vem de fábrica (não pode ser excluída, só desativada). */
   isBuiltIn?: boolean
   createdAt: number
+  // ─── Auto-aprendizado (Fase 1, v2.52.0) — campos OPCIONAIS, retrocompatíveis ───
+  /** Origem: 'builtin' de fábrica, 'user' criada pelo usuário, 'learned'
+   *  induzida automaticamente de memória de domínio (Fase 3). Ausente = user. */
+  kind?: 'builtin' | 'user' | 'learned'
+  /** Skills APRENDIDAS nascem em 'staging' (não entram no manifesto até
+   *  aprovação 1-clique — guarda-rail contra skill-poisoning). Ausente = active. */
+  status?: 'active' | 'staging'
+  /** Proveniência de uma skill aprendida: de onde veio e quão reforçada. */
+  provenance?: { sourceConvIds: string[]; confidence: number }
 }

@@ -7,6 +7,32 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.52.0] — 2026-06-15
+
+### Added — Auto-aprendizado Fase 1: fundação de tipos + anti-drift na memória
+
+Primeira fase do plano de auto-criação de skills + memória de domínio
+auto-atualizável (pesquisa: Claude memory tool / auto-memory por tópico +
+Mem0/ACE/A-MEM/Voyager). Fase invisível e de baixo risco:
+
+- **Tipos estendidos (opcionais, retrocompatíveis):** `ConsolidatedMemory` ganhou
+  `domain/tags/helpful/harmful`; `Skill` ganhou `kind('builtin'|'user'|'learned')`,
+  `status('active'|'staging')` e `provenance` — base para as fases 2-4 (indução de
+  skill de domínio em staging).
+- **Anti-drift (corrige a lacuna nº1):** antes, dois fatos semelhantes sempre
+  reforçavam a confiança — um fato que CONTRADIZ o anterior reforçava a versão
+  errada ("memória errada se auto-propagando"). Agora `deduplicateConsolidated`
+  decide por fato, estilo Mem0 ADD/UPDATE/DELETE/NOOP: concordância reforça
+  (+0.1); **contradição** (heurística conservadora: polaridade de negação PT+EN
+  ou números conflitantes) faz o fato **mais novo vencer sem empilhar**, com a
+  confiança **rebaixada**. Helpers puros `factsContradict`/`decideConsolidationOp`
+  exportados e testados (7 casos novos; 691 testes no total).
+
+Tudo roda no ciclo de consolidação em background (não toca o caminho quente).
+Próximas fases (gosto→preferência; indução de skill de domínio em staging;
+aprovação 1-clique + delta-update) virão uma a uma, provando valor antes de
+avançar. typecheck e build OK.
+
 ## [2.51.0] — 2026-06-15
 
 ### Added — Slider de esforço por-conversa no compositor (estilo Claude)

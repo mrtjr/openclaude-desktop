@@ -5,6 +5,8 @@ import {
   lightDream,
   deepDream,
   shouldDream,
+  factsContradict,
+  decideConsolidationOp,
   type AgentMemory,
 } from '../src/services/memoryDreaming'
 
@@ -71,6 +73,54 @@ describe('lightDream', () => {
     expect(out.consolidated?.length).toBeGreaterThanOrEqual(1)
     expect(out.episodic[0].consolidated).toBe(true)
     expect(out.lastDreamTime).toBeGreaterThan(0)
+  })
+})
+
+describe('anti-drift — contradição (Fase 1, v2.52.0)', () => {
+  const A = 'o melhor caminho para pentest em otserv e explorar a porta do login primeiro'
+  const B = 'o melhor caminho para pentest em otserv nao e explorar a porta do login primeiro'
+
+  it('factsContradict: polaridade de negação diferente', () => {
+    expect(factsContradict(A, B)).toBe(true)
+    expect(factsContradict('o servidor e seguro', 'o servidor nao e seguro')).toBe(true)
+  })
+  it('factsContradict: números conflitantes', () => {
+    expect(factsContradict('usa a porta 7171', 'usa a porta 7172')).toBe(true)
+  })
+  it('factsContradict: fatos concordantes → false', () => {
+    expect(factsContradict('user likes typescript', 'user likes typescript')).toBe(false)
+    expect(factsContradict('roda na porta 7171', 'roda na porta 7171 com tls')).toBe(false)
+  })
+  it('decideConsolidationOp: confirm vs update', () => {
+    const mk = (fact: string, lastSeen = 1) => ({ fact, confidence: 0.8, sources: ['c'], createdAt: 1, lastSeen })
+    expect(decideConsolidationOp(mk(A) as any, mk(A) as any)).toBe('confirm')
+    expect(decideConsolidationOp(mk(A) as any, mk(B) as any)).toBe('update')
+  })
+
+  it('lightDream: fato contraditório NÃO empilha — o mais novo vence e a confiança cai', () => {
+    const m = makeMemory({
+      consolidated: [{ fact: A, confidence: 0.8, sources: ['c1'], createdAt: 1, lastSeen: 1 }] as any,
+      episodic: [{ consolidated: false, summary: B, conversationId: 'c2', timestamp: 100 } as any],
+    })
+    const out = lightDream(m)
+    const aboutOtserv = (out.consolidated || []).filter(c => c.fact.includes('otserv'))
+    expect(aboutOtserv.length).toBe(1)            // não duplicou o contraditório
+    expect(aboutOtserv[0].fact).toContain('nao')  // o mais novo venceu
+    expect(aboutOtserv[0].confidence).toBeLessThan(0.8) // confiança rebaixada
+    expect(aboutOtserv[0].sources).toContain('c1') // mantém as fontes
+    expect(aboutOtserv[0].sources).toContain('c2')
+  })
+
+  it('lightDream: fato concordante reforça a confiança (sem duplicar)', () => {
+    const fact = 'o usuario prefere typescript com tipos explicitos em todo o codigo'
+    const m = makeMemory({
+      consolidated: [{ fact, confidence: 0.8, sources: ['c1'], createdAt: 1, lastSeen: 1 }] as any,
+      episodic: [{ consolidated: false, summary: fact, conversationId: 'c2', timestamp: 100 } as any],
+    })
+    const out = lightDream(m)
+    const same = (out.consolidated || []).filter(c => c.fact === fact)
+    expect(same.length).toBe(1)
+    expect(same[0].confidence).toBeGreaterThan(0.8)
   })
 })
 

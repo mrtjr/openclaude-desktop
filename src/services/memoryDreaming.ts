@@ -38,6 +38,14 @@ export interface ConsolidatedMemory {
   sources: string[]   // conversationIds
   createdAt: number
   lastSeen: number
+  // ─── Auto-aprendizado (Fase 1, v2.52.0) — OPCIONAIS, retrocompatíveis ───
+  /** Domínio do fato (ex.: 'pentest-otserv'), atribuído na indução (Fase 3). */
+  domain?: string
+  /** Tags/gatilhos do fato para clustering por domínio (Fase 3). */
+  tags?: string[]
+  /** Contadores de utilidade (ACE): reforçam/rebaixam a confiança ao longo do uso. */
+  helpful?: number
+  harmful?: number
 }
 
 // ─── Health Score ────────────────────────────────────────────────
@@ -143,19 +151,66 @@ export function deepDream(memory: AgentMemory): AgentMemory {
 
 // ─── Helpers ────────────────────────────────────────────────────
 
-/** Simple deduplication based on string similarity */
+// ─── Anti-drift (Fase 1, v2.52.0) ───────────────────────────────────
+// Antes, dois fatos SEMELHANTES eram sempre "merge + confidence +0.1" — então
+// um fato que CONTRADIZ o anterior (mesmo assunto, polaridade oposta) reforçava
+// a entrada antiga em vez de corrigi-la: a "memória errada se auto-propagava".
+// Agora, entre fatos já similares, decidimos UPDATE (o novo vence, sem empilhar)
+// quando há contradição, e CONFIRM (reforço) quando concordam — espelhando o
+// pipeline ADD/UPDATE/DELETE/NOOP do Mem0. Heurística CONSERVADORA de propósito.
+
+const CONFIDENCE_FLOOR = 0.1
+const CONTRADICTION_PENALTY = 0.2
+
+// Tokens de negação/polaridade (PT+EN). Como só comparamos fatos JÁ similares
+// (mesmo assunto), uma diferença de polaridade ≈ contradição.
+const NEGATION = /\b(n[ãa]o|nunca|jamais|sem|not|never|no|none|n['’]t|false|falso|off|deslig\w*|desabilit\w*|disabled|fechad\w*|closed|inseguro|inativ\w*|incorret\w*|inv[áa]lid\w*|invalid\w*|fail\w*|falh\w*|ausente|absent)\b/gi
+
+function negationParity(s: string): number {
+  return ((String(s).match(NEGATION) || []).length) % 2
+}
+
+/** Heurística CONSERVADORA de contradição entre dois fatos JÁ similares:
+ *  polaridade de negação diferente OU números conflitantes. */
+export function factsContradict(a: string, b: string): boolean {
+  if (negationParity(a) !== negationParity(b)) return true
+  const na = String(a).match(/\d+(?:[.,]\d+)?/g) || []
+  const nb = String(b).match(/\d+(?:[.,]\d+)?/g) || []
+  if (na.length && nb.length && na.join('|') !== nb.join('|')) return true
+  return false
+}
+
+/** Mem0-style: dado um fato existente e um novo SEMELHANTE, decide a operação.
+ *  'confirm' = mesmo fato (reforça); 'update' = contradição (o novo substitui). */
+export function decideConsolidationOp(existing: ConsolidatedMemory, incoming: ConsolidatedMemory): 'confirm' | 'update' {
+  return factsContradict(existing.fact, incoming.fact) ? 'update' : 'confirm'
+}
+
+/** Deduplicação + reconciliação: reforça concordâncias e corrige contradições
+ *  (o fato mais novo vence, sem empilhar duplicatas conflitantes). */
 function deduplicateConsolidated(entries: ConsolidatedMemory[]): ConsolidatedMemory[] {
   const result: ConsolidatedMemory[] = []
 
   for (const entry of entries) {
     const existing = result.find(e => isSimilar(e.fact, entry.fact))
-    if (existing) {
-      // Merge: boost confidence, update lastSeen, merge sources
+    if (!existing) { result.push({ ...entry }); continue }
+
+    if (decideConsolidationOp(existing, entry) === 'confirm') {
+      // CONFIRM/NOOP: mesmo fato reforçado — sobe confiança, sem duplicar.
       existing.confidence = Math.min(1, existing.confidence + 0.1)
       existing.lastSeen = Math.max(existing.lastSeen, entry.lastSeen)
       existing.sources = [...new Set([...existing.sources, ...entry.sources])]
     } else {
-      result.push({ ...entry })
+      // UPDATE/DELETE: contradição — o fato MAIS NOVO vence (apaga o velho em
+      // vez de empilhar), com confiança rebaixada (houve divergência). Mantém
+      // as fontes; nunca remove sem substituir (conservador).
+      const newer = entry.lastSeen >= existing.lastSeen ? entry : existing
+      existing.fact = newer.fact
+      existing.confidence = Math.max(CONFIDENCE_FLOOR, Math.min(existing.confidence, entry.confidence) - CONTRADICTION_PENALTY)
+      existing.lastSeen = Math.max(existing.lastSeen, entry.lastSeen)
+      existing.sources = [...new Set([...existing.sources, ...entry.sources])]
+      if (newer.domain !== undefined) existing.domain = newer.domain
+      if (newer.tags !== undefined) existing.tags = newer.tags
     }
   }
 
