@@ -12,6 +12,7 @@ import { paginateFileContent } from '../utils/readFile'
 import { formatClickResult, formatNavResult } from '../utils/browserResult'
 import { logInsight } from '../services/devInsights'
 import { findSkill, formatLoadSkillResult } from '../utils/skills'
+import { matchHooks } from '../utils/hooks'
 import type { Skill } from '../types/skill'
 import type { ModalKeyPool } from './useModalKeyPool'
 import type { ParallelChatResult, ParallelChatTask } from '../types/ipc'
@@ -407,10 +408,29 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
     }
 
     const startTime = Date.now()
-    const out = await executeToolRaw(name, args)
+    let out = await executeToolRaw(name, args)
     const duration = Date.now() - startTime
     const failed = isToolError(out, name)
     logInsight('tool', 'use', { name, ok: !failed })
+
+    // Hooks PostToolUse (v2.38.0): após uma tool concluir COM SUCESSO, roda os
+    // comandos configurados que casam (ex.: lint/format/test após edit_file) e
+    // anexa a saída ao resultado — o modelo vê erros de lint/teste na hora.
+    if (!failed && name !== 'execute_command') {
+      const hooks = matchHooks(settings.hooks, 'PostToolUse', name)
+      for (const hook of hooks) {
+        try {
+          const r = await window.electron.execCommand({ command: hook.command, cwd: projectCwdRef.current, timeoutMs: 60000 })
+          const text = [r?.stdout, r?.stderr].filter(Boolean).join('\n').trim()
+          const tag = `[hook PostToolUse: ${hook.command}]`
+          out += text
+            ? `\n\n${tag}\n${text.slice(0, 1500)}`
+            : `\n\n${tag} (ok, sem saída)`
+        } catch (e: any) {
+          out += `\n\n[hook error: ${hook.command}] ${e?.message || 'falha'}`
+        }
+      }
+    }
 
     window.electron.auditLogAppend({
       tool: name,

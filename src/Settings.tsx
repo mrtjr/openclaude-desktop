@@ -24,13 +24,15 @@ interface SettingsProps {
   onSave: (settings: AppSettings) => void
 }
 
-type SettingsTab = 'general' | 'provider' | 'mcp'
+type SettingsTab = 'general' | 'provider' | 'mcp' | 'hooks'
 
 export default function Settings({ isOpen, onClose, settings, onSave }: SettingsProps) {
   const [local, setLocal] = useState<AppSettings>({ ...settings })
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
   const [newMcpName, setNewMcpName] = useState('')
   const [newMcpCommand, setNewMcpCommand] = useState('')
+  const [newHookMatcher, setNewHookMatcher] = useState('')
+  const [newHookCommand, setNewHookCommand] = useState('')
   // Provider tab state: which provider's detail pane is being edited
   // (not necessarily the one set as default).
   const [selectedProvider, setSelectedProvider] = useState<Provider>(settings.provider)
@@ -85,10 +87,25 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
     }))
   }
 
+  const addHook = () => {
+    if (!newHookCommand.trim()) return
+    setLocal(s => ({
+      ...s,
+      hooks: [...(s.hooks || []), { event: 'PostToolUse', matcher: (newHookMatcher.trim() || '*'), command: newHookCommand.trim() }],
+    }))
+    setNewHookMatcher('')
+    setNewHookCommand('')
+  }
+
+  const removeHook = (idx: number) => {
+    setLocal(s => ({ ...s, hooks: (s.hooks || []).filter((_, i) => i !== idx) }))
+  }
+
   const tabs: { id: SettingsTab; label: string }[] = [
     { id: 'general', label: local.language === 'pt' ? 'Geral' : 'General' },
     { id: 'provider', label: local.language === 'pt' ? 'Provedor' : 'Provider' },
     { id: 'mcp', label: 'MCP' },
+    { id: 'hooks', label: 'Hooks' },
   ]
 
   return (
@@ -477,6 +494,73 @@ export default function Settings({ isOpen, onClose, settings, onSave }: Settings
                 </div>
               </div>
             </>
+          )}
+
+          {/* ── HOOKS TAB ── */}
+          {activeTab === 'hooks' && (
+            <div className="settings-group">
+              <label className="settings-label">
+                <span>{local.language === 'pt' ? 'Hooks PostToolUse' : 'PostToolUse hooks'}</span>
+              </label>
+              <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted, #888)', marginBottom: '12px' }}>
+                {local.language === 'pt'
+                  ? 'Roda um comando shell DEPOIS de uma tool concluir com sucesso. Matcher: nome da tool (ex.: edit_file), prefixo (browser_*) ou * para todas. A saída é anexada ao resultado da tool.'
+                  : 'Runs a shell command AFTER a tool completes successfully. Matcher: tool name (e.g. edit_file), prefix (browser_*) or * for all. Output is appended to the tool result.'}
+              </p>
+
+              {(local.hooks || []).length === 0 ? (
+                <div style={{ color: 'var(--color-text-muted, #888)', fontSize: '0.82rem', padding: '12px 0' }}>
+                  {local.language === 'pt' ? 'Nenhum hook configurado.' : 'No hooks configured.'}
+                </div>
+              ) : (
+                <div className="mcp-server-list">
+                  {(local.hooks || []).map((hk, idx) => (
+                    <div key={idx} className="mcp-server-item">
+                      <div className="mcp-server-info">
+                        <span className="mcp-server-name">{hk.event} · {hk.matcher}</span>
+                        <span className="mcp-server-cmd">{hk.command}</span>
+                      </div>
+                      <button
+                        className="mcp-server-remove"
+                        onClick={() => removeHook(idx)}
+                        title={local.language === 'pt' ? 'Remover' : 'Remove'}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="mcp-add-row">
+                <input
+                  type="text"
+                  className="settings-input"
+                  placeholder={local.language === 'pt' ? 'Matcher (ex.: edit_file ou *)' : 'Matcher (e.g. edit_file or *)'}
+                  value={newHookMatcher}
+                  onChange={(e) => setNewHookMatcher(e.target.value)}
+                  style={{ flex: '1', minWidth: 0 }}
+                />
+                <input
+                  type="text"
+                  className="settings-input"
+                  placeholder={local.language === 'pt' ? 'Comando (ex.: npx prettier -w .)' : 'Command (e.g. npx prettier -w .)'}
+                  value={newHookCommand}
+                  onChange={(e) => setNewHookCommand(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') addHook() }}
+                  style={{ flex: '2', minWidth: 0 }}
+                />
+                <button
+                  className="settings-fetch-btn"
+                  onClick={addHook}
+                  disabled={!newHookCommand.trim()}
+                  title={local.language === 'pt' ? 'Adicionar hook' : 'Add hook'}
+                >
+                  <Plus size={14} />
+                  <span>{local.language === 'pt' ? 'Adicionar' : 'Add'}</span>
+                </button>
+              </div>
+            </div>
           )}
         </div>
 

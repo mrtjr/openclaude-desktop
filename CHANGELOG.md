@@ -7,6 +7,25 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.38.0] — 2026-06-15
+
+### Added — Hooks de ciclo de vida (PostToolUse)
+
+Inspirado nos hooks do Claude Code: comandos shell que rodam em eventos. v1
+cobre **PostToolUse** — após uma tool concluir COM SUCESSO, roda os comandos
+configurados que casam e **anexa a saída ao resultado da tool** (o modelo vê
+erros de lint/teste na hora). Caso de uso clássico: `npx prettier -w .` após
+`edit_file`, `npm test` após `write_file`.
+
+- Helper puro testável `src/utils/hooks.ts` (`matchHooks`, `matchesTool`:
+  igualdade, prefixo `browser_*`, ou `*`) + 6 testes.
+- Execução em `useToolExecution` (após sucesso; `execute_command` é excluído pra
+  evitar recursão; saída capada em 1500 chars; timeout 60s).
+- Schema `HookDef` + `hooks` nos settings; nova aba **Hooks** em Settings
+  (matcher + comando, add/remove) no padrão da aba MCP.
+
+4ª das 5 áreas do plano "vs Claude". 669 testes, typecheck e build OK.
+
 ## [2.37.0] — 2026-06-15
 
 ### Added — Checkpoint / rewind por turno (reverter alterações de arquivos)

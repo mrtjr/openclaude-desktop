@@ -15,6 +15,15 @@ export interface McpServer {
   command: string
 }
 
+/** Hook de ciclo de vida (v2.38.0) — roda um comando shell após uma tool
+ *  executar com sucesso (ex.: lint/format/test após edit_file). matcher = nome
+ *  exato da tool, '*' (todas) ou prefixo terminando em '*' (ex.: 'browser_*'). */
+export interface HookDef {
+  event: 'PostToolUse'
+  matcher: string
+  command: string
+}
+
 export interface ModalKey {
   id: string
   key: string
@@ -64,6 +73,8 @@ export interface AppSettings {
   analyticsEnabled: boolean
   permissionLevel: PermissionLevel
   mcpServers: McpServer[]
+  /** Hooks de ciclo de vida (v2.38.0) — comandos rodados após tools. */
+  hooks?: HookDef[]
   /** v2.12.0 — fire a native OS notification when a response completes
    *  while the window is not focused. Opt-out via Settings (default on). */
   notifyOnComplete?: boolean
@@ -113,6 +124,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   analyticsEnabled: true,
   permissionLevel: 'ask',
   mcpServers: [],
+  hooks: [],
   notifyOnComplete: true,
   toolDeferralMode: 'auto',
 }
