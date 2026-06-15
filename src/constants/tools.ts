@@ -1,6 +1,8 @@
 // ─── Tool Definitions ────────���──────────────────────────────────────
 // Extracted from App.tsx
 
+import { subagentRolesHint } from './subagents'
+
 export const TOOLS = [
   {
     type: 'function',
@@ -448,7 +450,7 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'delegate_subtasks',
-      description: 'Run multiple subtasks in parallel using collaborative agents. Each subtask gets its own AI instance.',
+      description: `Run multiple subtasks in parallel using collaborative agents. Each subtask gets its own AI instance, and may pick a specialized role via "agent". Roles: ${subagentRolesHint()}.`,
       parameters: {
         type: 'object',
         properties: {
@@ -458,7 +460,8 @@ export const TOOLS = [
               type: 'object',
               properties: {
                 id: { type: 'string' },
-                prompt: { type: 'string', description: 'The instruction for this agent' }
+                prompt: { type: 'string', description: 'The instruction for this agent' },
+                agent: { type: 'string', description: 'Optional named role: explorer | planner | reviewer | general (default). Prepends a specialized system prompt.' }
               }
             },
             description: 'List of subtasks to execute in parallel'

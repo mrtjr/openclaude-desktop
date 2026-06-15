@@ -13,6 +13,7 @@ import { formatClickResult, formatNavResult } from '../utils/browserResult'
 import { logInsight } from '../services/devInsights'
 import { findSkill, formatLoadSkillResult } from '../utils/skills'
 import { matchHooks } from '../utils/hooks'
+import { resolveSubagentPrompt } from '../constants/subagents'
 import type { Skill } from '../types/skill'
 import type { ModalKeyPool } from './useModalKeyPool'
 import type { ParallelChatResult, ParallelChatTask } from '../types/ipc'
@@ -290,13 +291,20 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
           pt: '\n\nIMPORTANTE: Responda SEMPRE em português do Brasil.',
           en: '\n\nIMPORTANT: Always respond in English.'
         }
-        const buildTask = (st: any): ParallelChatTask => ({
-          id: st.id,
-          messages: [
-            ...(systemMsg ? [{ role: 'system', content: systemMsg + (LANGUAGE_RULE[lang] ?? LANGUAGE_RULE.pt) }] : []),
-            { role: 'user', content: st.prompt }
-          ]
-        })
+        const buildTask = (st: any): ParallelChatTask => {
+          // Subagent nomeado (v2.39.0): se a subtarefa escolheu um papel, seu
+          // system prompt especializado vem antes do system prompt do usuário.
+          const rolePrompt = resolveSubagentPrompt(st.agent)
+          const sysParts = [rolePrompt, systemMsg].filter(Boolean)
+          const sys = sysParts.length ? sysParts.join('\n\n') + (LANGUAGE_RULE[lang] ?? LANGUAGE_RULE.pt) : ''
+          return {
+            id: st.id,
+            messages: [
+              ...(sys ? [{ role: 'system', content: sys }] : []),
+              { role: 'user', content: st.prompt }
+            ]
+          }
+        }
         const subtasks: ParallelChatTask[] = (args.subtasks || []).map(buildTask)
 
         // Modal pool path: worker-pool dispatcher

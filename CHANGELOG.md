@@ -7,6 +7,23 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.39.0] — 2026-06-15
+
+### Added — Subagents nomeados (papéis especializados no delegate_subtasks)
+
+O Claude Code tem subagents com papéis (Explore, Plan, code-reviewer). Agora o
+`delegate_subtasks` aceita um campo `agent` por subtarefa que prepende um system
+prompt especializado, reaproveitando toda a infra de execução paralela.
+
+- Registry puro `src/constants/subagents.ts` com 4 papéis — **explorer**
+  (busca/leitura, devolve síntese), **planner** (plano com trade-offs, sem
+  codar), **reviewer** (bugs/segurança/simplificação com severidade) e
+  **general** (padrão). `resolveSubagentPrompt` + `subagentRolesHint` testados.
+- `buildTask` no `delegate_subtasks` combina o prompt do papel + o system prompt
+  do usuário; schema/descrição da tool listam os papéis ao modelo.
+
+5ª e última das 5 áreas do plano "vs Claude". 673 testes, typecheck e build OK.
+
 ## [2.38.0] — 2026-06-15
 
 ### Added — Hooks de ciclo de vida (PostToolUse)
