@@ -7,6 +7,16 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.43.0] — 2026-06-15
+
+### Fixed — Resiliência MCP: poda tools de servidor que caiu
+
+Se um servidor MCP morria no meio da sessão, suas tools continuavam anunciadas
+ao modelo — que as chamava e recebia "não conectado". Agora o backend, no
+`exit`/`error` do processo, avisa o renderer (`mcp-server-exit`); o `useMcp`
+remove as tools daquele servidor (prefixo `mcp__<id>__`), zera a contagem e
+marca o status como desconectado. Typecheck, 673 testes e build OK.
+
 ## [2.42.0] — 2026-06-15
 
 ### Added — Status de conexão MCP em Settings

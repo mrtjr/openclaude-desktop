@@ -83,6 +83,7 @@ interface Window {
     mcpCallTool: (params: any) => Promise<any>
     mcpDisconnect: (id: string) => Promise<any>
     mcpListConnections: () => Promise<string[]>
+    onMcpServerExit: (callback: (data: { id: string }) => void) => () => void
     // Collaborative agents
     parallelChat: (params: import('./types/ipc').ParallelChatParams) => Promise<import('./types/ipc').ParallelChatResult[]>
     providerParallelChat: (params: import('./types/ipc').ProviderParallelChatParams) => Promise<import('./types/ipc').ParallelChatResult[]>

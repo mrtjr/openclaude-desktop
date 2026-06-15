@@ -2210,13 +2210,14 @@ ipcMain.handle('mcp-connect', async (event, { id, command, args, env }) => {
       }
     })
 
-    proc.on('error', (e) => {
+    // Se o processo morre/erra, remove do Map e AVISA o renderer para podar as
+    // tools desse servidor (senão o modelo continua tentando tools mortas).
+    const notifyExit = () => {
       mcpConnections.delete(id)
-    })
-
-    proc.on('exit', () => {
-      mcpConnections.delete(id)
-    })
+      try { if (win && !win.isDestroyed()) win.webContents.send('mcp-server-exit', { id }) } catch (e) { /* best-effort */ }
+    }
+    proc.on('error', notifyExit)
+    proc.on('exit', notifyExit)
 
     mcpConnections.set(id, { proc, sendRequest })
 

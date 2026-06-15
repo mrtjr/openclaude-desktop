@@ -90,6 +90,19 @@ export function useMcp(mcpServers: McpServer[] | undefined, enabled: boolean = t
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig, enabled])
 
+  // Resiliência (v2.43.0): se um servidor MCP morre no meio da sessão, o backend
+  // avisa — podamos as tools desse servidor para o modelo não tentar tools mortas.
+  useEffect(() => {
+    if (!window.electron?.onMcpServerExit) return
+    const off = window.electron.onMcpServerExit(({ id }) => {
+      const prefix = `mcp__${id}__`
+      connectedRef.current.delete(id)
+      setMcpTools(prev => prev.filter(t => !t.function.name.startsWith(prefix)))
+      setStatus(prev => prev.map(s => s.id === id ? { ...s, connected: false, toolCount: 0, error: s.error || 'desconectado (processo encerrou)' } : s))
+    })
+    return off
+  }, [])
+
   /** Roteia uma chamada `mcp__servidor__tool` para o servidor certo. */
   const callMcpTool = useCallback(async (fullName: string, args: Record<string, any>): Promise<string> => {
     const parsed = parseMcpToolName(fullName)

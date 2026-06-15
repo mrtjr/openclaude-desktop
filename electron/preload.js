@@ -122,6 +122,11 @@ contextBridge.exposeInMainWorld('electron', {
   mcpCallTool: (params) => ipcRenderer.invoke('mcp-call-tool', params),
   mcpDisconnect: (id) => ipcRenderer.invoke('mcp-disconnect', id),
   mcpListConnections: () => ipcRenderer.invoke('mcp-list-connections'),
+  onMcpServerExit: (callback) => {
+    const listener = (_e, data) => callback(data)
+    ipcRenderer.on('mcp-server-exit', listener)
+    return () => ipcRenderer.removeListener('mcp-server-exit', listener)
+  },
 
   // Collaborative agents
   parallelChat: (params) => ipcRenderer.invoke('parallel-chat', params),
