@@ -450,7 +450,7 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'delegate_subtasks',
-      description: `Run multiple subtasks in parallel using collaborative agents. Each subtask gets its own AI instance, and may pick a specialized role via "agent". Roles: ${subagentRolesHint()}.`,
+      description: `Run multiple subtasks in parallel using collaborative agents. Each subtask is a one-shot AI call WITHOUT tools — it reasons over the content you put in its prompt (paste the files/snippets/search results it needs), it does NOT browse/read/edit on its own. Pick a specialized role via "agent". Roles: ${subagentRolesHint()}.`,
       parameters: {
         type: 'object',
         properties: {

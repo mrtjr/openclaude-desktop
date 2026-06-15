@@ -7,6 +7,18 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.40.0] — 2026-06-15
+
+### Changed — Subagents: descrições honestas (são agentes de raciocínio, sem tools)
+
+A revisão pegou que os papéis de subagent prometiam mais do que entregam: o
+`delegate_subtasks` roda chamadas paralelas SEM ferramentas, então `explorer`
+não "busca na web" e `reviewer` não "abre arquivos" — eles raciocinam sobre o
+conteúdo colado no prompt. Reescritos os system prompts e descrições (explorer/
+planner/reviewer) para refletir isso, e a descrição da tool agora diz
+explicitamente: "one-shot AI call WITHOUT tools — paste the files/snippets it
+needs". Sem promessa quebrada para o modelo. Typecheck e testes OK.
+
 ## [2.39.1] — 2026-06-15
 
 ### Fixed — MCP: vazamento de processo + handshake incompleto (revisão da v2.35.0)
