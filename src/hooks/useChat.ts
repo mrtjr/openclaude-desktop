@@ -12,6 +12,7 @@ import type { Skill } from '../types/skill'
 import { resolveTurnUsage } from '../utils/usage'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
 import { applyPlanToolCalls, planIsIncomplete, type LocalTask } from '../utils/planTracker'
+import { resolveAdaptiveEffort } from '../utils/adaptiveEffort'
 import { toolCallSummary } from '../utils/toolDisplay'
 import { nextStreamPhase, classifyDelta, createPhaseProfiler, type StreamPhase } from '../utils/streamPhase'
 import { runCompaction, mergeSummary, planEmergencyCompaction } from '../services/compaction'
@@ -212,6 +213,14 @@ export function useChat({
     try {
       const conv = conversationsRef.current.find(c => c.id === convId)
       const lang = settings.language || 'pt'
+
+      // Esforço de raciocínio efetivo deste turno (v2.50.0). No modo 'auto', uma
+      // heurística local escala o esforço à dificuldade da mensagem ANTES da IPC
+      // — assim main.js/reasoning-control.js só veem níveis concretos. Caso
+      // contrário, usa o valor escolhido direto (default/off/low/medium/high).
+      const effectiveEffort = settings.reasoningEffort === 'auto'
+        ? resolveAdaptiveEffort({ text: inputText, isAgentMode, model: finalModel })
+        : settings.reasoningEffort
 
       let systemPrompt = settings.systemPrompt || ''
       // Inject provider context so the model knows where it's running
@@ -522,7 +531,7 @@ export function useChat({
       }
 
       console.log('[useChat] Starting chat loop:', { provider: finalProvider, model: finalModel, useStreaming, messageCount: allMessages.length })
-      logInsight('chat', 'turn', { provider: finalProvider, model: finalModel, agent: isAgentMode, streaming: useStreaming })
+      logInsight('chat', 'turn', { provider: finalProvider, model: finalModel, agent: isAgentMode, streaming: useStreaming, effortMode: settings.reasoningEffort, effortResolved: effectiveEffort })
 
       // Duração da execução de tool do passo ANTERIOR — carregada para o
       // stream_profile do passo atual. Se a espera de 1º token cresce após
@@ -688,13 +697,13 @@ export function useChat({
                   messages: requestMessages, tools: toolsForRequest,
                   temperature: settings.temperature, max_tokens: settings.maxTokens,
                   modalHostname, customBaseUrl,
-                  reasoningEffort: settings.reasoningEffort // esforço de raciocínio (v2.25.0)
+                  reasoningEffort: effectiveEffort // esforço de raciocínio (v2.25.0; auto-resolvido v2.50.0)
                 })
               : window.electron.ollamaChatStream({
                   model: finalModel, messages: requestMessages, tools: toolsForRequest,
                   temperature: settings.temperature, max_tokens: settings.maxTokens,
                   numCtx: modelLimit, // janela real do local (evita timeout por contexto gigante)
-                  reasoningEffort: settings.reasoningEffort
+                  reasoningEffort: effectiveEffort
                 })
             // O handler do main RESOLVE com {error} (não rejeita) em early-returns
             // que acontecem antes de qualquer chunk `done` (ex.: baseUrl custom
@@ -927,14 +936,14 @@ export function useChat({
               messages: requestMessages, tools: toolsForRequest,
               temperature: settings.temperature, max_tokens: settings.maxTokens,
               modalHostname, customBaseUrl,
-              reasoningEffort: settings.reasoningEffort // esforço de raciocínio (v2.25.0)
+              reasoningEffort: effectiveEffort // esforço de raciocínio (v2.25.0; auto-resolvido v2.50.0)
             })
           } else {
             response = await window.electron.ollamaChat({
               model: finalModel, messages: requestMessages, tools: toolsForRequest,
               temperature: settings.temperature, max_tokens: settings.maxTokens,
               numCtx: modelLimit, // janela real do local (evita timeout por contexto gigante)
-              reasoningEffort: settings.reasoningEffort
+              reasoningEffort: effectiveEffort
             })
           }
 

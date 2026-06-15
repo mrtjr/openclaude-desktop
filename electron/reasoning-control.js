@@ -21,6 +21,10 @@ const ANTHROPIC_BUDGET = { low: 2048, medium: 8192, high: 16384 }
 function reasoningRequestParams(provider, model, effort) {
   const none = { extra: {}, dropTemperature: false, minMaxTokens: 0 }
   if (!effort || effort === 'default') return none
+  // Rede de segurança (v2.50.0): 'auto' deve ser resolvido para um nível
+  // concreto no renderer (ver utils/adaptiveEffort). Se vazar até aqui, trata
+  // como 'medium' em vez de cair no default silencioso.
+  if (effort === 'auto') effort = 'medium'
   const on = effort !== 'off'
 
   switch (provider) {

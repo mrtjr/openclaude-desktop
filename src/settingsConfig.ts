@@ -68,8 +68,10 @@ export interface AppSettings {
   ollamaNumCtx: number
   /** v2.25.0 — esforço de raciocínio. 'default' não envia nada (comportamento
    *  do provider). 'off' desliga o thinking (mais rápido); 'low/medium/high'
-   *  ajustam profundidade onde o provider suporta (GLM/Ollama são on/off). */
-  reasoningEffort: 'default' | 'off' | 'low' | 'medium' | 'high'
+   *  ajustam profundidade onde o provider suporta (GLM/Ollama são on/off).
+   *  v2.50.0 — 'auto': escala o esforço à dificuldade da mensagem por turno
+   *  (heurística local, resolvida no cliente antes da IPC; ver adaptiveEffort). */
+  reasoningEffort: 'default' | 'auto' | 'off' | 'low' | 'medium' | 'high'
   memoryEnabled: boolean
   analyticsEnabled: boolean
   permissionLevel: PermissionLevel

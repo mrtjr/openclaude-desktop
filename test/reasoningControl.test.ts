@@ -10,6 +10,17 @@ describe('reasoningRequestParams — default é no-op (seguro)', () => {
   })
 })
 
+describe('reasoningRequestParams — fallback de "auto" (v2.50.0)', () => {
+  it('"auto" que vaze até o backend é tratado como "medium" (não cai no default)', () => {
+    // OpenAI: medium → reasoning_effort: 'medium'
+    expect(reasoningRequestParams('openai', 'o3', 'auto').extra).toEqual({ reasoning_effort: 'medium' })
+    // Anthropic: medium → budget de medium
+    expect(reasoningRequestParams('anthropic', 'claude', 'auto').extra.thinking.budget_tokens).toBe(ANTHROPIC_BUDGET.medium)
+    // GLM: liga o thinking (não é no-op de default)
+    expect(reasoningRequestParams('modal', 'glm', 'auto').extra).toEqual({ chat_template_kwargs: { enable_thinking: true } })
+  })
+})
+
 describe('reasoningRequestParams — GLM/Modal (binário via chat_template_kwargs)', () => {
   it('off desliga o thinking; níveis ligam (profundidade não controlável)', () => {
     expect(reasoningRequestParams('modal', 'zai-org/GLM-5.1-FP8', 'off').extra)

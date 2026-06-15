@@ -349,6 +349,7 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                   className="settings-input"
                 >
                   <option value="default">{local.language === 'en' ? 'Provider default' : 'Padrão do provider'}</option>
+                  <option value="auto">{local.language === 'en' ? 'Auto (adapts to the task)' : 'Automático (adapta à tarefa)'}</option>
                   <option value="off">{local.language === 'en' ? 'Off (faster)' : 'Desligado (mais rápido)'}</option>
                   <option value="low">{local.language === 'en' ? 'Low' : 'Baixo'}</option>
                   <option value="medium">{local.language === 'en' ? 'Medium' : 'Médio'}</option>
@@ -356,8 +357,8 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                 </select>
                 <p className="settings-hint">
                   {local.language === 'en'
-                    ? 'Controls how much the model "thinks". Off skips reasoning (faster, good for simple tasks). Depth levels (low/medium/high) only apply where supported (OpenAI/Anthropic); GLM (Modal) and Ollama are on/off. Default sends nothing — provider behavior.'
-                    : 'Controla quanto o modelo "pensa". Desligado pula o raciocínio (mais rápido, bom para tarefas simples). Os níveis (baixo/médio/alto) só valem onde há suporte (OpenAI/Anthropic); GLM (Modal) e Ollama são liga/desliga. Padrão não envia nada — comportamento do provider.'}
+                    ? 'Controls how much the model "thinks". Auto scales effort per message to the task difficulty (local heuristic, no extra API call) — closest to how Claude employs effort on demand. Off skips reasoning (faster). Depth levels (low/medium/high) only apply where supported (OpenAI/Anthropic); GLM (Modal) and Ollama are on/off. Default sends nothing — provider behavior.'
+                    : 'Controla quanto o modelo "pensa". Automático escala o esforço por mensagem conforme a dificuldade (heurística local, sem chamada extra) — o mais perto de como o Claude emprega esforço sob demanda. Desligado pula o raciocínio (mais rápido). Os níveis (baixo/médio/alto) só valem onde há suporte (OpenAI/Anthropic); GLM (Modal) e Ollama são liga/desliga. Padrão não envia nada — comportamento do provider.'}
                 </p>
               </div>
 

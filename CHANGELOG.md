@@ -7,6 +7,36 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.50.0] — 2026-06-15
+
+### Added — Esforço de raciocínio "Automático" (adaptativo, estilo Claude)
+
+O Claude emprega esforço sob demanda: o modelo escala o quanto pensa conforme a
+dificuldade da tarefa (adaptive thinking, guiado pelo parâmetro `effort`). O
+OpenClaude já tinha esforço por provider (v2.25.0), mas estático. Agora há um
+modo **"Automático"** que aproxima esse comportamento no cliente:
+
+- Helper puro `src/utils/adaptiveEffort.ts` (`resolveAdaptiveEffort`): por turno,
+  escolhe off/low/medium/high a partir de sinais da mensagem (comprimento, blocos
+  de código, stack traces, verbos de raciocínio PT+EN, modo agente como piso).
+  Determinístico, bilíngue, sem custo de API. 8 testes.
+- `useChat` resolve o esforço efetivo ANTES da IPC quando `reasoningEffort='auto'`
+  — `electron/reasoning-control.js` continua vendo só níveis concretos (zero
+  mudança no backend); fallback defensivo se 'auto' vazar (→ medium).
+- Nova opção "Automático (adapta à tarefa)" no seletor de Settings + hint.
+- Observabilidade: o evento `chat/turn` registra `effortMode`/`effortResolved`.
+
+Decisão baseada em pesquisa (workflow multi-agente, fontes platform.claude.com):
+o `effort` real do Claude (`output_config.effort` low/medium/high/xhigh/max +
+adaptive thinking) e o veredito de que **uma skill NÃO resolveria** (skills só
+injetam prompt, não tocam params do request). 684 testes, typecheck e build OK.
+
+### Conhecido — branch Anthropic usa `budget_tokens` (deprecado em Opus 4.7/4.8)
+
+A pesquisa confirmou que `thinking:{type:'enabled',budget_tokens}` é rejeitado
+(400) em Opus 4.7/4.8 — substituído por `thinking:{type:'adaptive'}` + `effort`.
+Tratado como ciclo separado (migração model-aware) para não inchar este.
+
 ## [2.49.1] — 2026-06-15
 
 ### Performance — Cache de contagem de tokens por mensagem
