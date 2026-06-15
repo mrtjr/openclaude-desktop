@@ -19,7 +19,8 @@ export interface McpServer {
  *  executar com sucesso (ex.: lint/format/test após edit_file). matcher = nome
  *  exato da tool, '*' (todas) ou prefixo terminando em '*' (ex.: 'browser_*'). */
 export interface HookDef {
-  event: 'PostToolUse'
+  /** PreToolUse roda ANTES da tool (exit≠0 bloqueia); PostToolUse roda DEPOIS. */
+  event: 'PostToolUse' | 'PreToolUse'
   matcher: string
   command: string
 }

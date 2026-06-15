@@ -451,8 +451,8 @@ function killProcessTree(pid) {
 }
 
 ipcMain.handle('exec-command', async (event, payload) => {
-  const { command, cwd, timeoutMs } = typeof payload === 'string'
-    ? { command: payload, cwd: undefined, timeoutMs: undefined }
+  const { command, cwd, timeoutMs, env } = typeof payload === 'string'
+    ? { command: payload, cwd: undefined, timeoutMs: undefined, env: undefined }
     : (payload || {})
   const timeout = Math.min(Math.max(Number(timeoutMs) || 60000, 1000), 600000)
   if (cwd && !fs.existsSync(cwd)) {
@@ -489,7 +489,9 @@ ipcMain.handle('exec-command', async (event, payload) => {
       shell: 'powershell.exe',
       cwd: cwd || undefined,
       maxBuffer: 10 * 1024 * 1024, // 10MB
-      windowsHide: true
+      windowsHide: true,
+      // env extra (ex.: hooks PreToolUse recebem OPENCLAUDE_TOOL_NAME/ARGS).
+      ...(env && typeof env === 'object' ? { env: { ...process.env, ...env } } : {})
     }, finish)
     entry.child = child
     entry.markUser = () => { killedByUser = true }

@@ -7,6 +7,22 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.44.0] — 2026-06-15
+
+### Added — Hooks PreToolUse (bloqueio determinístico antes da tool)
+
+Completa os hooks com o evento mais poderoso do Claude: **PreToolUse** roda ANTES
+da tool e, se sair com código ≠ 0, **bloqueia** a execução (guardrail — ex.:
+barrar `edit_file` em arquivos sensíveis, ou comandos perigosos). O hook recebe
+contexto via env: `OPENCLAUDE_TOOL_NAME` e `OPENCLAUDE_TOOL_ARGS` (JSON). Quando
+bloqueia, o modelo recebe `[BLOCKED BY HOOK]` com o stderr/stdout do hook e a
+dica de mudar de abordagem.
+
+- `exec-command` passou a aceitar `env` (merge com `process.env`).
+- `HookDef.event` agora é `PostToolUse | PreToolUse`; a aba Hooks ganhou um
+  seletor de evento. Falha ao rodar o hook PreToolUse não bloqueia (best-effort).
+- 674 testes (novo caso PreToolUse), typecheck e build OK.
+
 ## [2.43.0] — 2026-06-15
 
 ### Fixed — Resiliência MCP: poda tools de servidor que caiu

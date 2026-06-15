@@ -28,6 +28,11 @@ describe('matchHooks', () => {
   it('outro evento → nada', () => {
     expect(matchHooks(hooks, 'PreToolUse', 'edit_file')).toEqual([])
   })
+  it('separa PreToolUse de PostToolUse', () => {
+    const mixed = [h('edit_file', 'block', 'PreToolUse'), h('edit_file', 'fmt', 'PostToolUse')]
+    expect(matchHooks(mixed, 'PreToolUse', 'edit_file').map(x => x.command)).toEqual(['block'])
+    expect(matchHooks(mixed, 'PostToolUse', 'edit_file').map(x => x.command)).toEqual(['fmt'])
+  })
   it('lida com undefined/null', () => {
     expect(matchHooks(undefined, 'PostToolUse', 'x')).toEqual([])
   })

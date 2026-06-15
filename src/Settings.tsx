@@ -43,6 +43,7 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
   const [newMcpCommand, setNewMcpCommand] = useState('')
   const [newHookMatcher, setNewHookMatcher] = useState('')
   const [newHookCommand, setNewHookCommand] = useState('')
+  const [newHookEvent, setNewHookEvent] = useState<'PostToolUse' | 'PreToolUse'>('PostToolUse')
   // Provider tab state: which provider's detail pane is being edited
   // (not necessarily the one set as default).
   const [selectedProvider, setSelectedProvider] = useState<Provider>(settings.provider)
@@ -101,7 +102,7 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
     if (!newHookCommand.trim()) return
     setLocal(s => ({
       ...s,
-      hooks: [...(s.hooks || []), { event: 'PostToolUse', matcher: (newHookMatcher.trim() || '*'), command: newHookCommand.trim() }],
+      hooks: [...(s.hooks || []), { event: newHookEvent, matcher: (newHookMatcher.trim() || '*'), command: newHookCommand.trim() }],
     }))
     setNewHookMatcher('')
     setNewHookCommand('')
@@ -523,12 +524,12 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
           {activeTab === 'hooks' && (
             <div className="settings-group">
               <label className="settings-label">
-                <span>{local.language === 'pt' ? 'Hooks PostToolUse' : 'PostToolUse hooks'}</span>
+                <span>{local.language === 'pt' ? 'Hooks de ferramentas' : 'Tool hooks'}</span>
               </label>
               <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted, #888)', marginBottom: '12px' }}>
                 {local.language === 'pt'
-                  ? 'Roda um comando shell DEPOIS de uma tool concluir com sucesso. Matcher: nome da tool (ex.: edit_file), prefixo (browser_*) ou * para todas. A saída é anexada ao resultado da tool.'
-                  : 'Runs a shell command AFTER a tool completes successfully. Matcher: tool name (e.g. edit_file), prefix (browser_*) or * for all. Output is appended to the tool result.'}
+                  ? 'Comando shell em eventos de tool. PreToolUse roda ANTES (se sair com código ≠ 0, BLOQUEIA a tool; recebe OPENCLAUDE_TOOL_NAME/ARGS no env). PostToolUse roda DEPOIS do sucesso e anexa a saída ao resultado. Matcher: nome da tool (edit_file), prefixo (browser_*) ou *.'
+                  : 'Shell command on tool events. PreToolUse runs BEFORE (non-zero exit BLOCKS the tool; gets OPENCLAUDE_TOOL_NAME/ARGS in env). PostToolUse runs AFTER success and appends output. Matcher: tool name (edit_file), prefix (browser_*) or *.'}
               </p>
 
               {(local.hooks || []).length === 0 ? (
@@ -556,6 +557,15 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
               )}
 
               <div className="mcp-add-row">
+                <select
+                  className="settings-input"
+                  value={newHookEvent}
+                  onChange={(e) => setNewHookEvent(e.target.value as 'PostToolUse' | 'PreToolUse')}
+                  style={{ flex: '0 0 auto', minWidth: 0 }}
+                >
+                  <option value="PostToolUse">PostToolUse</option>
+                  <option value="PreToolUse">PreToolUse</option>
+                </select>
                 <input
                   type="text"
                   className="settings-input"

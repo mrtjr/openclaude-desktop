@@ -415,6 +415,31 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
       }
     }
 
+    // Hooks PreToolUse (v2.44.0): rodam ANTES da tool. Se algum sair com código
+    // ≠ 0, a tool é BLOQUEADA (guardrail determinístico, ex.: barrar edição de
+    // arquivo sensível). O hook recebe nome/args via env.
+    if (name !== 'execute_command') {
+      const preHooks = matchHooks(settings.hooks, 'PreToolUse', name)
+      for (const hook of preHooks) {
+        try {
+          const r = await window.electron.execCommand({
+            command: hook.command,
+            cwd: projectCwdRef.current,
+            timeoutMs: 30000,
+            env: { OPENCLAUDE_TOOL_NAME: name, OPENCLAUDE_TOOL_ARGS: JSON.stringify(args || {}).slice(0, 4000) },
+          })
+          if ((r?.exitCode ?? 0) !== 0) {
+            const why = [r?.stderr, r?.stdout].filter(Boolean).join('\n').trim().slice(0, 800)
+            logInsight('tool', 'denied', { name, hook: true })
+            return `[BLOCKED BY HOOK]: o hook PreToolUse "${hook.command}" bloqueou "${name}" (exit ${r?.exitCode}).${why ? '\n' + why : ''}\nAjuste a abordagem ou peça ao usuário.`
+          }
+        } catch (e: any) {
+          // Falha ao rodar o hook não bloqueia (best-effort), só registra.
+          console.warn('[toolExec] PreToolUse hook error:', e?.message)
+        }
+      }
+    }
+
     const startTime = Date.now()
     let out = await executeToolRaw(name, args)
     const duration = Date.now() - startTime
