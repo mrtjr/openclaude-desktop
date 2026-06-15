@@ -22,6 +22,10 @@ contextBridge.exposeInMainWorld('electron', {
   searchFiles: (params) => ipcRenderer.invoke('search-files', params),
   undoLastWrite: () => ipcRenderer.invoke('undo-last-write'),
   listSnapshots: () => ipcRenderer.invoke('list-snapshots'),
+  // Checkpoint / rewind por turno (v2.37.0)
+  checkpointMark: () => ipcRenderer.invoke('checkpoint-mark'),
+  checkpointCount: (seq) => ipcRenderer.invoke('checkpoint-count', { seq }),
+  checkpointRestore: (seq) => ipcRenderer.invoke('checkpoint-restore', { seq }),
 
   // Conversations
   saveConversations: (data) => ipcRenderer.invoke('save-conversations', data),

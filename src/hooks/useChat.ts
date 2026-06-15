@@ -188,6 +188,12 @@ export function useChat({
     beginInsightTurn()
     let turnOutcome: 'ok' | 'error' | 'aborted' = 'ok'
 
+    // Checkpoint/rewind (v2.37.0): marca o estado dos arquivos no início do
+    // turno. Se o turno alterar arquivos, o finally oferece "Reverter" — como o
+    // rewind do Claude Code. Marca é só ler o seq atual (sem custo).
+    let checkpointSeq: number | null = null
+    try { checkpointSeq = (await window.electron.checkpointMark?.())?.seq ?? null } catch { /* opcional */ }
+
     // Session analytics tracker
     const sessionTracker = {
       startTime: Date.now(),
@@ -1096,6 +1102,32 @@ export function useChat({
       if (stopRequestedRef.current) turnOutcome = 'aborted'
       logInsight('chat', 'complete', { ms: avgRT, totalMs: Date.now() - sessionTracker.startTime, steps: sessionTracker.agentSteps, outcome: turnOutcome })
       endInsightTurn()
+
+      // Checkpoint/rewind: se o turno alterou arquivos, oferece reverter tudo
+      // de uma vez (restaura modificados e apaga os criados neste turno).
+      if (checkpointSeq != null) {
+        try {
+          const seq = checkpointSeq
+          const { count } = await window.electron.checkpointCount(seq)
+          if (count > 0) {
+            const lng = settings.language === 'en' ? 'en' : 'pt'
+            showToast({
+              message: lng === 'en' ? `${count} file(s) changed this turn` : `${count} arquivo(s) alterado(s) neste turno`,
+              severity: 'info',
+              duration: 15000,
+              action: {
+                label: lng === 'en' ? 'Revert' : 'Reverter',
+                onClick: async () => {
+                  const r = await window.electron.checkpointRestore(seq)
+                  showToast(r.errors?.length
+                    ? (lng === 'en' ? `Reverted ${r.count}, ${r.errors.length} error(s)` : `Revertido ${r.count}, ${r.errors.length} erro(s)`)
+                    : (lng === 'en' ? `Reverted ${r.count} file(s)` : `Revertido(s) ${r.count} arquivo(s)`))
+                },
+              },
+            } as any)
+          }
+        } catch { /* checkpoint é best-effort */ }
+      }
 
       // Save session analytics
       if (settings.analyticsEnabled !== false) {

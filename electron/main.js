@@ -547,20 +547,42 @@ ipcMain.handle('read-file', async (event, filePath) => {
 
 // ─── IPC: Write file (with auto-snapshot for undo) ──────────────────
 const SNAPSHOTS_DIR = path.join(app.getPath('userData'), 'snapshots')
-const fileSnapshots = [] // Stack: [{filePath, backupPath, timestamp}]
+const fileSnapshots = [] // Stack: [{filePath, backupPath, created, seq, timestamp}]
+let snapshotSeq = 0      // monotônico — âncora dos checkpoints (rewind por turno)
 
-// Back up a file before overwriting so undo_last_write can restore it. Shared
-// by write-file and edit-file. No-op when the file doesn't exist yet.
+// Back up a file before overwriting so undo_last_write / checkpoint-restore can
+// restore it. Shared by write-file and edit-file. Para arquivo NOVO (não existe
+// ainda) grava um marcador `created` — assim o rewind sabe APAGÁ-LO ao reverter.
 function snapshotFile(filePath) {
-  if (!fs.existsSync(filePath)) return
   fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true })
-  const backupName = `${Date.now()}_${path.basename(filePath)}`
-  const backupPath = path.join(SNAPSHOTS_DIR, backupName)
-  fs.copyFileSync(filePath, backupPath)
-  fileSnapshots.push({ filePath, backupPath, timestamp: Date.now() })
+  const seq = ++snapshotSeq
+  if (!fs.existsSync(filePath)) {
+    fileSnapshots.push({ filePath, backupPath: null, created: true, seq, timestamp: Date.now() })
+  } else {
+    const backupName = `${Date.now()}_${path.basename(filePath)}`
+    const backupPath = path.join(SNAPSHOTS_DIR, backupName)
+    fs.copyFileSync(filePath, backupPath)
+    fileSnapshots.push({ filePath, backupPath, created: false, seq, timestamp: Date.now() })
+  }
   while (fileSnapshots.length > 50) {
     const old = fileSnapshots.shift()
-    try { fs.unlinkSync(old.backupPath) } catch (e) { /* best-effort cleanup */ }
+    if (old.backupPath) { try { fs.unlinkSync(old.backupPath) } catch (e) { /* best-effort cleanup */ } }
+  }
+}
+
+// Restaura UM snapshot (pop já feito pelo chamador): arquivo criado → apaga;
+// arquivo modificado → repõe do backup. Devolve { filePath, error? }.
+function restoreSnapshot(snap) {
+  try {
+    if (snap.created) {
+      if (fs.existsSync(snap.filePath)) fs.unlinkSync(snap.filePath)
+    } else {
+      fs.copyFileSync(snap.backupPath, snap.filePath)
+      try { fs.unlinkSync(snap.backupPath) } catch (e) { /* best-effort */ }
+    }
+    return { filePath: snap.filePath }
+  } catch (e) {
+    return { filePath: snap.filePath, error: e.message }
   }
 }
 
@@ -615,14 +637,34 @@ ipcMain.handle('undo-last-write', async () => {
   if (fileSnapshots.length === 0) {
     return { error: 'No snapshots available', restored: null }
   }
-  const snap = fileSnapshots.pop()
-  try {
-    fs.copyFileSync(snap.backupPath, snap.filePath)
-    fs.unlinkSync(snap.backupPath)
-    return { error: null, restored: snap.filePath }
-  } catch (e) {
-    return { error: e.message, restored: null }
+  const r = restoreSnapshot(fileSnapshots.pop())
+  return r.error ? { error: r.error, restored: null } : { error: null, restored: r.filePath }
+})
+
+// ─── IPC: Checkpoint / rewind (reverter alterações de um turno) ──────
+// Um checkpoint é só a marca do `snapshotSeq` no início do turno. Reverter =
+// restaurar (LIFO) todos os snapshots com seq > marca: como cada backup é o
+// pre-image daquela escrita, desfazer do mais novo ao mais antigo caminha o
+// estado de volta ao início do turno. Inspirado no rewind do Claude Code.
+ipcMain.handle('checkpoint-mark', async () => ({ seq: snapshotSeq }))
+
+// Quantos arquivos DISTINTOS mudaram desde a marca (para a UI decidir oferecer
+// o "Reverter").
+ipcMain.handle('checkpoint-count', async (event, { seq } = {}) => {
+  const since = typeof seq === 'number' ? seq : 0
+  const files = new Set(fileSnapshots.filter(s => s.seq > since).map(s => s.filePath))
+  return { count: files.size }
+})
+
+ipcMain.handle('checkpoint-restore', async (event, { seq } = {}) => {
+  const since = typeof seq === 'number' ? seq : 0
+  const restored = new Set()
+  const errors = []
+  while (fileSnapshots.length > 0 && fileSnapshots[fileSnapshots.length - 1].seq > since) {
+    const r = restoreSnapshot(fileSnapshots.pop())
+    if (r.error) errors.push(r.error); else restored.add(r.filePath)
   }
+  return { restored: [...restored], count: restored.size, errors }
 })
 
 ipcMain.handle('list-snapshots', async () => {

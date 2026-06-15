@@ -19,6 +19,9 @@ interface Window {
     searchFiles: (params: { query: string; path?: string; exts?: string[] | null; maxResults?: number; caseSensitive?: boolean }) => Promise<{ matches?: { file: string; line: number; text: string }[]; filesScanned?: number; truncated?: boolean; error?: string | null }>
     undoLastWrite: () => Promise<{ error: string | null; restored: string | null }>
     listSnapshots: () => Promise<{ filePath: string; timestamp: number; fileName: string }[]>
+    checkpointMark: () => Promise<{ seq: number }>
+    checkpointCount: (seq: number) => Promise<{ count: number }>
+    checkpointRestore: (seq: number) => Promise<{ restored: string[]; count: number; errors: string[] }>
     listModels: () => Promise<any>
     saveConversations: (data: any) => Promise<{ error: string | null }>
     loadConversations: () => Promise<any>

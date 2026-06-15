@@ -7,6 +7,26 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.37.0] — 2026-06-15
+
+### Added — Checkpoint / rewind por turno (reverter alterações de arquivos)
+
+Antes só dava para desfazer 1 arquivo (`undo_last_write`). Agora cada turno tem
+um checkpoint e, se ele alterar arquivos, aparece um toast **"N arquivo(s)
+alterado(s) — Reverter"** que restaura tudo de uma vez — como o rewind do Claude
+Code.
+
+- `snapshotFile` ganhou `seq` monotônico e passou a registrar também arquivos
+  CRIADOS (marcador `created`) — o rewind agora **apaga** os criados, além de
+  repor os modificados (antes criação era irreversível).
+- IPCs `checkpoint-mark` (marca o seq no início do turno), `checkpoint-count`
+  (quantos arquivos distintos mudaram) e `checkpoint-restore` (restaura LIFO
+  tudo com seq > marca — caminha o estado de volta ao início do turno).
+- `useChat` marca o checkpoint no início e oferece o "Reverter" no fim.
+- `undo_last_write` também passou a desfazer criações (apaga o arquivo).
+
+3ª das 5 áreas do plano "vs Claude". 663 testes, typecheck e build OK.
+
 ## [2.36.0] — 2026-06-15
 
 ### Fixed — Confiabilidade: retry seguro para erro "unknown" pré-resposta
