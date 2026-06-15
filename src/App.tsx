@@ -56,6 +56,7 @@ import { useVoice } from './hooks/useVoice'
 import { useConversations } from './hooks/useConversations'
 import { useToolExecution } from './hooks/useToolExecution'
 import { useModalKeyPool } from './hooks/useModalKeyPool'
+import { useMcp } from './hooks/useMcp'
 import { useChat } from './hooks/useChat'
 import { useConversationFork } from './hooks/useConversationFork'
 import { useProviderHealth } from './hooks/useProviderHealth'
@@ -462,6 +463,9 @@ export default function App() {
   })
 
   const modalKeyPool = useModalKeyPool(settings)
+  // MCP ponta a ponta (v2.35.0): conecta nos servidores configurados, expõe as
+  // tools ao modelo (extraTools) e roteia as chamadas mcp__* (callMcpTool).
+  const mcp = useMcp(effectiveSettings.mcpServers)
 
   const toolExec = useToolExecution({
     settings: effectiveSettings,
@@ -471,6 +475,7 @@ export default function App() {
     modalKeyPool,
     projectCwd: activeProjectCwd,
     skills,
+    callMcpTool: mcp.callMcpTool,
   })
 
   const chat = useChat({
@@ -509,6 +514,7 @@ export default function App() {
     },
     onUsage: (inputTokens, outputTokens) => usageTracking.recordUsage(effectiveSettings.provider, providerConfig.model, inputTokens, outputTokens),
     skills,
+    extraTools: mcp.mcpTools,
   })
 
   const activeConv = convManager.activeConv

@@ -27,9 +27,11 @@ interface UseToolExecutionOptions {
   projectCwd?: string
   /** Skills disponíveis — usadas pela ferramenta load_skill (v2.27.0). */
   skills?: Skill[]
+  /** Roteador de chamadas a tools de servidores MCP (mcp__*) (v2.35.0). */
+  callMcpTool?: (name: string, args: Record<string, any>) => Promise<string>
 }
 
-export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills }: UseToolExecutionOptions) {
+export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool }: UseToolExecutionOptions) {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
 
   // Use refs to avoid stale closures
@@ -40,9 +42,18 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
   const skillsRef = useRef(skills)
   skillsRef.current = skills
 
+  const callMcpToolRef = useRef(callMcpTool)
+  callMcpToolRef.current = callMcpTool
+
   const executeToolRaw = useCallback(async (name: string, args: Record<string, any>): Promise<string> => {
     const convId = activeConvIdRef.current
     try {
+      // MCP (v2.35.0): tools de servidores MCP chegam namespaced (mcp__srv__tool)
+      // e são roteadas de volta ao servidor, fora do switch das tools nativas.
+      if (name.startsWith('mcp__')) {
+        if (!callMcpToolRef.current) return `MCP error: roteador indisponível para "${name}"`
+        return await callMcpToolRef.current(name, args)
+      }
       // ─── tool_search (v2.12.6): meta-tool that lets the model pull
       // full schemas on demand for deferred tools. Accepts either a
       // keyword query or "select:name1,name2" for exact selection.

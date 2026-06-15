@@ -7,6 +7,30 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.35.0] — 2026-06-15
+
+### Added — MCP ponta a ponta (as tools dos servidores chegam ao modelo)
+
+Era um recurso fantasma: havia UI em Settings e o backend conectava/chamava
+servidores MCP, mas as tools nunca eram expostas ao modelo (`mcpTools` ficava
+hardcoded em 0 e `mcpCallTool` não era chamado em lugar nenhum do chat). Agora o
+MCP funciona de verdade, como no Claude:
+
+- Hook `useMcp` conecta nos servidores configurados, faz `tools/list` e expõe as
+  tools ao modelo namespaced no padrão do Claude `mcp__<servidor>__<tool>`.
+- `useChat` mescla as tools MCP às nativas (`extraTools`) antes do deferral/
+  partição — o modelo realmente recebe e pode chamar.
+- `useToolExecution` roteia chamadas `mcp__*` de volta ao servidor certo
+  (`mcp-call-tool`).
+- Segurança: tools MCP são tratadas como perigosas no gate de aprovação
+  (`toolNeedsApproval`) — pedem permissão por padrão (em 'ignore' não), já que
+  podem ler/escrever arquivos e acessar a rede.
+- Helpers puros testáveis `src/utils/mcpTools.ts` (parse de comando, namespacing,
+  conversão de inputSchema) + 13 testes.
+
+Esta é a 1ª das 5 áreas de melhoria do plano "vs Claude". 663 testes, typecheck
+e build de produção OK.
+
 ## [2.34.0] — 2026-06-14
 
 ### Fixed — IA entregava relatório com o plano em "0/7" (tarefas nunca concluídas)

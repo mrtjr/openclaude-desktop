@@ -38,6 +38,8 @@ interface UseChatOptions {
   onUsage?: (inputTokens: number, outputTokens: number) => void
   /** Skills disponíveis — manifesto + pinned injetados no system prompt (v2.27.0). */
   skills?: Skill[]
+  /** Tools extras (ex.: MCP) mescladas às TOOLS estáticas e enviadas ao modelo (v2.35.0). */
+  extraTools?: any[]
 }
 
 export function useChat({
@@ -54,10 +56,13 @@ export function useChat({
   onProviderError,
   onUsage,
   skills,
+  extraTools,
 }: UseChatOptions) {
   // Use refs for callback props to avoid stale closures in useCallback
   const skillsRef = useRef(skills)
   skillsRef.current = skills
+  const extraToolsRef = useRef(extraTools)
+  extraToolsRef.current = extraTools
   const onProviderSuccessRef = useRef(onProviderSuccess)
   onProviderSuccessRef.current = onProviderSuccess
   const onProviderErrorRef = useRef(onProviderError)
@@ -243,13 +248,17 @@ export function useChat({
       // name/desc manifest in the system prompt; the model calls
       // `tool_search` to pull full schemas on demand. The decision is per
       // turn and per model — see decideDeferral (context-pressure heuristic).
+      // MCP (v2.35.0): mescla as tools dos servidores MCP às TOOLS estáticas
+      // antes de decidir deferral/particionar. Assim o modelo realmente recebe
+      // as tools dos servidores configurados.
+      const allTools: any[] = extraToolsRef.current?.length ? [...TOOLS, ...extraToolsRef.current] : (TOOLS as any)
       const deferral = decideDeferral(
         settings.toolDeferralMode,
         effectiveContextLimit(finalProvider, finalModel, settings.ollamaNumCtx),
-        countToolSchemas(TOOLS as any),
+        countToolSchemas(allTools),
       )
       const deferralEnabled = deferral.enabled
-      const toolPartition = partitionTools(TOOLS as any, deferralEnabled)
+      const toolPartition = partitionTools(allTools, deferralEnabled)
       if (deferralEnabled && toolPartition.deferredNames.length > 0) {
         systemPrompt += '\n\n' + renderDeferredManifest(toolPartition.deferredNames, lang)
         console.log(`[useChat] tool deferral ON — ${deferral.reason} | eager ${toolPartition.eagerTokens}t, ~${toolPartition.deferredTokens}t deferred`)
@@ -313,7 +322,7 @@ export function useChat({
         systemTokens: contextEngine.countTokens(systemPrompt),
         // Schemas actually sent this turn: the eager subset (+ tool_search)
         // when deferral is on, otherwise the full tool set.
-        toolTokens: deferralEnabled ? toolPartition.eagerTokens : countToolSchemas(TOOLS as any),
+        toolTokens: deferralEnabled ? toolPartition.eagerTokens : countToolSchemas(allTools),
         // Everything injected as memory: running summary + persistent facts
         // + the agent's working-memory reminder (re-sent every step).
         memoryTokens: contextEngine.countTokens(contextSummary)
@@ -639,7 +648,7 @@ export function useChat({
             })
             streamCleanupRef.current = cleanup
 
-            const toolsForRequest = toolsDisabledForThisTurn ? [] : (deferralEnabled ? [...toolPartition.eager, toolPartition.metaTool] as any[] : TOOLS)
+            const toolsForRequest = toolsDisabledForThisTurn ? [] : (deferralEnabled ? [...toolPartition.eager, toolPartition.metaTool] as any[] : allTools)
             const streamCall = isNotOllama
               ? window.electron.providerChatStream({
                   provider: finalProvider, apiKey: finalApiKey, model: finalModel,
@@ -864,7 +873,7 @@ export function useChat({
 
         } else {
           // ─── Non-streaming path ────────────────────────────
-          const toolsForRequest = toolsDisabledForThisTurn ? [] : (deferralEnabled ? [...toolPartition.eager, toolPartition.metaTool] as any[] : TOOLS)
+          const toolsForRequest = toolsDisabledForThisTurn ? [] : (deferralEnabled ? [...toolPartition.eager, toolPartition.metaTool] as any[] : allTools)
           let response: any
           if (isNotOllama) {
             response = await window.electron.providerChat({

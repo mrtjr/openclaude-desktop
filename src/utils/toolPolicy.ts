@@ -21,15 +21,19 @@ export const AUTO_EDIT_TOOLS = new Set(['write_file', 'edit_file', 'git_command'
  *                          execute_command) still ask
  *   - 'ignore'           → nothing asks */
 export function toolNeedsApproval(level: PermissionLevel, name: string): boolean {
+  // Tools de servidores MCP (mcp__*) são externas e podem fazer qualquer coisa
+  // (ler/escrever arquivos, rede) — tratadas como perigosas por padrão, como o
+  // Claude faz ao pedir permissão para tools MCP (v2.35.0).
+  const isDangerous = DANGEROUS_TOOLS.has(name) || name.startsWith('mcp__')
   switch (level) {
     case 'ignore':
       return false
     case 'auto_edits':
-      return DANGEROUS_TOOLS.has(name) && !AUTO_EDIT_TOOLS.has(name)
+      return isDangerous && !AUTO_EDIT_TOOLS.has(name)
     case 'ask':
     case 'planning':
     default:
-      return DANGEROUS_TOOLS.has(name)
+      return isDangerous
   }
 }
 
