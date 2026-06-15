@@ -7,12 +7,23 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.46.0] — 2026-06-15
+
+### Performance — Throttle do texto transmitido (corrige re-parse quadrático)
+
+Análise do projeto inteiro: o maior gargalo de runtime estava na transmissão.
+`setStreamingText` disparava a CADA token, então o App re-renderizava e a bolha
+re-parseava o markdown INTEIRO do texto que cresce (marked + DOMPurify +
+highlight.js) — custo O(n²) por resposta, jank de CPU em respostas longas.
+Agora a atualização do texto é limitada a ~20/s (50ms) com flush de borda no
+fim; o ritmo de digitação continua suave e o trabalho de markdown cai de
+"a cada token" para "a cada quadro". Vale para TODA resposta transmitida.
+
 ### Docs — README alinhado às capacidades reais (v2.35–2.45)
 
-Corrigida a tabela comparativa (MCP agora é ponta a ponta de verdade) e
-adicionado um bloco de Features documentando o que foi entregue desde a v2.35:
-MCP end-to-end, `fetch_url` + navegador headless, hooks Pre/PostToolUse,
-checkpoint/rewind e subagents nomeados. Só documentação — sem mudança no app.
+Tabela comparativa corrigida (MCP agora ponta a ponta) + bloco de Features
+documentando MCP end-to-end, `fetch_url` + navegador headless, hooks
+Pre/PostToolUse, checkpoint/rewind e subagents nomeados.
 
 ## [2.45.0] — 2026-06-15
 

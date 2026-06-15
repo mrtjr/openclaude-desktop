@@ -602,6 +602,21 @@ export function useChat({
             lastPhasePush = now
             setStreamingPhase(next)
           }
+          // Throttle do TEXTO transmitido (v2.46.0): antes, setStreamingText
+          // disparava a CADA token → o App re-renderizava e a bolha re-parseava
+          // o markdown inteiro do texto que cresce (custo quadrático em respostas
+          // longas, jank de CPU). Agora limita a ~20 atualizações/s, com flush
+          // de borda final. O ritmo de digitação continua suave.
+          const STREAM_TEXT_THROTTLE_MS = 50
+          let lastTextPush = 0
+          let textTimer: ReturnType<typeof setTimeout> | null = null
+          const flushText = () => { lastTextPush = Date.now(); textTimer = null; setStreamingText(displayText) }
+          const pushText = () => {
+            const elapsed = Date.now() - lastTextPush
+            if (elapsed >= STREAM_TEXT_THROTTLE_MS) { if (textTimer) { clearTimeout(textTimer); textTimer = null } flushText() }
+            else if (!textTimer) { textTimer = setTimeout(flushText, STREAM_TEXT_THROTTLE_MS - elapsed) }
+          }
+          const cancelTextThrottle = () => { if (textTimer) { clearTimeout(textTimer); textTimer = null } }
           setIsStreaming(true)
           setStreamingText(''); setStreamingPhase(null)
           setStreamingPhase(null)
@@ -613,14 +628,16 @@ export function useChat({
               if (chunk.done) {
                 cleanup()
                 streamCleanupRef.current = null
+                cancelTextThrottle()
                 if (chunk.error) {
                   reject(new Error(chunk.error))
                 } else {
+                  setStreamingText(displayText) // flush de borda: bolha mostra o texto completo no handoff
                   resolve()
                 }
                 return
               }
-              if (chunk.error) { cleanup(); streamCleanupRef.current = null; reject(new Error(chunk.error)); return }
+              if (chunk.error) { cleanup(); streamCleanupRef.current = null; cancelTextThrottle(); reject(new Error(chunk.error)); return }
               // Capture usage if the provider sent it (OpenAI-compat final chunk
               // or Anthropic synthetic chunk). Uniform shape {prompt_tokens, completion_tokens}.
               if (chunk.usage && typeof chunk.usage === 'object') {
@@ -642,7 +659,7 @@ export function useChat({
                   accumulated += delta.content
                   // Sanitize reasoning leaks in real-time
                   const safe = sanitizer.process(delta.content)
-                  if (safe) { displayText += safe; setStreamingText(displayText) }
+                  if (safe) { displayText += safe; pushText() }
                 }
                 if (delta.tool_calls) {
                   for (const tc of delta.tool_calls) {
@@ -688,6 +705,7 @@ export function useChat({
           // correlacionar "execução local longa → espera longa" (cold-start).
           logInsight('chat', 'stream_profile', { ...phaseProfiler.finish(Date.now()), prevToolMs: prevStepToolMs })
           } catch (err: any) {
+            cancelTextThrottle()  // não deixar um flush atrasado disparar após o erro
             // Tools-unsupported auto-recovery. Some providers (OpenRouter
             // especially) only expose a tool-capable endpoint for some
             // models; if the selected model has no such endpoint the whole
