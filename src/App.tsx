@@ -69,6 +69,7 @@ import { AmbientOrb } from './components/AmbientOrb'
 import { SlashPopover } from './components/SlashPopover'
 import UserMenu from './components/UserMenu'
 import PermissionModeButton from './components/PermissionModeButton'
+import EffortSlider from './components/EffortSlider'
 import ContextWindowPanel from './components/ContextWindowPanel'
 import { useContextBreakdown } from './hooks/useContextBreakdown'
 import { useMathReady } from './hooks/useMathReady'
@@ -1878,6 +1879,16 @@ export default function App() {
                   onChange={(level) => setSettings(s => ({ ...s, permissionLevel: level }))}
                   language={settings.language}
                 />
+                {activeConv && (
+                  <EffortSlider
+                    value={activeConv.reasoningEffort}
+                    globalDefault={settings.reasoningEffort ?? 'default'}
+                    language={settings.language}
+                    onChange={(v) => convManager.setConversations(prev => prev.map(c =>
+                      c.id === activeConv.id ? { ...c, reasoningEffort: v } : c
+                    ))}
+                  />
+                )}
                 {isAgentMode && <span className="status-pill agent"><Zap size={9} />Agente{isActiveConvLoading ? ` · Passo ${chat.agentSteps}` : ''}</span>}
                 {activePersona && <span className="status-pill persona"><UserCog size={9} />{activePersona.name}</span>}
                 {ragEnabled && <span className="status-pill rag"><Database size={9} />RAG</span>}

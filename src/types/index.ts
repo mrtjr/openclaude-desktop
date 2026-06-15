@@ -2,6 +2,7 @@
 // Extracted from App.tsx — single source of truth for shared types
 
 export { type AppSettings, type Provider, type Language, type PermissionLevel, type McpServer } from '../Settings'
+import type { ReasoningEffort } from '../settingsConfig'
 
 export interface Message {
   id: string
@@ -46,6 +47,9 @@ export interface Conversation {
   /** Workspace this conversation belongs to (Projects, v2.12.42). Undefined =
    *  not in any project ("Todas"). */
   projectId?: string
+  /** Override de esforço de raciocínio por-conversa (v2.50.0). Undefined =
+   *  herda o padrão global de Settings. Ver EffortSlider / reasoningEffort. */
+  reasoningEffort?: ReasoningEffort
 }
 
 /** A Project groups related conversations into a workspace (Claude-style).

@@ -10,6 +10,10 @@ export type Provider = 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openroute
 export type Language = 'pt' | 'en'
 export type PermissionLevel = 'ask' | 'auto_edits' | 'planning' | 'ignore'
 
+/** Esforço de raciocínio (v2.25.0; 'auto' em v2.50.0). Reusado pelo seletor
+ *  global (Settings) e pelo override por-conversa (EffortSlider). */
+export type ReasoningEffort = 'default' | 'auto' | 'off' | 'low' | 'medium' | 'high'
+
 export interface McpServer {
   name: string
   command: string
@@ -71,7 +75,7 @@ export interface AppSettings {
    *  ajustam profundidade onde o provider suporta (GLM/Ollama são on/off).
    *  v2.50.0 — 'auto': escala o esforço à dificuldade da mensagem por turno
    *  (heurística local, resolvida no cliente antes da IPC; ver adaptiveEffort). */
-  reasoningEffort: 'default' | 'auto' | 'off' | 'low' | 'medium' | 'high'
+  reasoningEffort: ReasoningEffort
   memoryEnabled: boolean
   analyticsEnabled: boolean
   permissionLevel: PermissionLevel

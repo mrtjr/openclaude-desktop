@@ -214,13 +214,15 @@ export function useChat({
       const conv = conversationsRef.current.find(c => c.id === convId)
       const lang = settings.language || 'pt'
 
-      // Esforço de raciocínio efetivo deste turno (v2.50.0). No modo 'auto', uma
-      // heurística local escala o esforço à dificuldade da mensagem ANTES da IPC
-      // — assim main.js/reasoning-control.js só veem níveis concretos. Caso
-      // contrário, usa o valor escolhido direto (default/off/low/medium/high).
-      const effectiveEffort = settings.reasoningEffort === 'auto'
+      // Esforço de raciocínio efetivo deste turno. Precedência: override
+      // por-conversa (EffortSlider, v2.51.0) > padrão global (Settings, v2.25.0).
+      // No modo 'auto' (v2.50.0), a heurística local escala o esforço à
+      // dificuldade da mensagem ANTES da IPC — main.js/reasoning-control.js só
+      // veem níveis concretos.
+      const chosenEffort = conv?.reasoningEffort ?? settings.reasoningEffort
+      const effectiveEffort = chosenEffort === 'auto'
         ? resolveAdaptiveEffort({ text: inputText, isAgentMode, model: finalModel })
-        : settings.reasoningEffort
+        : chosenEffort
 
       let systemPrompt = settings.systemPrompt || ''
       // Inject provider context so the model knows where it's running
@@ -531,7 +533,7 @@ export function useChat({
       }
 
       console.log('[useChat] Starting chat loop:', { provider: finalProvider, model: finalModel, useStreaming, messageCount: allMessages.length })
-      logInsight('chat', 'turn', { provider: finalProvider, model: finalModel, agent: isAgentMode, streaming: useStreaming, effortMode: settings.reasoningEffort, effortResolved: effectiveEffort })
+      logInsight('chat', 'turn', { provider: finalProvider, model: finalModel, agent: isAgentMode, streaming: useStreaming, effortMode: chosenEffort, effortResolved: effectiveEffort })
 
       // Duração da execução de tool do passo ANTERIOR — carregada para o
       // stream_profile do passo atual. Se a espera de 1º token cresce após

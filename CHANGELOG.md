@@ -7,6 +7,24 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.51.0] — 2026-06-15
+
+### Added — Slider de esforço por-conversa no compositor (estilo Claude)
+
+Paridade de UX com o slider "Mais rápido ↔ Mais inteligente" do Claude Code: um
+controle de esforço acessível ao lado do botão de permissões, **por conversa**
+(sobrepõe o padrão global de Settings) — em vez de ficar escondido só no dropdown.
+
+- Novo `src/components/EffortSlider.tsx` (pill + popover no padrão do
+  `PermissionModeButton`): botão **Automático** (modo adaptativo da v2.50.0),
+  um **range "Mais rápido ↔ Mais inteligente"** (off→low→medium→high) e
+  **Herdar padrão global**. Outside-click + Esc.
+- Override persistido na conversa: `Conversation.reasoningEffort` (undefined =
+  herda o global). `useChat` resolve a precedência **conversa > global** e então
+  aplica o 'auto' adaptativo, sem mudar o backend.
+- Tipo `ReasoningEffort` exportado de `settingsConfig` para reuso; CSS `.effort-*`
+  espelhando `.perm-mode-*`. 685 testes, typecheck e build OK.
+
 ## [2.50.0] — 2026-06-15
 
 ### Added — Esforço de raciocínio "Automático" (adaptativo, estilo Claude)
