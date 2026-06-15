@@ -38,6 +38,18 @@ describe('classifyProviderError', () => {
     expect(classifyProviderError('').kind).toBe('unknown')
   })
 
+  it('classifica frasings de overflow de contexto por provider (v2.49.0)', () => {
+    for (const msg of [
+      'context_length_exceeded',
+      'This request would exceed the maximum context',
+      'prompt is too long: 210000 tokens > 200000',
+      'input is too long for requested model',
+      'HTTP 413: payload too large',
+    ]) {
+      expect(classifyProviderError(msg).kind).toBe('context')
+    }
+  })
+
   it('classifica stall pela string real do watchdog e é retryável; não colide com timeout', () => {
     // A mensagem real (electron/main.js) NÃO contém "timeout" → não vira 'timeout'.
     const real = 'Stream travado: provider parou de enviar conteúdo por 150s (só keep-alive)'

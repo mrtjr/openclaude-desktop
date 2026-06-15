@@ -17,7 +17,7 @@ import { nextStreamPhase, classifyDelta, createPhaseProfiler, type StreamPhase }
 import { runCompaction, mergeSummary, planEmergencyCompaction } from '../services/compaction'
 import { renderWorkingMemory, renderPersistentMemory } from '../utils/memoryRender'
 import { logInsight, beginInsightTurn, bumpInsightStep, endInsightTurn } from '../services/devInsights'
-import { createContextEngine, getModelContextLimit, effectiveContextLimit, countToolSchemas, computeMessageBudget } from '../services/contextEngine'
+import { createContextEngine, getModelContextLimit, effectiveContextLimit, countToolSchemas, computeMessageBudget, AUTOCOMPACT_BUFFER_RATIO } from '../services/contextEngine'
 import type { ProviderConfig } from './useProviderConfig'
 
 // The engine is pure and stateless — create once at module load.
@@ -337,6 +337,11 @@ export function useChat({
         // Reserve the reply allocation so the prompt+completion never exceed
         // the window. Floor at 2k for providers that ignore max_tokens.
         responseReserve: settings.maxTokens || 2048,
+        // Reserva o buffer de autocompact (~15%) — assim a história é compactada
+        // PROATIVAMENTE a ~85% (como o painel já mostra e o Claude faz) em vez de
+        // encher até 100% e tomar HTTP 400. A margem também absorve a imprecisão
+        // do tokenizer em modelos não-OpenAI (GLM etc.). (v2.49.0)
+        bufferReserve: Math.floor(modelLimit * AUTOCOMPACT_BUFFER_RATIO),
       })
       const historyForEngine = history as any[]
       const assembled = contextEngine.assemble(historyForEngine, tokenBudget)

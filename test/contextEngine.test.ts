@@ -163,4 +163,12 @@ describe('computeMessageBudget', () => {
     expect(precise).toBeLessThan(Math.floor(8_192 * 0.60))
     expect(precise).toBeGreaterThan(0)
   })
+
+  it('reserva o bufferReserve (autocompact) deixando headroom real (v2.49.0)', () => {
+    const sem = computeMessageBudget(200_000, { systemTokens: 1000, responseReserve: 2048 })
+    const com = computeMessageBudget(200_000, { systemTokens: 1000, responseReserve: 2048, bufferReserve: 30_000 })
+    expect(sem - com).toBe(30_000)
+    // com a reserva de 15%, a história fica bem abaixo do limite (não enche 100%).
+    expect(com).toBeLessThanOrEqual(Math.floor(200_000 * 0.85))
+  })
 })

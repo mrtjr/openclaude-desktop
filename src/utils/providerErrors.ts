@@ -67,7 +67,13 @@ export function classifyProviderError(raw: string | undefined): ProviderErrorInf
     return { kind: 'timeout', retryable: false }
 
   if (has('context length', 'maximum context', 'context_length', 'too many tokens',
-          'reduce the length', 'maximum number of tokens', 'context window'))
+          'reduce the length', 'maximum number of tokens', 'context window',
+          // frasings adicionais de overflow por provider (v2.49.0): GLM/OpenAI/
+          // Anthropic/others. Mapeadas para 'context' para a compactação de
+          // emergência disparar e refazer o passo menor.
+          'context_length_exceeded', 'too long', 'prompt is too long',
+          'input is too long', 'string too long', 'exceeds the maximum',
+          'exceeds the context', 'payload too large', 'request too large', '413'))
     return { kind: 'context', retryable: false }
 
   if (has('404', 'not found', 'does not exist', 'no endpoints', "doesn't support",

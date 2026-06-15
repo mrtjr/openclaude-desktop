@@ -269,6 +269,13 @@ export function computeMessageBudget(
     toolTokens?: number
     memoryTokens?: number
     responseReserve?: number
+    /** Margem extra reservada além do overhead concreto (ex.: o buffer de
+     *  autocompact de 15%). Mantém headroom real para que o request fique bem
+     *  abaixo do limite — crucial com tokenizer aproximado (não-OpenAI), onde a
+     *  contagem local subestima e uma margem fina estoura no servidor (HTTP 400).
+     *  Antes de v2.49.0 isto não existia: a história enchia até ~100% e o
+     *  provider rejeitava sem o app compactar. */
+    bufferReserve?: number
   },
 ): number {
   const used =
@@ -276,6 +283,7 @@ export function computeMessageBudget(
     (overhead.toolTokens || 0) +
     (overhead.memoryTokens || 0) +
     (overhead.responseReserve || 0) +
+    (overhead.bufferReserve || 0) +
     BUDGET_SAFETY_SLACK
   // Clamp to [0, limit]. A near-zero budget is fine — assemble() always
   // keeps the most recent message regardless, which is the correct

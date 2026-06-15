@@ -7,6 +7,32 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.49.0] — 2026-06-15
+
+### Fixed — HTTP 400 por contexto cheio: agora compacta proativamente (não estoura)
+
+Bug observado: a conversa chegou a 100% da janela (196.8k/200k) e o provider
+devolveu **HTTP 400**, sem o app compactar. Causa raiz dupla:
+1. `computeMessageBudget` reservava system+tools+memória+resposta+slack, mas
+   **NÃO reservava o buffer de autocompact de 15%** — o painel mostrava "30k
+   reservado" que na prática não era respeitado. A história enchia até ~100%,
+   deixando margem mínima; com o tokenizer aproximado para modelos não-OpenAI
+   (GLM), essa margem fina estourava no servidor → 400.
+2. O 400 caía em `unknown` (não `context`), então a compactação de emergência
+   nunca disparava.
+
+Correções:
+- **Prevenção:** `computeMessageBudget` ganhou `bufferReserve`; o `useChat` passa
+  os 15% (`AUTOCOMPACT_BUFFER_RATIO`). Agora a história é compactada
+  PROATIVAMENTE a ~85% (como o painel já prometia e o Claude faz), deixando
+  headroom real que também absorve a imprecisão do tokenizer.
+- **Recuperação:** `classifyProviderError` reconhece mais frasings de overflow
+  (`context_length_exceeded`, `prompt is too long`, `input is too long`,
+  `exceeds the maximum`, `payload too large`, `413`…) → o emergency-compact +
+  retry dispara mesmo quando o provider não usa as palavras-padrão.
+
+676 testes (novos: bufferReserve + frasings de overflow), typecheck e build OK.
+
 ## [2.48.0] — 2026-06-15
 
 ### Performance — ToolCallBlock memoizado (corrige O(n²) em rodadas longas)
