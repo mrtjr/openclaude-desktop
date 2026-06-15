@@ -3,7 +3,7 @@
 // Replaces ad-hoc context management in the chat loop.
 
 import type { Message } from '../types'
-import { realTokenCount } from './tokenizer'
+import { realTokenCount, onTokenizerReady } from './tokenizer'
 
 export interface ContextEngine {
   /** Assemble messages within a token budget. Returns trimmed array. */
@@ -33,7 +33,7 @@ function estimateTokens(text: string): number {
   return Math.ceil(otherCount / 4 + cjkCount / 1.5)
 }
 
-function messageTokens(msg: Message): number {
+function messageTokensRaw(msg: Message): number {
   let tokens = estimateTokens(msg.content) + 4 // overhead per message
   if (msg.toolCalls) {
     for (const tc of msg.toolCalls) {
@@ -45,6 +45,25 @@ function messageTokens(msg: Message): number {
       tokens += estimateTokens(tr.result)
     }
   }
+  return tokens
+}
+
+// Cache de contagem POR MENSAGEM (v2.49.1). Mensagens são imutáveis após
+// criadas, mas `assemble`/`getTokenCount` rodam a cada envio (e a cada passo
+// agêntico) e re-tokenizavam toda a história — incluindo um JSON.stringify dos
+// args de cada tool call por chamada. Numa conversa longa / rodada com muitas
+// tools isso é O(n²). O WeakMap torna cada mensagem O(1) após a 1ª vez (e some
+// sozinho quando a conversa é coletada). `gen` invalida o cache quando o
+// tokenizer real carrega (as entradas heurísticas precisam ser recontadas).
+let tokenGen = 0
+onTokenizerReady(() => { tokenGen++ })
+const msgTokenCache = new WeakMap<Message, { tokens: number; gen: number }>()
+
+function messageTokens(msg: Message): number {
+  const cached = msgTokenCache.get(msg)
+  if (cached && cached.gen === tokenGen) return cached.tokens
+  const tokens = messageTokensRaw(msg)
+  msgTokenCache.set(msg, { tokens, gen: tokenGen })
   return tokens
 }
 

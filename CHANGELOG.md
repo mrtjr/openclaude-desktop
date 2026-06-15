@@ -7,6 +7,18 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.49.1] — 2026-06-15
+
+### Performance — Cache de contagem de tokens por mensagem
+
+`contextEngine.assemble`/`getTokenCount` rodam a cada envio (e a cada passo
+agêntico) e re-tokenizavam toda a história — incluindo um `JSON.stringify` dos
+args de cada tool call por chamada. Em conversa longa / rodada com muitas tools
+isso é O(n²). Agora `messageTokens` cacheia por mensagem num `WeakMap` (mensagens
+são imutáveis; some sozinho quando a conversa é coletada), com uma geração que
+invalida o cache quando o tokenizer real termina de carregar. 676 testes,
+typecheck e build OK.
+
 ## [2.49.0] — 2026-06-15
 
 ### Fixed — HTTP 400 por contexto cheio: agora compacta proativamente (não estoura)
