@@ -450,6 +450,11 @@ export function useChat({
       // transmitido (senão duplicaria).
       let timeoutRetriesUsed = 0
       const MAX_TIMEOUT_RETRIES = 1
+      // Erro não classificado (unknown) ANTES de qualquer conteúdo: é falha
+      // pré-resposta (nada commitado nem cobrado) → 1 retry seguro. Recupera a
+      // 2ª categoria de erro mais comum da telemetria, hoje sem retry (v2.36.0).
+      let unknownRetriesUsed = 0
+      const MAX_UNKNOWN_RETRIES = 1
       const isToolsUnsupportedError = (msg: string | undefined): boolean => {
         if (!msg) return false
         const m = msg.toLowerCase()
@@ -751,6 +756,18 @@ export function useChat({
               steps--
               continue
             }
+            // Erro não classificado (unknown) SEM conteúdo: falha pré-resposta,
+            // seguro refazer 1×. Recupera a 2ª categoria de erro da telemetria.
+            if (cls.kind === 'unknown' && !accumulated && unknownRetriesUsed < MAX_UNKNOWN_RETRIES && !stopRequestedRef.current) {
+              unknownRetriesUsed++
+              logInsight('chat', 'retry', { kind: 'unknown', attempt: unknownRetriesUsed })
+              setIsStreaming(false)
+              setStreamingText(''); setStreamingPhase(null)
+              showToast(humanizeProviderError(err?.message, lang) + (lang === 'en' ? ' (retrying…)' : ' (tentando de novo…)'))
+              await new Promise(r => setTimeout(r, 1500))
+              steps--
+              continue
+            }
             throw err
           }
 
@@ -927,6 +944,16 @@ export function useChat({
             // Context overflow mid-turn: compact and retry once before aborting.
             if (cls.kind === 'context' && await emergencyContextCompact()) {
               showToast(lang === 'en' ? 'Context overflowed — compacted, retrying…' : 'Contexto estourou — compactado, tentando de novo…')
+              steps--
+              continue
+            }
+            // Erro não classificado (unknown): não-stream é tudo-ou-nada (sem
+            // parcial), então é seguro refazer 1×. Mesma lógica do streaming.
+            if (cls.kind === 'unknown' && unknownRetriesUsed < MAX_UNKNOWN_RETRIES && !stopRequestedRef.current) {
+              unknownRetriesUsed++
+              logInsight('chat', 'retry', { kind: 'unknown', attempt: unknownRetriesUsed })
+              showToast(humanizeProviderError(response.error, lang) + (lang === 'en' ? ' (retrying…)' : ' (tentando de novo…)'))
+              await new Promise(r => setTimeout(r, 1500))
               steps--
               continue
             }

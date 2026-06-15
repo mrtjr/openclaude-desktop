@@ -7,6 +7,19 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.36.0] — 2026-06-15
+
+### Fixed — Confiabilidade: retry seguro para erro "unknown" pré-resposta
+
+A telemetria mostrava ~45% dos turnos com erro; depois do `timeout` (já com
+retry de cold-start), a 2ª categoria era `unknown` (6×) — e ela não tinha
+nenhuma recuperação. Como um erro `unknown` que ocorre ANTES de qualquer
+conteúdo transmitido é uma falha pré-resposta (nada foi commitado nem cobrado),
+agora ele recebe **1 retry seguro** (orçamento próprio `MAX_UNKNOWN_RETRIES`),
+nos dois caminhos (streaming e não-streaming). Guardado por `!accumulated`
+(streaming) e respeitando o Parar. 2ª das 5 áreas do plano "vs Claude".
+663 testes, typecheck OK.
+
 ## [2.35.0] — 2026-06-15
 
 ### Added — MCP ponta a ponta (as tools dos servidores chegam ao modelo)
