@@ -37,12 +37,13 @@ export interface ContextBreakdownInputs {
   deferredToolNames: Array<{ name: string; description: string }>
   deferredToolSchemas: unknown[]  // full schemas, counted as BUDGET only
   skillHeaders?: string  // joined "name: desc" lines
+  mcpToolDefs?: unknown[]  // tools dos servidores MCP conectados (v2.41.0)
 }
 
 export function useContextBreakdown(i: ContextBreakdownInputs): ContextBreakdown {
   const {
     activeConv, model, limit: limitOverride, inputText, systemPrompt, memoryText,
-    eagerTools, deferredToolNames, deferredToolSchemas, skillHeaders = '',
+    eagerTools, deferredToolNames, deferredToolSchemas, skillHeaders = '', mcpToolDefs = [],
   } = i
 
   // Sharpen every category from char/4 to real BPE counts once loaded.
@@ -78,8 +79,10 @@ export function useContextBreakdown(i: ContextBreakdownInputs): ContextBreakdown
         )
       : 0
 
-    // MCP: not implemented yet, placeholder for future integration.
-    const mcpTools = 0
+    // MCP (v2.41.0): schemas das tools dos servidores MCP conectados que são
+    // mescladas à lista enviada ao modelo (ver useChat/useMcp). Conta real, em
+    // vez do 0 hardcoded de antes.
+    const mcpTools = countToolSchemas(mcpToolDefs)
     const mcpToolsDeferred = 0
 
     // Skills: currently just a line-count of whatever headers the
@@ -124,7 +127,7 @@ export function useContextBreakdown(i: ContextBreakdownInputs): ContextBreakdown
     }
   }, [
     activeConv?.messages, model, limitOverride, inputText, systemPrompt, memoryText,
-    eagerTools, deferredToolNames, deferredToolSchemas, skillHeaders,
+    eagerTools, deferredToolNames, deferredToolSchemas, skillHeaders, mcpToolDefs,
     tokenizerReady,
   ])
 }

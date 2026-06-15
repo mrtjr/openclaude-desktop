@@ -584,6 +584,7 @@ export default function App() {
     deferredToolNames: toolPartition.deferredNames,
     deferredToolSchemas: (TOOLS as any[]).filter((t: any) => toolPartition.deferredNames.some(d => d.name === t.function.name)) as any,
     skillHeaders: skillManifestHeaders(skills),
+    mcpToolDefs: mcp.mcpTools,
   })
 
   useMemoryDreaming({

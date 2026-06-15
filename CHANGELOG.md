@@ -7,6 +7,16 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.41.0] — 2026-06-15
+
+### Fixed — Painel /context conta as tools MCP (era 0 hardcoded)
+
+Com o MCP ligado na v2.35.0, as tools dos servidores entram na lista enviada ao
+modelo, mas o painel de contexto ainda mostrava `mcpTools = 0` fixo. Agora
+`useContextBreakdown` recebe `mcpToolDefs` e conta os schemas reais
+(`countToolSchemas`), então a linha "Ferramentas MCP" reflete o que de fato ocupa
+contexto. Typecheck, 673 testes e build OK.
+
 ## [2.40.0] — 2026-06-15
 
 ### Changed — Subagents: descrições honestas (são agentes de raciocínio, sem tools)
