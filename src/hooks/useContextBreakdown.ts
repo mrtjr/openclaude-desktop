@@ -38,12 +38,17 @@ export interface ContextBreakdownInputs {
   deferredToolSchemas: unknown[]  // full schemas, counted as BUDGET only
   skillHeaders?: string  // joined "name: desc" lines
   mcpToolDefs?: unknown[]  // tools dos servidores MCP conectados (v2.41.0)
+  /** Quando false (painel fechado), pula a tokenização pesada e devolve um
+   *  breakdown vazio. Evita tokenizar a conversa inteira a CADA tecla do
+   *  compositor quando ninguém está olhando o painel (v2.47.0). */
+  active?: boolean
 }
 
 export function useContextBreakdown(i: ContextBreakdownInputs): ContextBreakdown {
   const {
     activeConv, model, limit: limitOverride, inputText, systemPrompt, memoryText,
     eagerTools, deferredToolNames, deferredToolSchemas, skillHeaders = '', mcpToolDefs = [],
+    active = true,
   } = i
 
   // Sharpen every category from char/4 to real BPE counts once loaded.
@@ -51,6 +56,17 @@ export function useContextBreakdown(i: ContextBreakdownInputs): ContextBreakdown
   return useMemo(() => {
     const limit = (typeof limitOverride === 'number' && limitOverride > 0)
       ? limitOverride : getModelContextLimit(model)
+
+    // Painel fechado: não tokeniza nada (evita lag de digitação em conversas
+    // longas — o cálculo pesado só vale quando alguém está vendo o painel).
+    if (!active) {
+      return {
+        messages: 0, systemPrompt: 0, memory: 0, systemTools: 0, systemToolsDeferred: 0,
+        mcpTools: 0, mcpToolsDeferred: 0, skills: 0, autocompactBuffer: 0,
+        free: limit, used: 0, total: 0, limit, percentage: 0,
+        warning: false, critical: false, shouldAutocompact: false,
+      }
+    }
 
     // Messages: conv history + current input
     let messages = 0
@@ -128,6 +144,6 @@ export function useContextBreakdown(i: ContextBreakdownInputs): ContextBreakdown
   }, [
     activeConv?.messages, model, limitOverride, inputText, systemPrompt, memoryText,
     eagerTools, deferredToolNames, deferredToolSchemas, skillHeaders, mcpToolDefs,
-    tokenizerReady,
+    tokenizerReady, active,
   ])
 }

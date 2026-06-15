@@ -7,6 +7,18 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.47.0] — 2026-06-15
+
+### Performance — Sem lag de digitação: /context só tokeniza com o painel aberto
+
+`useContextBreakdown` dependia de `inputText`, então CADA tecla no compositor
+recomputava o breakdown — tokenizando a conversa inteira + tools + memória com o
+BPE real, mesmo com o painel de contexto FECHADO (o caso comum). Em conversas
+longas isso causava lag perceptível ao digitar. Agora o cálculo pesado é gateado
+por `active` (= painel aberto): fechado, retorna um breakdown vazio sem
+tokenizar; aberto, calcula normalmente. O contador simples do rodapé
+(`useTokenCounter`) é separado e não foi afetado.
+
 ## [2.46.0] — 2026-06-15
 
 ### Performance — Throttle do texto transmitido (corrige re-parse quadrático)
