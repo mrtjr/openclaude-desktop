@@ -7,6 +7,30 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.53.0] — 2026-06-15
+
+### Added — Auto-aprendizado Fase 2: aprende o gosto do usuário (preferências)
+
+Objetivo (1) do plano: conforme o usuário conversa, o agente aprende o gosto/
+estilo e passa a aplicá-lo — guardado como MEMÓRIA DE PREFERÊNCIA (injetada todo
+turno), **nunca** como skill nova (separação deliberada, estilo Anthropic).
+
+- Helper puro `src/utils/preferenceLearning.ts` (7 testes): `extractPreference
+  Candidates` detecta preferências EXPLÍCITAS (marcadores bilíngues PT+EN:
+  "prefiro/de agora em diante/use sempre/from now on/always use/I prefer…",
+  ignora perguntas e frases normais); `recordCandidates`/`selectPromotable`/
+  `removeCandidates` implementam o **gate de reforço** — só promove após aparecer
+  em **≥2 conversas distintas** (anti-falso-positivo), com poda e cap.
+- Ligado no `useChat` (fire-and-forget no envio, gated por `memoryEnabled`, fora
+  do caminho quente): ao promover, grava no bucket `preferences` via
+  `loadMemory`+`mergeFact`+`saveMemory` (dedup+cap já existentes) e mostra um
+  toast "Preferência aprendida: …" (transparência).
+
+NOTA de arquitetura: o "memory dreaming" (agent-memory.json) está **dormente** —
+`addEpisodic` nunca é chamado, então o episódico nunca enche. Por isso a extração
+roda direto da mensagem em vez do `lightDream` (que ficaria inócuo). Revivê-lo
+fica para um passo futuro. 698 testes, typecheck e build OK.
+
 ## [2.52.0] — 2026-06-15
 
 ### Added — Auto-aprendizado Fase 1: fundação de tipos + anti-drift na memória

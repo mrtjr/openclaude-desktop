@@ -17,6 +17,8 @@ import { toolCallSummary } from '../utils/toolDisplay'
 import { nextStreamPhase, classifyDelta, createPhaseProfiler, type StreamPhase } from '../utils/streamPhase'
 import { runCompaction, mergeSummary, planEmergencyCompaction } from '../services/compaction'
 import { renderWorkingMemory, renderPersistentMemory } from '../utils/memoryRender'
+import { mergeFact } from '../utils/persistentMemory'
+import { extractPreferenceCandidates, recordCandidates, selectPromotable, removeCandidates } from '../utils/preferenceLearning'
 import { logInsight, beginInsightTurn, bumpInsightStep, endInsightTurn } from '../services/devInsights'
 import { createContextEngine, getModelContextLimit, effectiveContextLimit, countToolSchemas, computeMessageBudget, AUTOCOMPACT_BUFFER_RATIO } from '../services/contextEngine'
 import type { ProviderConfig } from './useProviderConfig'
@@ -180,6 +182,42 @@ export function useChat({
     setStreamingConvId(convId)
     setAgentSteps(0)
     stopRequestedRef.current = false
+
+    // ─── Aprendizado de preferências (Fase 2, v2.53.0) ───────────────
+    // Captura preferências EXPLÍCITAS desta mensagem e, após reforço (≥2
+    // conversas), promove ao bucket 'preferences' (injetado todo turno via
+    // renderPersistentMemory). Local, fire-and-forget, fora do caminho quente.
+    if (settings.memoryEnabled) {
+      const candKey = 'openclaude-pref-candidates'
+      void (async () => {
+        try {
+          const cands = extractPreferenceCandidates(inputText)
+          if (cands.length === 0) return
+          let store: any = {}
+          try { store = JSON.parse(localStorage.getItem(candKey) || '{}') } catch { store = {} }
+          store = recordCandidates(store, cands, convId, Date.now())
+          const promotable = selectPromotable(store)
+          if (promotable.length > 0) {
+            let mem = await window.electron.loadMemory()
+            const learned: string[] = []
+            for (const p of promotable) {
+              const r = mergeFact(mem, 'preference', p)
+              mem = r.memory
+              if (r.added) learned.push(p)
+            }
+            if (learned.length > 0) {
+              await window.electron.saveMemory(mem)
+              const lng = settings.language === 'en' ? 'en' : 'pt'
+              showToast(lng === 'en'
+                ? `Learned a preference: "${learned[0].slice(0, 60)}"`
+                : `Preferência aprendida: "${learned[0].slice(0, 60)}"`)
+            }
+            store = removeCandidates(store, promotable)
+          }
+          localStorage.setItem(candKey, JSON.stringify(store))
+        } catch { /* aprendizado é best-effort */ }
+      })()
+    }
 
     const { provider: finalProvider, model: finalModel, apiKey: finalApiKey, isNotOllama, modalHostname, customBaseUrl } = providerConfig
 
