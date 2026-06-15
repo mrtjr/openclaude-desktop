@@ -7,6 +7,15 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.45.0] — 2026-06-15
+
+### Added — Cache no fetch_url (TTL 5 min)
+
+`fetch_url` re-baixava a mesma página a cada chamada. Agora há um cache em memória
+por URL (TTL 5 min, cap 50, igual ao `web_search`): reler a mesma URL entre
+passos é instantâneo e não dispara o circuit breaker de chamadas repetidas. O
+resultado em cache vem marcado com `cached: true`. node --check + 674 testes OK.
+
 ## [2.44.0] — 2026-06-15
 
 ### Added — Hooks PreToolUse (bloqueio determinístico antes da tool)

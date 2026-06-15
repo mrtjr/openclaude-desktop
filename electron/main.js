@@ -846,9 +846,19 @@ ipcMain.handle('web-search', async (event, query) => {
 // LER/varrer uma página: rápido e, ao contrário do browser, não abre janela.
 // O modelo só cai para browser_navigate quando precisa de JS/interação (sinal
 // `thin: true`) ou de clicar/preencher/screenshot.
+const FETCH_CACHE = new Map() // url → { result, ts }
+const FETCH_CACHE_TTL_MS = 5 * 60 * 1000
+const FETCH_CACHE_MAX = 50
+
 ipcMain.handle('fetch-url', async (event, url) => {
   if (!url || typeof url !== 'string') return { error: 'Invalid URL' }
   if (!/^https?:\/\//i.test(url)) url = 'https://' + url
+  // Cache curto (como web_search): reler a mesma URL entre passos é instantâneo
+  // e não dispara o circuit breaker de chamadas repetidas.
+  const cached = FETCH_CACHE.get(url)
+  if (isFresh(cached, Date.now(), FETCH_CACHE_TTL_MS)) {
+    return { ...cached.result, cached: true }
+  }
   const FETCH_TIMEOUT_MS = 15000
   const MAX_BYTES = 2_000_000
   const MAX_TEXT = BROWSER_CONFIG.MAX_TEXT_LENGTH
@@ -897,7 +907,11 @@ ipcMain.handle('fetch-url', async (event, url) => {
       let text = htmlToText(html)
       const truncated = truncatedBytes || text.length > MAX_TEXT
       if (text.length > MAX_TEXT) text = text.slice(0, MAX_TEXT)
-      finish({ success: true, url: finalUrl, title, text, thin: looksThin(text), truncated })
+      const result = { success: true, url: finalUrl, title, text, thin: looksThin(text), truncated }
+      // Guarda no cache (chaveado pela URL original pedida); evicta o mais antigo.
+      FETCH_CACHE.set(url, { result, ts: Date.now() })
+      if (FETCH_CACHE.size > FETCH_CACHE_MAX) FETCH_CACHE.delete(FETCH_CACHE.keys().next().value)
+      finish(result)
     }
     get(url)
   })
