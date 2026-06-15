@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Play, ChevronDown, Wrench, Terminal } from 'lucide-react'
 import type { ToolCall, ToolResult } from '../types'
 import { formatMarkdown } from '../utils/formatting'
@@ -7,6 +8,11 @@ import { isToolError } from '../utils/toolPolicy'
 // One tool call + its result, with the collapse/expand header. Extracted from
 // ChatMessage (v2.12.71) so the new AgentStepsGroup renders the exact same
 // block — same classes, same collapse semantics, no visual fork.
+//
+// memo (v2.48.0): numa rodada agêntica longa (a telemetria mostra 452
+// execute_command), cada novo passo recriava o array de msgs do grupo ao vivo e
+// re-renderizava TODOS os blocos — re-parseando o markdown de cada resultado
+// (O(n²)). Memoizado + markdown cacheado, só o bloco novo renderiza.
 
 interface ToolCallBlockProps {
   tc: ToolCall
@@ -18,7 +24,7 @@ interface ToolCallBlockProps {
   onToggleCollapse: (toolKey: string) => void
 }
 
-export default function ToolCallBlock({
+function ToolCallBlockInner({
   tc, result, toolKey, language, collapsedTools, onToggleCollapse,
 }: ToolCallBlockProps) {
   const resultText = result?.result || ''
@@ -45,7 +51,7 @@ export default function ToolCallBlock({
               // Render search results as markdown so the source
               // links are clickable (citation-ready format from
               // electron/web-search-util.js).
-              ? <div className="tool-result tool-result-search" dangerouslySetInnerHTML={{ __html: formatMarkdown(result.result || '', false) }} />
+              ? <div className="tool-result tool-result-search" dangerouslySetInnerHTML={{ __html: formatMarkdown(result.result || '') }} />
               : <div className="tool-result"><Terminal size={12} /><pre>{result.result}</pre></div>
           )}
         </>
@@ -53,3 +59,6 @@ export default function ToolCallBlock({
     </div>
   )
 }
+
+const ToolCallBlock = memo(ToolCallBlockInner)
+export default ToolCallBlock

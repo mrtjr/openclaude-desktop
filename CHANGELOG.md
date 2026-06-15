@@ -7,6 +7,18 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.48.0] — 2026-06-15
+
+### Performance — ToolCallBlock memoizado (corrige O(n²) em rodadas longas)
+
+Gargalo no caso de uso mais pesado (a telemetria mostra 452 execute_command):
+cada novo passo de uma rodada agêntica recriava o array de mensagens do grupo ao
+vivo e re-renderizava **todos** os `ToolCallBlock` — e cada um re-parseava o
+markdown do resultado com `cache=false`. Numa rodada de N passos isso era O(n²)
+de render+markdown a cada passo. Agora `ToolCallBlock` é `memo` (só o passo novo
+renderiza; o `collapsedTools` Set é estável durante a rodada) e o markdown do
+resultado de `web_search` usa o cache. 674 testes, typecheck e build OK.
+
 ## [2.47.0] — 2026-06-15
 
 ### Performance — Sem lag de digitação: /context só tokeniza com o painel aberto
