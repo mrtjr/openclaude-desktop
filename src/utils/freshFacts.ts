@@ -39,6 +39,33 @@ function norm(s: string): string {
     .trim()
 }
 
+/** Palavras-função e marcadores temporais (PT+EN) que têm ≥4 chars e por isso
+ *  passariam pelo filtro de tamanho, mas casam por ACASO e inflam a relevância
+ *  — "como fazer um bolo" não deve casar "como atualizar o React" só pelo
+ *  "como". Em forma normalizada (sem acento, minúsculo) — ver norm(). Os
+ *  marcadores temporais ("atual", "agora", "latest"…) entram porque coocorrem
+ *  em consultas E fatos sensíveis a tempo: deixá-los casaria tópicos distintos
+ *  ("preço atual do ouro" vs "filme atual em cartaz"). */
+const STOPWORDS = new Set([
+  // PT — função
+  'como', 'para', 'pela', 'pelo', 'pelos', 'pelas', 'qual', 'quais', 'onde',
+  'quando', 'porque', 'sobre', 'entre', 'depois', 'antes', 'ainda', 'aqui',
+  'isso', 'isto', 'aquilo', 'esse', 'essa', 'este', 'esta', 'aquele', 'aquela',
+  'mesmo', 'mesma', 'muito', 'muita', 'pouco', 'pouca', 'mais', 'menos',
+  'todo', 'toda', 'todos', 'todas', 'cada', 'outro', 'outra', 'entao',
+  'assim', 'tambem', 'apenas', 'uma', 'umas', 'uns', 'das', 'dos', 'num',
+  'numa', 'voce', 'seu', 'sua', 'meu', 'minha',
+  // PT — temporal
+  'agora', 'hoje', 'atual', 'atuais', 'atualmente', 'recente', 'ultima', 'ultimo',
+  // EN — função
+  'what', 'when', 'where', 'which', 'that', 'this', 'these', 'those', 'with',
+  'from', 'your', 'about', 'into', 'than', 'then', 'them', 'they', 'have',
+  'will', 'would', 'could', 'should', 'much', 'more', 'most', 'some', 'here',
+  'there', 'does', 'their',
+  // EN — temporal
+  'current', 'currently', 'today', 'recent', 'recently', 'latest',
+])
+
 /** Infere um TTL pelo teor do fato: cotações/notícias mudam em horas; versões/
  *  APIs em semanas; o resto, o padrão. */
 export function inferTtlDays(text: string): number {
@@ -88,7 +115,9 @@ export function pruneFreshFacts(list: FreshFact[] | undefined, now: Date, graceM
 }
 
 /** Recupera os fatos relevantes à consulta, separados em frescos vs vencidos.
- *  Relevância = sobreposição de palavras (>=4 chars) entre consulta e fato. */
+ *  Relevância = sobreposição de palavras de CONTEÚDO (>=4 chars e não-stopword)
+ *  entre consulta e fato — sem o filtro de stopword, "como/qual/atual" casavam
+ *  por acaso e injetavam fato irrelevante (ver STOPWORDS). */
 export function recallFreshFacts(
   list: FreshFact[] | undefined,
   queryText: string,
@@ -98,7 +127,7 @@ export function recallFreshFacts(
   const items = normalizeList(list)
   const q = norm(queryText)
   if (!q || !items.length) return { fresh: [], stale: [] }
-  const qWords = new Set(q.split(' ').filter((w) => w.length >= 4))
+  const qWords = new Set(q.split(' ').filter((w) => w.length >= 4 && !STOPWORDS.has(w)))
   if (!qWords.size) return { fresh: [], stale: [] }
   const scored = items
     .map((f) => {
@@ -148,9 +177,15 @@ export function renderFreshFactsBlock(
 }
 
 function stamp(f: FreshFact, now: Date, isEn: boolean): string {
-  const d = Math.max(0, Math.round(ageDays(f, now)))
-  const when = isEn ? `verified ${d}d ago` : `verificado há ${d}d`
+  const age = ageDays(f, now)
   const src = f.source ? ` — ${f.source}` : ''
+  // verifiedAt inválido (memory.json editado à mão que escapou do prune) →
+  // ageDays é Infinity; sem isto o carimbo virava "verificado há Infinityd".
+  if (!Number.isFinite(age)) {
+    return (isEn ? 'verified (unknown date)' : 'verificado (data desconhecida)') + src
+  }
+  const d = Math.max(0, Math.round(age))
+  const when = isEn ? `verified ${d}d ago` : `verificado há ${d}d`
   return `${when}${src}`
 }
 

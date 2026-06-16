@@ -79,19 +79,28 @@ describe('recallFreshFacts', () => {
     at('2026-06-15T00:00:00.000Z', 30, 'A última versão do React é a 20.2'),
     at('2026-05-01T00:00:00.000Z', 14, 'O preço do bitcoin estava em 100k'),
     at('2026-06-15T00:00:00.000Z', 30, 'O Vite atual é o 7'),
+    // Armadilha de stopword: compartilha só "como"/"atual" com consultas comuns,
+    // nenhuma palavra de conteúdo — não pode casar por acaso (regressão NEW-1).
+    at('2026-06-15T00:00:00.000Z', 30, 'Como atualizar o firmware do roteador'),
   ]
   it('casa por sobreposição de palavras e separa fresco vs vencido', () => {
     const r = recallFreshFacts(list, 'qual a versão do react agora?', now)
     expect(r.fresh.some(f => f.text.includes('React'))).toBe(true)
     expect(r.fresh.some(f => f.text.includes('Vite'))).toBe(false)
+    expect(r.fresh.some(f => f.text.includes('roteador'))).toBe(false)
   })
   it('fato vencido cai em stale', () => {
     const r = recallFreshFacts(list, 'preço do bitcoin', now)
     expect(r.stale.some(f => f.text.includes('bitcoin'))).toBe(true)
     expect(r.fresh.length).toBe(0)
   })
-  it('sem sobreposição → vazio', () => {
+  it('sem sobreposição de conteúdo → vazio (stopword não casa)', () => {
+    // "como" casa textualmente com o fato do roteador, mas é stopword → ignorado.
     const r = recallFreshFacts(list, 'como fazer um bolo de cenoura', now)
+    expect(r.fresh.length + r.stale.length).toBe(0)
+  })
+  it('consulta só com stopwords/palavras-curtas → vazio', () => {
+    const r = recallFreshFacts(list, 'qual é o atual agora?', now)
     expect(r.fresh.length + r.stale.length).toBe(0)
   })
 })
@@ -110,5 +119,15 @@ describe('renderFreshFactsBlock', () => {
   })
   it('vazio quando não há nada', () => {
     expect(renderFreshFactsBlock([], [], 'pt', now)).toBe('')
+  })
+  it('verifiedAt inválido → "data desconhecida", nunca "Infinityd" (regressão NEW-2)', () => {
+    const ruim = [at('não-é-data', 14, 'fato com data quebrada')]
+    const block = renderFreshFactsBlock([], ruim, 'pt', now)
+    expect(block).toContain('fato com data quebrada')
+    expect(block).toContain('data desconhecida')
+    expect(block).not.toContain('Infinity')
+    const en = renderFreshFactsBlock([], ruim, 'en', now)
+    expect(en).toContain('unknown date')
+    expect(en).not.toContain('Infinity')
   })
 })
