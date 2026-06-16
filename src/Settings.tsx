@@ -448,6 +448,38 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                     </label>
                   </div>
                 )}
+
+                {/* ── Subagentes de pesquisa (delegate_subtasks) v2.63.0 ── */}
+                <div className="settings-group" style={{ marginTop: '16px' }}>
+                  <label className="settings-label">
+                    <span>{local.language === 'pt' ? 'Subagentes de pesquisa (delegate_subtasks)' : 'Research subagents (delegate_subtasks)'}</span>
+                  </label>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted, #888)', margin: '4px 0 10px' }}>
+                    {local.language === 'pt'
+                      ? 'Cada subagente roda seu próprio loop de ferramentas de leitura (web_search, fetch_url, read_file, search_files) em paralelo. Recomendado: Ollama local (paralelo de verdade, grátis) enquanto o modelo principal orquestra.'
+                      : 'Each subagent runs its own read-only tool loop (web_search, fetch_url, read_file, search_files) in parallel. Recommended: local Ollama (truly parallel, free) while the main model orchestrates.'}
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <select
+                      value={local.subagentExecutor || 'ollama'}
+                      onChange={(e) => setLocal(s => ({ ...s, subagentExecutor: e.target.value as 'ollama' | 'modal' }))}
+                      style={{ padding: '6px 8px', fontSize: '0.85rem' }}
+                    >
+                      <option value="ollama">{local.language === 'pt' ? 'Ollama local (paralelo)' : 'Local Ollama (parallel)'}</option>
+                      <option value="modal">{local.language === 'pt' ? 'Pool do Modal' : 'Modal pool'}</option>
+                    </select>
+                    {(local.subagentExecutor || 'ollama') === 'ollama' && (
+                      <input
+                        type="text"
+                        value={local.subagentModel || 'llama3.2'}
+                        onChange={(e) => setLocal(s => ({ ...s, subagentModel: e.target.value }))}
+                        placeholder="llama3.2"
+                        style={{ padding: '6px 8px', fontSize: '0.85rem', flex: 1, minWidth: '140px' }}
+                        title={local.language === 'pt' ? 'Modelo Ollama dos workers' : 'Ollama model for workers'}
+                      />
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           )}

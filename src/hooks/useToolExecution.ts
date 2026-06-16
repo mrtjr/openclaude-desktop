@@ -15,9 +15,13 @@ import { logInsight } from '../services/devInsights'
 import { findSkill, formatLoadSkillResult } from '../utils/skills'
 import { matchHooks } from '../utils/hooks'
 import { resolveSubagentPrompt } from '../constants/subagents'
+import {
+  buildWorkerTools, runResearchWorker, runWithConcurrency, normalizeWorkerChat,
+  summarizeToolsUsed, WORKER_TOOL_NAMES, WORKER_SYSTEM_PROMPT, DEFAULT_WORKER_CONCURRENCY,
+  type WorkerChat, type WorkerExec, type WorkerMessage,
+} from '../utils/researchWorker'
 import type { Skill } from '../types/skill'
 import type { ModalKeyPool } from './useModalKeyPool'
-import type { ParallelChatResult, ParallelChatTask } from '../types/ipc'
 
 interface UseToolExecutionOptions {
   settings: AppSettings
@@ -305,97 +309,99 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         return `Scrolled (dx=${args.deltaX || 0}, dy=${args.deltaY || 0})`
       }
       if (name === 'delegate_subtasks') {
+        // ── Research workers (v2.63.0): cada subagente roda seu PRÓPRIO loop de
+        // ferramentas de LEITURA (web_search/fetch_url/read_file/search_files/
+        // list_directory) e devolve uma síntese. Workers no Ollama local por
+        // padrão (paralelo + grátis; split orquestrador-worker) — ver
+        // researchWorker.ts. Modal-pool é opt-in.
         const lang = settings.language || 'pt'
         const systemMsg = settings.systemPrompt || ''
         const LANGUAGE_RULE: Record<string, string> = {
           pt: '\n\nIMPORTANTE: Responda SEMPRE em português do Brasil.',
-          en: '\n\nIMPORTANT: Always respond in English.'
+          en: '\n\nIMPORTANT: Always respond in English.',
         }
-        const buildTask = (st: any): ParallelChatTask => {
-          // Subagent nomeado (v2.39.0): se a subtarefa escolheu um papel, seu
-          // system prompt especializado vem antes do system prompt do usuário.
+        const langRule = LANGUAGE_RULE[lang] ?? LANGUAGE_RULE.pt
+        const finalNudge = lang === 'en'
+          ? 'Step budget reached. Stop using tools and give your final synthesis now, based on what you gathered.'
+          : 'Limite de passos atingido. Pare de usar ferramentas e dê agora sua síntese final, com base no que coletou.'
+
+        const subtasks = (args.subtasks || []).filter((s: any) => s && s.prompt)
+        if (!subtasks.length) return 'Nenhuma subtarefa válida fornecida.'
+
+        const workerTools = buildWorkerTools(TOOLS as any)
+        const buildMessages = (st: any): WorkerMessage[] => {
           const rolePrompt = resolveSubagentPrompt(st.agent)
-          const sysParts = [rolePrompt, systemMsg].filter(Boolean)
-          const sys = sysParts.length ? sysParts.join('\n\n') + (LANGUAGE_RULE[lang] ?? LANGUAGE_RULE.pt) : ''
-          return {
-            id: st.id,
-            messages: [
-              ...(sys ? [{ role: 'system', content: sys }] : []),
-              { role: 'user', content: st.prompt }
-            ]
-          }
-        }
-        const subtasks: ParallelChatTask[] = (args.subtasks || []).map(buildTask)
-
-        // Modal pool path: worker-pool dispatcher
-        // N workers (N = active keys) pulling from a shared queue.
-        // If there are more tasks than keys, the extras queue up and are picked
-        // by whichever worker finishes first — no deadlock, no "pool exhausted".
-        if (settings.provider === 'modal' && modalKeyPool && modalKeyPool.totalCount > 0) {
-          const queue: ParallelChatTask[] = [...subtasks]
-          const resultsMap = new Map<string, ParallelChatResult>()
-          const workerCount = Math.min(modalKeyPool.totalCount, subtasks.length)
-
-          const runWorker = async () => {
-            while (queue.length > 0) {
-              const task = queue.shift()
-              if (!task) break
-              const slot = await modalKeyPool.acquireOrWait()
-              if (!slot) {
-                // Fallback per-task: Ollama if enabled, else error
-                if (settings.modalPoolFallbackOllama) {
-                  const [res] = await window.electron.parallelChat({
-                    tasks: [task],
-                    model: 'llama3',
-                    temperature: settings.temperature,
-                    max_tokens: settings.maxTokens,
-                  })
-                  resultsMap.set(task.id, res)
-                } else {
-                  resultsMap.set(task.id, { id: task.id, result: null, error: 'Pool exhausted (acquire timeout)' })
-                }
-                continue
-              }
-              try {
-                const [res] = await window.electron.providerParallelChat({
-                  tasks: [{ ...task, apiKey: slot.key }],
-                  provider: 'modal',
-                  model: settings.modalModel || selectedModel || 'zai-org/GLM-5.1-FP8',
-                  hostname: settings.modalHostname,
-                  temperature: settings.temperature,
-                  max_tokens: settings.maxTokens,
-                })
-                if (res?.error) modalKeyPool.markError(slot.key, res.error)
-                else modalKeyPool.release(slot.key)
-                resultsMap.set(task.id, res)
-              } catch (e: any) {
-                modalKeyPool.markError(slot.key, e?.message || 'dispatch error')
-                resultsMap.set(task.id, { id: task.id, result: null, error: e?.message || 'dispatch error' })
-              }
-            }
-          }
-
-          await Promise.all(Array.from({ length: workerCount }, () => runWorker()))
-
-          // Preserve original subtask ordering in the output
-          return subtasks.map((st) => {
-            const r = resultsMap.get(st.id)
-            const content = r?.result?.choices?.[0]?.message?.content || r?.error || 'No response'
-            return `[Agent ${st.id}]: ${content}`
-          }).join('\n\n---\n\n')
+          const sys = [WORKER_SYSTEM_PROMPT[lang] ?? WORKER_SYSTEM_PROMPT.pt, rolePrompt, systemMsg]
+            .filter(Boolean).join('\n\n') + langRule
+          return [{ role: 'system', content: sys }, { role: 'user', content: String(st.prompt ?? '') }]
         }
 
-        // Default path: Ollama local
-        const results = await window.electron.parallelChat({
-          tasks: subtasks,
-          model: selectedModel || 'llama3',
-          temperature: settings.temperature,
-          max_tokens: settings.maxTokens
-        })
-        return results.map((r) => {
-          const content = r.result?.choices?.[0]?.message?.content || r.error || 'No response'
-          return `[Agent ${r.id}]: ${content}`
-        }).join('\n\n---\n\n')
+        // Fronteira de segurança RÍGIDA: o worker só executa a allowlist de
+        // leitura. Mesmo que o modelo alucine um write_file/execute_command, ele
+        // não roda — reusa o executor principal (formatação consistente) sem os
+        // hooks/aprovação (workers são read-only).
+        const workerExec: WorkerExec = async (n, a) =>
+          WORKER_TOOL_NAMES.has(n)
+            ? executeToolRaw(n, a)
+            : `[A ferramenta "${n}" não está disponível para subagentes. Use só leitura/pesquisa: ${[...WORKER_TOOL_NAMES].join(', ')}.]`
+
+        const ollamaChat: WorkerChat = async (messages, tools) => {
+          try {
+            const r = await window.electron.ollamaChat({
+              model: settings.subagentModel || 'llama3.2',
+              messages, tools,
+              temperature: settings.temperature,
+              max_tokens: settings.maxTokens,
+              numCtx: settings.ollamaNumCtx,
+            })
+            return normalizeWorkerChat(r)
+          } catch (e: any) { return { content: '', toolCalls: [], error: e?.message || 'ollama error' } }
+        }
+        const makeModalChat = (apiKey: string): WorkerChat => async (messages, tools) => {
+          try {
+            const [res] = await window.electron.providerParallelChat({
+              tasks: [{ id: 'w', messages, tools, apiKey }],
+              provider: 'modal',
+              model: settings.modalModel || selectedModel || 'zai-org/GLM-5.1-FP8',
+              hostname: settings.modalHostname,
+              temperature: settings.temperature,
+              max_tokens: settings.maxTokens,
+            })
+            return normalizeWorkerChat(res?.result, res?.error || undefined)
+          } catch (e: any) { return { content: '', toolCalls: [], error: e?.message || 'modal error' } }
+        }
+
+        const useModal = settings.subagentExecutor === 'modal'
+          && settings.provider === 'modal' && !!modalKeyPool && modalKeyPool.totalCount > 0
+
+        const runOne = (st: any) => async (): Promise<string> => {
+          let chat: WorkerChat = ollamaChat
+          let slot: { key: string } | null = null
+          if (useModal) {
+            slot = await modalKeyPool!.acquireOrWait()
+            if (slot) chat = makeModalChat(slot.key)
+            else if (settings.modalPoolFallbackOllama) chat = ollamaChat
+            else return `[Agent ${st.id ?? '?'}]: [pool Modal esgotado]`
+          }
+          let errored = false
+          try {
+            const out = await runResearchWorker({ messages: buildMessages(st), tools: workerTools, chat, exec: workerExec, finalNudge })
+            errored = !!out.error
+            const meta = out.toolsUsed.length ? ` _(${out.steps}↻ · ${summarizeToolsUsed(out.toolsUsed)})_` : ''
+            return `[Agent ${st.id ?? '?'}]:${meta}\n${out.text}`
+          } catch (e: any) {
+            errored = true
+            return `[Agent ${st.id ?? '?'}]: [erro: ${e?.message || e}]`
+          } finally {
+            if (slot) errored ? modalKeyPool!.markError(slot.key, 'worker error') : modalKeyPool!.release(slot.key)
+          }
+        }
+
+        const concurrency = useModal
+          ? Math.min(modalKeyPool!.totalCount, subtasks.length)
+          : DEFAULT_WORKER_CONCURRENCY
+        const results = await runWithConcurrency(subtasks.map(runOne), concurrency)
+        return results.join('\n\n---\n\n')
       }
       return 'Ferramenta nao reconhecida'
     } catch (e: any) {

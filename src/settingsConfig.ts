@@ -99,6 +99,15 @@ export interface AppSettings {
    *  appear as name+description in the system prompt and load via
    *  `tool_search`. See decideDeferral() in services/toolDeferral.ts. */
   toolDeferralMode?: 'auto' | 'on' | 'off'
+  /** v2.63.0 — onde rodam os subagentes do delegate_subtasks (agora COM
+   *  ferramentas de leitura). 'ollama' (padrão): enxame local paralelo +
+   *  grátis (split orquestrador-worker — o modelo forte planeja, workers
+   *  locais pesquisam). 'modal': usa o pool de keys do Modal. Ver
+   *  researchWorker.ts. */
+  subagentExecutor?: 'ollama' | 'modal'
+  /** v2.63.0 — modelo Ollama dos workers de pesquisa. Pequeno/rápido é o ideal
+   *  (eles só leem/buscam e sintetizam). */
+  subagentModel?: string
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -138,6 +147,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   semanticSkillMatch: false,
   notifyOnComplete: true,
   toolDeferralMode: 'auto',
+  subagentExecutor: 'ollama',
+  subagentModel: 'llama3.2',
 }
 
 export function loadSettings(): AppSettings {

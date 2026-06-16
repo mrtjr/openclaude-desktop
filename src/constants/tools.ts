@@ -466,7 +466,7 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'delegate_subtasks',
-      description: `Run multiple subtasks in parallel using collaborative agents. Each subtask is a one-shot AI call WITHOUT tools — it reasons over the content you put in its prompt (paste the files/snippets/search results it needs), it does NOT browse/read/edit on its own. Pick a specialized role via "agent". Roles: ${subagentRolesHint()}.`,
+      description: `Run multiple research subtasks IN PARALLEL. Each subtask is an independent subagent that runs its OWN read-only tool loop (web_search, fetch_url, read_file, search_files, list_directory) — it searches/reads on its own and returns a synthesis. It CANNOT write, edit, or run commands. Use this to fan out independent research/exploration (e.g. "investigate area A", "find where X is defined", "check the latest version of Y") and get all answers at once. Give each subtask a self-contained prompt. Pick a specialized role via "agent". Roles: ${subagentRolesHint()}.`,
       parameters: {
         type: 'object',
         properties: {
