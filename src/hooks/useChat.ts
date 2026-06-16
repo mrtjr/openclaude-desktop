@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import type { Message, ToolResult, Conversation, AppSettings } from '../types'
-import { TOOLS, AGENT_SAFETY_LIMIT, NORMAL_SAFETY_LIMIT, IDLE_STEP_THRESHOLD } from '../constants/tools'
+import { TOOLS, IDLE_STEP_THRESHOLD } from '../constants/tools'
 import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIMING, LANGUAGE_REMINDER } from '../constants/prompts'
 import { partitionTools, renderDeferredManifest, decideDeferral } from '../services/toolDeferral'
 import { generateId, isSmallModel } from '../utils/formatting'
@@ -472,7 +472,6 @@ export function useChat({
       let idleSteps = 0
       const recentToolCalls: string[] = []
       let activeMemory = conv?.workingMemory || null
-      const safetyLimit = isAgentMode ? AGENT_SAFETY_LIMIT : NORMAL_SAFETY_LIMIT
       // Per-turn flag for the tools-unsupported auto-retry. Starts from the
       // persisted record, so a model we already know can't take tools never
       // gets tools sent again.
@@ -598,7 +597,13 @@ export function useChat({
       // provider (server-side). v2.21.0: torna essa bifurcação determinável.
       let prevStepToolMs = 0
 
-      while (continueLoop && steps < safetyLimit) {
+      // Sem teto numérico de passos (uncap, v2.60.0). O loop termina por:
+      // conclusão da tarefa (modelo para de chamar tools → continueLoop=false),
+      // botão Parar (stopRequestedRef), circuit-breaker (chamadas repetidas) e
+      // guard de ociosidade (IDLE_STEP_THRESHOLD). `steps` segue contando para
+      // telemetria/nudges, mas não limita mais o loop. NÃO reintroduza um cap
+      // numérico sem alinhar — foi uma decisão deliberada do usuário.
+      while (continueLoop) {
         if (stopRequestedRef.current) break
         steps++
         bumpInsightStep()

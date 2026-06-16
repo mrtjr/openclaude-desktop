@@ -473,9 +473,10 @@ export const TOOLS = [
   }
 ]
 
-// Safety limits
-export const AGENT_SAFETY_LIMIT = 200
-export const NORMAL_SAFETY_LIMIT = 50
+// Step-progress guard. NÃO há mais teto numérico de passos do agente (uncap,
+// v2.60.0 — escolha do usuário): o loop termina por conclusão da tarefa, botão
+// Parar, circuit-breaker (chamadas repetidas) ou ociosidade (abaixo). Este é o
+// nº de passos sem progresso tolerados antes de encerrar.
 export const IDLE_STEP_THRESHOLD = 5
 
 // Permission sets

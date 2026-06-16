@@ -11,9 +11,10 @@
 // mas — diferente de um cap único por turno — deixa um run agêntico longo
 // sobreviver a stalls isolados em passos diferentes (o pior caso do GLM/Modal).
 //
-// IMPORTANTE: este contador é o ÚNICO guard de término do stall. O safetyLimit
-// global NÃO ajuda aqui porque o retry faz steps-- (rebobina o passo), então
-// steps nunca avança em direção ao limite por causa de stalls.
+// IMPORTANTE: este contador é o ÚNICO guard de término do stall. Um teto global
+// de passos não ajudaria aqui porque o retry faz steps-- (rebobina o passo),
+// então steps nunca avançaria por causa de stalls (e desde v2.60.0 não há mais
+// teto numérico de passos de qualquer forma — ver useChat/loop do agente).
 
 export interface StallRetryState {
   /** Passo em que o último stall-retry ocorreu (identidade do passo). */
