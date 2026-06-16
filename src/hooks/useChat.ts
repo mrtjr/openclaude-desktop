@@ -13,6 +13,7 @@ import { resolveTurnUsage } from '../utils/usage'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
 import { applyPlanToolCalls, planIsIncomplete, type LocalTask } from '../utils/planTracker'
 import { resolveAdaptiveEffort } from '../utils/adaptiveEffort'
+import { detectFreshness, buildDateLine, FRESHNESS_RULE, buildFreshnessNudge } from '../utils/freshness'
 import { toolCallSummary } from '../utils/toolDisplay'
 import { nextStreamPhase, classifyDelta, createPhaseProfiler, type StreamPhase } from '../utils/streamPhase'
 import { runCompaction, mergeSummary, planEmergencyCompaction } from '../services/compaction'
@@ -288,6 +289,19 @@ export function useChat({
         systemPrompt = AGENT_SYSTEM_PROMPT[lang] + (systemPrompt ? (lang === 'pt' ? "\n\nInstruções Adicionais:\n" : "\n\nAdditional Instructions:\n") + systemPrompt : "")
       }
       systemPrompt += LANGUAGE_RULE[lang]
+
+      // Consciência de data + frescor de conhecimento (v2.61.0): o modelo
+      // precisa saber a data de hoje e que sua memória PODE estar velha — senão
+      // confia nela sem buscar (ver utils/freshness.ts). Sempre injetado (chat
+      // e agente). E, se a mensagem do usuário é sensível a tempo, um detector
+      // LOCAL (zero chamada de LLM, molde do adaptiveEffort) empurra a
+      // verificação na web NESTE turno — porque não dá p/ confiar no modelo
+      // desatualizado p/ decidir sozinho "quando buscar".
+      systemPrompt += `\n\n${buildDateLine(lang, new Date())}\n${FRESHNESS_RULE[lang]}`
+      const freshness = detectFreshness(String(inputText || ''), new Date().getFullYear())
+      if (freshness.timeSensitive) {
+        systemPrompt += `\n\n${buildFreshnessNudge(lang, freshness.signals)}`
+      }
 
       // Skills (v2.27.0): manifesto barato (nome+desc → o modelo chama
       // load_skill sob demanda) + instruções completas das fixadas/casadas por

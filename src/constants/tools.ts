@@ -132,7 +132,7 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'web_search',
-      description: 'Search the web (DuckDuckGo). Returns the top results with title, snippet and a clickable source URL — enough to answer or cite WITHOUT navigating each link. Results are cached for 5 minutes, so do NOT repeat the same query; stop searching once you have enough to answer.',
+      description: 'Search the web (DuckDuckGo). Returns the top results with title, snippet and a clickable source URL — enough to answer or cite WITHOUT navigating each link. USE THIS to verify time-sensitive or "latest/current" facts (library/API versions, prices, releases, recent events) instead of relying on memory, which may be outdated relative to today. Results are cached for 5 minutes, so do NOT repeat the same query; stop searching once you have enough to answer.',
       parameters: {
         type: 'object',
         properties: {
