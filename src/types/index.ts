@@ -50,6 +50,9 @@ export interface Conversation {
   /** Override de esforço de raciocínio por-conversa (v2.50.0). Undefined =
    *  herda o padrão global de Settings. Ver EffortSlider / reasoningEffort. */
   reasoningEffort?: ReasoningEffort
+  /** Título da conversa-fonte cujo contexto foi importado para continuar aqui
+   *  (v2.58.0). Só para exibir o chip "Continuando de: …". */
+  importedFromTitle?: string
 }
 
 /** A Project groups related conversations into a workspace (Claude-style).

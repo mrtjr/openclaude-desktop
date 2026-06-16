@@ -93,6 +93,7 @@ import { logInsight } from './services/devInsights'
 import { type Artifact } from './utils/artifacts'
 import { formatDroppedFile } from './utils/attachments'
 import { runCompaction, mergeSummary } from './services/compaction'
+import { renderConversationTranscript, buildImportedContextBlock, IMPORT_VERBATIM_CHAR_BUDGET } from './utils/conversationContext'
 import { renderWorkingMemory, renderPersistentMemory } from './utils/memoryRender'
 import { collectLocalStorageBackup, buildBackup, parseBackup, applyLocalStorageBackup } from './utils/backup'
 
@@ -184,6 +185,9 @@ export default function App() {
   // rodam em background/closures — evita estado obsoleto).
   const skillsRef = useRef(skills)
   skillsRef.current = skills
+  // Continuar a partir de outra conversa (v2.58.0)
+  const [showConvPicker, setShowConvPicker] = useState(false)
+  const [importingCtx, setImportingCtx] = useState(false)
   const [ragEnabled, setRagEnabled] = useState(false)
   const [showFeatureMenu, setShowFeatureMenu] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
@@ -534,6 +538,36 @@ export default function App() {
   const activeConv = convManager.activeConv
   // True only when the currently visible conversation is the one loading
   const isActiveConvLoading = chat.isLoading && chat.streamingConvId === convManager.activeConvId
+
+  // Continuar a partir de outra conversa (v2.58.0): renderiza a conversa-fonte
+  // (verbatim se couber; resumida via LLM se for grande) e injeta no
+  // contextSummary da conversa ATUAL — que o useChat já manda todo turno.
+  const importContextFrom = useCallback(async (sourceId: string) => {
+    setShowConvPicker(false)
+    const targetId = convManager.activeConvId
+    const source = convManager.conversationsRef.current.find(c => c.id === sourceId)
+    if (!source || !targetId || source.id === targetId || (source.messages?.length || 0) === 0) return
+    const lang: 'pt' | 'en' = settings.language === 'en' ? 'en' : 'pt'
+    setImportingCtx(true)
+    try {
+      const transcript = renderConversationTranscript(source)
+      let body = transcript
+      if (transcript.length > IMPORT_VERBATIM_CHAR_BUDGET) {
+        showToast(lang === 'en' ? 'Summarizing the selected conversation…' : 'Resumindo a conversa selecionada…')
+        const res = await runCompaction(providerConfig, source.messages, lang)
+        body = res.summary || (transcript.slice(0, IMPORT_VERBATIM_CHAR_BUDGET) + ' …[truncado]')
+      }
+      const block = buildImportedContextBlock(source.title, body)
+      convManager.setConversations(prev => prev.map(c =>
+        c.id === targetId ? { ...c, contextSummary: block, importedFromTitle: source.title } : c,
+      ))
+      showToast(lang === 'en' ? `Context loaded from "${source.title}"` : `Contexto carregado de "${source.title}"`)
+    } catch (e) {
+      showToast(lang === 'en' ? 'Failed to import context' : 'Falha ao importar contexto')
+    } finally {
+      setImportingCtx(false)
+    }
+  }, [convManager, settings.language, providerConfig, showToast])
   const tokenInfo = useTokenCounter(activeConv, providerConfig.model, input)
 
   // Auto-fechar o plano quando TODAS as tarefas concluem (estilo Claude: o
@@ -1322,6 +1356,41 @@ export default function App() {
         {showAnalytics && <AnalyticsDashboard isOpen={showAnalytics} onClose={() => setShowAnalytics(false)} language={settings.language} />}
         {showDevInsights && <DevInsightsPanel isOpen={showDevInsights} onClose={() => setShowDevInsights(false)} language={settings.language} providerConfig={providerConfig} />}
         {showSkills && <SkillManager isOpen={showSkills} onClose={() => setShowSkills(false)} skills={skills} onSave={persistSkills} language={settings.language} />}
+        {showConvPicker && (
+          <div className="settings-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowConvPicker(false) }}>
+            <div className="analytics-modal" style={{ maxWidth: 540 }}>
+              <div className="analytics-header">
+                <div className="analytics-title-group">
+                  <MessageSquare size={20} />
+                  <div>
+                    <h2>{settings.language === 'en' ? 'Continue from a conversation' : 'Continuar de uma conversa'}</h2>
+                    <p className="analytics-subtitle">
+                      {settings.language === 'en'
+                        ? 'Pick a conversation — its content is loaded as context so the AI continues from it.'
+                        : 'Escolha uma conversa — o conteúdo dela é carregado como contexto para a IA continuar a partir daí.'}
+                    </p>
+                  </div>
+                </div>
+                <button className="settings-close" onClick={() => setShowConvPicker(false)}><X size={18} /></button>
+              </div>
+              <div style={{ padding: '8px 16px 16px', overflowY: 'auto', flex: 1 }}>
+                {convManager.conversations.filter(c => c.id !== convManager.activeConvId && (c.messages?.length || 0) > 0).length === 0 && (
+                  <p style={{ opacity: 0.6, padding: '12px 4px' }}>{settings.language === 'en' ? 'No other conversations yet.' : 'Nenhuma outra conversa ainda.'}</p>
+                )}
+                {convManager.conversations
+                  .filter(c => c.id !== convManager.activeConvId && (c.messages?.length || 0) > 0)
+                  .map(c => (
+                    <button key={c.id} className="conv-pick-item" onClick={() => importContextFrom(c.id)}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title || (settings.language === 'en' ? '(untitled)' : '(sem título)')}</div>
+                        <div style={{ fontSize: 11, opacity: 0.6 }}>{c.messages.length} {settings.language === 'en' ? 'messages' : 'mensagens'} · {new Date(c.createdAt).toLocaleDateString(settings.language === 'en' ? 'en-US' : 'pt-BR')}</div>
+                      </div>
+                    </button>
+                  ))}
+              </div>
+            </div>
+          </div>
+        )}
         {editingProject && <ProjectEditModal project={editingProject} onSave={handleSaveProject} onClose={() => setEditingProject(null)} />}
         {openArtifact && (
           <Suspense fallback={null}>
@@ -1696,6 +1765,19 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+                {activeConv?.importedFromTitle ? (
+                  <div className="imported-context-chip" title={settings.language === 'en' ? 'This chat continues from another conversation' : 'Esta conversa continua a partir de outra'}>
+                    <MessageSquare size={13} />
+                    <span>{settings.language === 'en' ? 'Continuing from' : 'Continuando de'}: <strong>{activeConv.importedFromTitle}</strong></span>
+                  </div>
+                ) : (
+                  <button className="continue-from-btn" disabled={importingCtx} onClick={() => setShowConvPicker(true)}>
+                    <MessageSquare size={14} />
+                    {importingCtx
+                      ? (settings.language === 'en' ? 'Loading context…' : 'Carregando contexto…')
+                      : (settings.language === 'en' ? 'Continue from a previous conversation' : 'Continuar de uma conversa anterior')}
+                  </button>
+                )}
               </div>
             ) : (
               renderItems.map(item => item.kind === 'steps' ? (

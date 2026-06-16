@@ -7,6 +7,25 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.58.0] — 2026-06-15
+
+### Added — Continuar a partir de outra conversa (importar contexto)
+
+Numa conversa nova/vazia, um botão **"Continuar de uma conversa anterior"** abre
+um seletor de conversas; ao escolher uma, o conteúdo dela é carregado como
+contexto e a IA continua a partir dali, assimilando tudo o que foi feito.
+
+- Reusa o mecanismo existente: injeta no `contextSummary` da conversa atual
+  (que o `useChat` já manda todo turno como "[CONTEXT SUMMARY]"). Verbatim quando
+  cabe (≤ ~24k chars); acima disso, resume via `runCompaction` (LLM) — com toast
+  avisando. Cabeçalho instrui a IA a assimilar e **reusar** (não refazer).
+- Helper puro `src/utils/conversationContext.ts` (`renderConversationTranscript`
+  com truncamento de tool results + `buildImportedContextBlock`; 5 testes).
+- UI: botão + seletor (modal) no empty-state; chip "Continuando de: X" quando o
+  contexto foi importado. Campo `Conversation.importedFromTitle` só para o chip.
+
+723 testes, typecheck e build OK.
+
 ## [2.57.0] — 2026-06-15
 
 ### Fixed — Agente refazia trabalho já feito ao pedir "foca nisso" (desperdício de contexto)

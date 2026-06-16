@@ -405,6 +405,32 @@ body {
 }
 .sugg-icon { color: var(--accent); }
 
+/* ── Continuar de uma conversa (v2.58.0) ──────────────────────── */
+.continue-from-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 16px; padding: 8px 14px;
+  background: transparent; border: 1px dashed var(--border);
+  border-radius: 10px; color: var(--text-secondary);
+  cursor: pointer; font-size: 12.5px; font-family: inherit; transition: all 0.18s;
+}
+.continue-from-btn:hover:not(:disabled) { border-color: var(--accent-border); color: var(--text-primary); background: var(--accent-dim); }
+.continue-from-btn:disabled { opacity: 0.6; cursor: default; }
+.imported-context-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  margin-top: 16px; padding: 6px 12px;
+  background: var(--accent-dim); border: 1px solid var(--accent-border);
+  border-radius: 999px; color: var(--text-secondary); font-size: 12px;
+}
+.imported-context-chip strong { color: var(--text-primary); }
+.conv-pick-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 10px 12px; margin-bottom: 4px;
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text-primary); cursor: pointer;
+  text-align: left; font-family: inherit; transition: all 0.15s;
+}
+.conv-pick-item:hover { border-color: var(--accent-border); background: var(--accent-dim); }
+
 /* ── Messages ─────────────────────────────────────────────────── */
 .message {
   display: flex; gap: 14px;
