@@ -204,6 +204,22 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                 </label>
               </div>
 
+              {/* Semantic skill matching (Fase 5, v2.56.0) */}
+              <div className="settings-group">
+                <label className="settings-label">
+                  <span>{local.language === 'en' ? 'Semantic skill matching (Ollama)' : 'Casamento semântico de skills (Ollama)'}</span>
+                  <div className={`toggle ${local.semanticSkillMatch ? 'on' : ''}`}
+                    onClick={() => setLocal(s => ({ ...s, semanticSkillMatch: !s.semanticSkillMatch }))}>
+                    <div className="toggle-knob" />
+                  </div>
+                </label>
+                <p className="settings-hint">
+                  {local.language === 'en'
+                    ? 'Surface skills by meaning, not just exact keyword (e.g. "alternative Tibia server" → otserv skill). Uses local Ollama embeddings; off by default (adds a small per-turn cost). Falls back to keyword if Ollama is offline.'
+                    : 'Sugere skills por significado, não só pela palavra exata (ex.: "servidor de Tibia alternativo" → skill de otserv). Usa embeddings locais do Ollama; desligado por padrão (custo pequeno por turno). Cai no keyword se o Ollama estiver offline.'}
+                </p>
+              </div>
+
               {/* Tool deferral (v2.12.6) */}
               <div className="settings-group">
                 <label className="settings-label">

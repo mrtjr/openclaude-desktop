@@ -58,6 +58,7 @@ import { useToolExecution } from './hooks/useToolExecution'
 import { useModalKeyPool } from './hooks/useModalKeyPool'
 import { useMcp } from './hooks/useMcp'
 import { useSkillInduction } from './hooks/useSkillInduction'
+import { useSemanticSkills } from './hooks/useSemanticSkills'
 import { useChat } from './hooks/useChat'
 import { useConversationFork } from './hooks/useConversationFork'
 import { useProviderHealth } from './hooks/useProviderHealth'
@@ -179,6 +180,10 @@ export default function App() {
     setSkills(next)
     window.electron.skillSave?.(next).catch((e: any) => console.warn('[skills] save error:', e))
   }, [])
+  // Ref de skills atuais (usado pelos hooks de auto-aprendizado/semântico, que
+  // rodam em background/closures — evita estado obsoleto).
+  const skillsRef = useRef(skills)
+  skillsRef.current = skills
   const [ragEnabled, setRagEnabled] = useState(false)
   const [showFeatureMenu, setShowFeatureMenu] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
@@ -480,6 +485,12 @@ export default function App() {
     callMcpTool: mcp.callMcpTool,
   })
 
+  // Matching semântico de skills (Fase 5, v2.56.0) — opt-in, best-effort (Ollama).
+  const semantic = useSemanticSkills({
+    enabled: effectiveSettings.memoryEnabled !== false && effectiveSettings.semanticSkillMatch === true,
+    skillsRef,
+  })
+
   const chat = useChat({
     settings: effectiveSettingsWithProject,
     providerConfig,
@@ -517,6 +528,7 @@ export default function App() {
     onUsage: (inputTokens, outputTokens) => usageTracking.recordUsage(effectiveSettings.provider, providerConfig.model, inputTokens, outputTokens),
     skills,
     extraTools: mcp.mcpTools,
+    semanticMatch: semantic.matchSemantic,
   })
 
   const activeConv = convManager.activeConv
@@ -597,8 +609,6 @@ export default function App() {
 
   // Indução de skills de domínio em background (Fase 3, v2.54.0): clusteriza os
   // fatos persistidos por domínio e rascunha skills aprendidas em staging.
-  const skillsRef = useRef(skills)
-  skillsRef.current = skills
   useSkillInduction({
     enabled: settings.memoryEnabled,
     skillsRef,

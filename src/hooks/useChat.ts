@@ -43,6 +43,9 @@ interface UseChatOptions {
   skills?: Skill[]
   /** Tools extras (ex.: MCP) mescladas às TOOLS estáticas e enviadas ao modelo (v2.35.0). */
   extraTools?: any[]
+  /** Matching semântico de skills (Fase 5, v2.56.0): dado o texto, devolve skills
+   *  similares por significado (embeddings). Opt-in; ausente = só keyword. */
+  semanticMatch?: (text: string) => Promise<Skill[]>
 }
 
 export function useChat({
@@ -60,12 +63,15 @@ export function useChat({
   onUsage,
   skills,
   extraTools,
+  semanticMatch,
 }: UseChatOptions) {
   // Use refs for callback props to avoid stale closures in useCallback
   const skillsRef = useRef(skills)
   skillsRef.current = skills
   const extraToolsRef = useRef(extraTools)
   extraToolsRef.current = extraTools
+  const semanticMatchRef = useRef(semanticMatch)
+  semanticMatchRef.current = semanticMatch
   const onProviderSuccessRef = useRef(onProviderSuccess)
   onProviderSuccessRef.current = onProviderSuccess
   const onProviderErrorRef = useRef(onProviderError)
@@ -291,7 +297,19 @@ export function useChat({
         const allSkills = skillsRef.current || []
         const manifest = renderSkillManifest(allSkills)
         if (manifest) systemPrompt += `\n\n${manifest}`
-        const autoMatched = matchSkillsByText(allSkills, String(inputText || ''))
+        let autoMatched = matchSkillsByText(allSkills, String(inputText || ''))
+        // Matching semântico (Fase 5, opt-in): adiciona skills similares por
+        // significado que o keyword não pegou (ex.: "servidor de Tibia
+        // alternativo" → skill de otserv). Best-effort; falha silenciosa.
+        if (semanticMatchRef.current) {
+          try {
+            const sem = await semanticMatchRef.current(String(inputText || ''))
+            if (sem.length) {
+              const ids = new Set(autoMatched.map(s => s.id))
+              autoMatched = [...autoMatched, ...sem.filter(s => !ids.has(s.id))]
+            }
+          } catch { /* fallback: keyword apenas */ }
+        }
         const pinnedBlock = renderPinnedSkills(allSkills)
         const autoBlock = autoMatched.map(s => `[SKILL ATIVA: ${s.name}]\n${s.instructions}`).join('\n\n')
         const full = [pinnedBlock, autoBlock].filter(Boolean).join('\n\n')

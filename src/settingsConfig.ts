@@ -82,6 +82,9 @@ export interface AppSettings {
   mcpServers: McpServer[]
   /** Hooks de ciclo de vida (v2.38.0) — comandos rodados após tools. */
   hooks?: HookDef[]
+  /** Matching semântico de skills (Fase 5, v2.56.0) — usa embeddings do Ollama
+   *  p/ casar skills por significado. Opt-in (default off; requer Ollama). */
+  semanticSkillMatch?: boolean
   /** v2.12.0 — fire a native OS notification when a response completes
    *  while the window is not focused. Opt-out via Settings (default on). */
   notifyOnComplete?: boolean
@@ -132,6 +135,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   permissionLevel: 'ask',
   mcpServers: [],
   hooks: [],
+  semanticSkillMatch: false,
   notifyOnComplete: true,
   toolDeferralMode: 'auto',
 }

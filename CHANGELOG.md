@@ -7,6 +7,29 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.56.0] — 2026-06-15
+
+### Added — Auto-aprendizado Fase 5 (final): matching semântico de skills (opt-in)
+
+Última fase do plano: casar skills por SIGNIFICADO, não só pela palavra-gatilho
+exata — "servidor de Tibia alternativo" passa a puxar a skill de otserv mesmo
+sem a palavra "otserv".
+
+- Núcleo puro `src/utils/semanticMatch.ts` (`cosineSim`, `rankBySimilarity`;
+  5 testes).
+- Hook `useSemanticSkills`: embeda a mensagem e as descrições das skills via
+  `ragEmbed` (Ollama, mesmo do RAG), cacheia os vetores e devolve o top-k por
+  similaridade. **Best-effort:** se o Ollama estiver offline, retorna [] e o
+  `useChat` cai no `matchSkillsByText` (keyword) de sempre.
+- `useChat` mescla os matches semânticos aos por-keyword antes de injetar as
+  skills ativas. **Opt-in:** setting `semanticSkillMatch` (default OFF) + toggle
+  em Settings — assim quem não usa Ollama não paga custo por turno.
+
+Com isto, **o plano de auto-aprendizado (Fases 1-5) está completo**: aprende
+preferências, induz skills de domínio em staging, auto-atualiza por delta com
+aprovação 1-clique, e agora casa skills por significado. 716 testes, typecheck
+e build OK.
+
 ## [2.55.0] — 2026-06-15
 
 ### Added — Auto-aprendizado Fase 4: aprovação 1-clique + delta-update
