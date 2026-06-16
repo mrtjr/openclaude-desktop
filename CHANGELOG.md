@@ -7,6 +7,17 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.54.1] — 2026-06-15
+
+### Fixed — memoryInduction.ts virou "binário" no git (chars invisíveis no fonte)
+
+A regex de sanitização da v2.54.0 tinha caracteres de controle/zero-width/bidi
+**literais** no código-fonte, e o git passou a tratar o arquivo como binário (sem
+diff). Reescrito `sanitizeFact` como um loop por code point (fonte 100% ASCII,
+mesma semântica: remove controle/zero-width/bidi/word-joiner/BOM) e `slugifyDomain`
+usa `new RegExp('[\\u0300-\\u036f]')` em vez de marcas combinantes literais.
+Comportamento idêntico; 706 testes, typecheck e build OK.
+
 ## [2.54.0] — 2026-06-15
 
 ### Added — Auto-aprendizado Fase 3: indução de skill de domínio (em staging)
