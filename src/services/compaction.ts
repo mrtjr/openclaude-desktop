@@ -18,8 +18,17 @@
 //    prompt (the IPC handler silently dropped them).
 
 import type { Message } from '../types'
+import {
+  buildStructuredCompactionPrompt,
+  mergeSummaryStructured,
+  STRUCTURED_SUMMARY_MAX_CHARS,
+} from '../utils/structuredSummary'
 
-export const SUMMARY_MAX_CHARS = 2000
+// O resumo agora é ESTRUTURADO (seções + dedup + merge que preserva o
+// objetivo). Ver utils/structuredSummary.ts. O teto subiu de 2000 → 4000
+// chars porque o formato seccionado é mais denso e é contabilizado no budget
+// de tokens em useChat (computeMessageBudget). (v2.59.0)
+export const SUMMARY_MAX_CHARS = STRUCTURED_SUMMARY_MAX_CHARS
 
 /** Clip a tool result keeping BOTH the head and the tail. execute_command
  *  emits stdout first, then stderr, then `[exit code: N]` LAST (see
@@ -62,30 +71,29 @@ export function buildCompactionMessages(
   language: string,
   instructions?: string,
 ): Array<{ role: string; content: string }> {
-  const pt = language === 'pt'
-  let prompt = pt
-    ? 'Resuma a conversa abaixo em um parágrafo compacto preservando: (1) fatos-chave mencionados, (2) decisões tomadas, (3) arquivos/caminhos referenciados, (4) estado atual do trabalho. Seja denso e factual, sem floreios. Máximo 300 palavras.'
-    : 'Summarize the conversation below in one compact paragraph preserving: (1) key facts mentioned, (2) decisions made, (3) files/paths referenced, (4) current state of work. Be dense and factual, no fluff. Maximum 300 words.'
-  const extra = (instructions || '').trim()
-  if (extra) {
-    prompt += pt ? `\nInstruções adicionais do usuário: ${extra}` : `\nAdditional user instructions: ${extra}`
-  }
+  // Resumo ESTRUTURADO (seções Objetivo/Decisões/Fatos/Arquivos/Estado/
+  // Pendências) em vez do parágrafo plano antigo — ver structuredSummary.ts.
+  const prompt = buildStructuredCompactionPrompt(language, instructions)
   return [
     { role: 'system', content: prompt },
     { role: 'user', content: flattenForCompaction(messages) },
   ]
 }
 
-/** Append a new summary to the running one, capped at `maxChars` keeping the
- *  TAIL (newest information). When the cap cuts mid-line, the partial first
- *  line is dropped so the stored summary doesn't start mid-sentence. */
-export function mergeSummary(prev: string, next: string, maxChars = SUMMARY_MAX_CHARS): string {
-  const merged = prev ? `${prev}\n\n${next}` : next
-  if (merged.length <= maxChars) return merged
-  let tail = merged.slice(-maxChars)
-  const firstBreak = tail.indexOf('\n')
-  if (firstBreak > -1 && firstBreak < 200) tail = tail.slice(firstBreak + 1)
-  return tail
+/** Funde o resumo novo no acumulado de forma ESTRUTURADA: faz parse das duas
+ *  strings em seções, deduplica e funde por seção, e ajusta ao teto cortando o
+ *  conteúdo VOLÁTIL primeiro — as seções duráveis (objetivo/decisões/fatos)
+ *  nunca são descartadas. Substitui o append+corte-de-rabo antigo, que perdia
+ *  o objetivo declarado no início de conversas longas. Mantém a assinatura
+ *  (prev, next, maxChars) usada pelos chamadores; `lang` controla os rótulos
+ *  de saída (default pt). Ver utils/structuredSummary.ts. (v2.59.0) */
+export function mergeSummary(
+  prev: string,
+  next: string,
+  maxChars = SUMMARY_MAX_CHARS,
+  lang: string = 'pt',
+): string {
+  return mergeSummaryStructured(prev, next, maxChars, lang)
 }
 
 export const EMERGENCY_KEEP_RECENT = 4
@@ -132,7 +140,9 @@ export async function runCompaction(
         messages: buildCompactionMessages(messages, language, instructions),
         tools: [],
         temperature: 0.1,
-        max_tokens: 500,
+        // Resumo estruturado (6 seções com bullets) é mais longo que o
+        // parágrafo antigo — dá folga para não cortar no meio. (v2.59.0)
+        max_tokens: 800,
         modalHostname: cfg.modalHostname,
         customBaseUrl: cfg.customBaseUrl,
       })

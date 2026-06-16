@@ -1116,7 +1116,7 @@ export default function App() {
           // reaches the summarizer prompt.
           const res = await runCompaction(providerConfig, conv.messages, lang, clean || undefined)
           if (res.summary) {
-            const trimmed = mergeSummary(conv.contextSummary || '', res.summary)
+            const trimmed = mergeSummary(conv.contextSummary || '', res.summary, undefined, lang)
             convManager.setConversations(list => list.map(c =>
               c.id !== conv.id ? c : { ...c, contextSummary: trimmed }
             ))

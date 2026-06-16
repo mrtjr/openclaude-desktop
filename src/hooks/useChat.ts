@@ -430,7 +430,7 @@ export function useChat({
         // services/compaction.ts). runCompaction never throws.
         const compactResult = await runCompaction(providerConfig, oldMessages, lang)
         if (compactResult.summary) {
-          contextSummary = mergeSummary(contextSummary, compactResult.summary)
+          contextSummary = mergeSummary(contextSummary, compactResult.summary, undefined, lang)
           setConversations(prev => prev.map(c =>
             c.id !== convId ? c : { ...c, contextSummary }
           ))
@@ -572,7 +572,7 @@ export function useChat({
         } catch { return false }
         if (!summary) return false
         contextCompactionsUsed++
-        contextSummary = mergeSummary(contextSummary, summary)
+        contextSummary = mergeSummary(contextSummary, summary, undefined, lang)
         setConversations(prev => prev.map(c => c.id !== convId ? c : { ...c, contextSummary }))
         const memContent = [
           contextSummary ? `[CONTEXT SUMMARY — earlier conversation]\n${contextSummary}` : '',

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   flattenForCompaction, clipToolResult, buildCompactionMessages, mergeSummary, runCompaction,
-  planEmergencyCompaction, EMERGENCY_KEEP_RECENT, SUMMARY_MAX_CHARS,
+  planEmergencyCompaction, EMERGENCY_KEEP_RECENT,
 } from '../src/services/compaction'
 
 describe('flattenForCompaction', () => {
@@ -88,18 +88,33 @@ describe('buildCompactionMessages', () => {
   })
 })
 
-describe('mergeSummary', () => {
-  it('concatenates under the cap', () => {
-    expect(mergeSummary('a', 'b')).toBe('a\n\nb')
-    expect(mergeSummary('', 'b')).toBe('b')
+describe('mergeSummary (estruturado, v2.59.0)', () => {
+  it('funde seções e deduplica em vez de concatenar', () => {
+    const prev = '## Objetivo\n- corrigir o login\n## Fatos-chave\n- usa OAuth'
+    const next = '## Fatos-chave\n- usa OAuth\n- token expira em 1h\n## Estado atual\n- login corrigido'
+    const out = mergeSummary(prev, next)
+    expect(out).toContain('## Objetivo')
+    expect(out).toContain('corrigir o login')
+    // "usa OAuth" aparece nas duas entradas mas só uma vez na saída (dedup)
+    expect(out.match(/usa OAuth/g)?.length).toBe(1)
+    expect(out).toContain('token expira em 1h')
+    expect(out).toContain('## Estado atual')
   })
 
-  it('keeps the TAIL when over the cap and drops the partial first line', () => {
-    const prev = 'linha antiga perdida\n' + 'x'.repeat(SUMMARY_MAX_CHARS)
-    const out = mergeSummary(prev, 'resumo novo')
-    expect(out.length).toBeLessThanOrEqual(SUMMARY_MAX_CHARS)
-    expect(out).toContain('resumo novo')
-    expect(out.startsWith('x')).toBe(true) // partial leading line dropped
+  it('NUNCA perde o objetivo mesmo quando o volátil estoura o teto (fix do corte-de-rabo)', () => {
+    const prev = '## Objetivo\n- entregar o relatório de pentest do otserv'
+    const huge = Array.from({ length: 60 }, (_, i) => `- passo volátil número ${i} ${'x'.repeat(80)}`).join('\n')
+    const next = `## Estado atual\n${huge}`
+    const out = mergeSummary(prev, next, 1000)
+    expect(out.length).toBeLessThanOrEqual(1000)
+    expect(out).toContain('entregar o relatório de pentest do otserv') // durável preservado
+  })
+
+  it('texto não-estruturado (legado/importado) vai para Notas e não some', () => {
+    expect(mergeSummary('', 'b')).toContain('b')
+    const out = mergeSummary('contexto legado plano', 'mais contexto')
+    expect(out).toContain('contexto legado plano')
+    expect(out).toContain('mais contexto')
   })
 })
 
