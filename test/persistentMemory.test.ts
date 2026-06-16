@@ -3,9 +3,23 @@ import { mergeFact, normalizeMemory, MEMORY_BUCKET_CAP } from '../src/utils/pers
 
 describe('normalizeMemory', () => {
   it('coerces partial/garbage input into the full shape', () => {
-    expect(normalizeMemory(null)).toEqual({ facts: [], preferences: [], projects: [] })
-    expect(normalizeMemory({ facts: ['a'] })).toEqual({ facts: ['a'], preferences: [], projects: [] })
-    expect(normalizeMemory({ facts: 'nope' as any })).toEqual({ facts: [], preferences: [], projects: [] })
+    expect(normalizeMemory(null)).toEqual({ facts: [], preferences: [], projects: [], fresh: [] })
+    expect(normalizeMemory({ facts: ['a'] })).toEqual({ facts: ['a'], preferences: [], projects: [], fresh: [] })
+    expect(normalizeMemory({ facts: 'nope' as any })).toEqual({ facts: [], preferences: [], projects: [], fresh: [] })
+  })
+
+  it('preserva o bucket fresh (Camada 3) no round-trip', () => {
+    const fresh = [{ text: 'React 20 é a última', verifiedAt: '2026-06-16T00:00:00.000Z', ttlDays: 30 }]
+    expect(normalizeMemory({ fresh }).fresh).toEqual(fresh)
+  })
+})
+
+describe('mergeFact preserva fresh', () => {
+  it('não apaga o bucket fresh ao adicionar um fato durável', () => {
+    const fresh = [{ text: 'x', verifiedAt: '2026-06-16T00:00:00.000Z', ttlDays: 14 }]
+    const r = mergeFact({ facts: [], fresh } as any, 'fact', 'novo durável')
+    expect(r.memory.fresh).toEqual(fresh)
+    expect(r.memory.facts).toEqual(['novo durável'])
   })
 })
 

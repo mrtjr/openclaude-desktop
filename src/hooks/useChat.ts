@@ -18,7 +18,8 @@ import { toolCallSummary } from '../utils/toolDisplay'
 import { nextStreamPhase, classifyDelta, createPhaseProfiler, type StreamPhase } from '../utils/streamPhase'
 import { runCompaction, mergeSummary, planEmergencyCompaction } from '../services/compaction'
 import { renderWorkingMemory, renderPersistentMemory } from '../utils/memoryRender'
-import { mergeFact } from '../utils/persistentMemory'
+import { mergeFact, normalizeMemory } from '../utils/persistentMemory'
+import { recallFreshFacts, renderFreshFactsBlock } from '../utils/freshFacts'
 import { extractPreferenceCandidates, recordCandidates, selectPromotable, removeCandidates } from '../utils/preferenceLearning'
 import { logInsight, beginInsightTurn, bumpInsightStep, endInsightTurn } from '../services/devInsights'
 import { createContextEngine, getModelContextLimit, effectiveContextLimit, countToolSchemas, computeMessageBudget, AUTOCOMPACT_BUFFER_RATIO } from '../services/contextEngine'
@@ -399,9 +400,17 @@ export function useChat({
       // overhead, not hope that BUDGET_SAFETY_SLACK covers it (a grown facts
       // list easily exceeds the 256-token slack).
       let persistentMemoryText = ''
+      let freshFactsText = ''
       if (settings.memoryEnabled) {
         try {
-          persistentMemoryText = renderPersistentMemory(await window.electron.loadMemory())
+          const mem = await window.electron.loadMemory()
+          persistentMemoryText = renderPersistentMemory(mem)
+          // Camada 3 (v2.62.0): recupera fatos frescos verificados RELEVANTES a
+          // esta mensagem e injeta como "reuse, não re-busque" (ou "re-verifique"
+          // se o TTL venceu). Assim o agente fica atual E rápido. Ver freshFacts.ts.
+          const nowFf = new Date()
+          const recall = recallFreshFacts(normalizeMemory(mem).fresh, String(inputText || ''), nowFf)
+          freshFactsText = renderFreshFactsBlock(recall.fresh, recall.stale, lang, nowFf)
         } catch (e) { console.warn('[useChat] memory load error:', e) }
       }
       const workingMemoryText = renderWorkingMemory(conv?.workingMemory)
@@ -414,6 +423,7 @@ export function useChat({
         // + the agent's working-memory reminder (re-sent every step).
         memoryTokens: contextEngine.countTokens(contextSummary)
           + contextEngine.countTokens(persistentMemoryText)
+          + contextEngine.countTokens(freshFactsText)
           + contextEngine.countTokens(workingMemoryText),
         // Reserve the reply allocation so the prompt+completion never exceed
         // the window. Floor at 2k for providers that ignore max_tokens.
@@ -461,6 +471,9 @@ export function useChat({
       }
       if (persistentMemoryText) {
         memoryContext.push(persistentMemoryText)
+      }
+      if (freshFactsText) {
+        memoryContext.push(freshFactsText)
       }
 
       // Language priming

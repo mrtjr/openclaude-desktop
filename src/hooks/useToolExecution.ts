@@ -5,7 +5,8 @@ import { resolveToolSearch, formatToolSearchResult } from '../services/toolDefer
 import { toolNeedsApproval, truncateToolOutput, isToolError } from '../utils/toolPolicy'
 import { formatExecResult, resolveExecCwd, resolveExecTimeoutMs } from '../utils/execResult'
 import { formatEditResult, formatWriteResult, COACH_REWRITE_MIN_CHARS } from '../utils/editResult'
-import { mergeFact } from '../utils/persistentMemory'
+import { mergeFact, normalizeMemory } from '../utils/persistentMemory'
+import { addFreshFact, pruneFreshFacts } from '../utils/freshFacts'
 import { parseSearchGlob, formatSearchResults } from '../utils/searchFiles'
 import { isRiskyDesktopAction } from '../utils/desktopPolicy'
 import { paginateFileContent } from '../utils/readFile'
@@ -118,6 +119,25 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         return res.error
           ? `Erro ao salvar na memória: ${res.error}`
           : `Memória atualizada (${bucket}): "${String(args.content).trim()}"`
+      }
+      if (name === 'remember_fresh_fact') {
+        if (!settings.memoryEnabled) {
+          return 'Memória persistente está desativada nas Configurações — nada foi salvo.'
+        }
+        const content = String(args.content ?? '').trim()
+        if (!content) return 'Nada a salvar (conteúdo vazio).'
+        const store = normalizeMemory(await window.electron.loadMemory())
+        const now = new Date()
+        const { list } = addFreshFact(store.fresh, {
+          text: content,
+          source: args.source ? String(args.source) : undefined,
+          ttlDays: typeof args.ttl_days === 'number' ? args.ttl_days : undefined,
+        }, now)
+        const pruned = pruneFreshFacts(list, now)
+        const res = await window.electron.saveMemory({ ...store, fresh: pruned })
+        if (res.error) return `Erro ao salvar fato fresco: ${res.error}`
+        const ttl = pruned[pruned.length - 1]?.ttlDays
+        return `Fato fresco guardado (TTL ${ttl}d) para reuso futuro: "${content}"`
       }
       if (name === 'web_search') {
         const result = await window.electron.webSearch(args.query)

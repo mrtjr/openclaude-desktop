@@ -6,19 +6,29 @@
 // bucket, dedupe, and cap growth. Kept pure + tested; the IPC load/save lives
 // in useToolExecution.
 
+import type { FreshFact } from './freshFacts'
+
 export type MemoryCategory = 'fact' | 'preference' | 'project'
 
 export interface PersistentMemoryStore {
   facts: string[]
   preferences: string[]
   projects: string[]
+  /** Cache de fatos frescos verificados (Camada 3, v2.62.0). Preservado por
+   *  normalizeMemory/mergeFact para que remember_fact/aprendizado de preferência
+   *  NÃO o apaguem ao salvar. Ver freshFacts.ts. */
+  fresh: FreshFact[]
 }
 
 /** Per-bucket cap so the injected [PERSISTENT MEMORY] block can't grow without
  *  bound (oldest entries drop first). */
 export const MEMORY_BUCKET_CAP = 100
 
-const CATEGORY_KEY: Record<MemoryCategory, keyof PersistentMemoryStore> = {
+/** Apenas os buckets de string (o bucket `fresh` é estruturado e não passa por
+ *  mergeFact). */
+type StringBucket = 'facts' | 'preferences' | 'projects'
+
+const CATEGORY_KEY: Record<MemoryCategory, StringBucket> = {
   fact: 'facts',
   preference: 'preferences',
   project: 'projects',
@@ -31,6 +41,8 @@ export function normalizeMemory(mem: unknown): PersistentMemoryStore {
     facts: Array.isArray(m.facts) ? m.facts : [],
     preferences: Array.isArray(m.preferences) ? m.preferences : [],
     projects: Array.isArray(m.projects) ? m.projects : [],
+    // Preserva o bucket de fatos frescos (não-string) intacto no round-trip.
+    fresh: Array.isArray(m.fresh) ? m.fresh : [],
   }
 }
 
@@ -42,7 +54,7 @@ export function mergeFact(
   mem: unknown,
   category: unknown,
   value: unknown,
-): { memory: PersistentMemoryStore; added: boolean; bucket: keyof PersistentMemoryStore } {
+): { memory: PersistentMemoryStore; added: boolean; bucket: StringBucket } {
   const store = normalizeMemory(mem)
   const cat = (['fact', 'preference', 'project'] as const).includes(category as MemoryCategory)
     ? (category as MemoryCategory)

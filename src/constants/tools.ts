@@ -70,12 +70,28 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'remember_fact',
-      description: 'Save a durable note to PERSISTENT memory (survives across ALL future conversations). Use for stable, reusable knowledge: file paths, build commands, the user\'s preferences, project details. Do NOT use for ephemeral task state — use update_working_memory for that.',
+      description: 'Save a durable note to PERSISTENT memory (survives across ALL future conversations). Use for stable, reusable knowledge: file paths, build commands, the user\'s preferences, project details. Do NOT use for ephemeral task state — use update_working_memory for that. For TIME-SENSITIVE facts you just verified on the web (versions, prices, releases), use remember_fresh_fact instead.',
       parameters: {
         type: 'object',
         properties: {
           category: { type: 'string', enum: ['fact', 'preference', 'project'], description: 'Which bucket to store it in (default: fact)' },
           content: { type: 'string', description: 'The note to remember, concise and self-contained' }
+        },
+        required: ['content']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'remember_fresh_fact',
+      description: 'Cache a TIME-SENSITIVE fact you JUST verified on the web, so future turns can reuse it without searching again. Use right after web_search/fetch_url for things like "latest version of X is Y", current prices, recent releases. Include the source URL. The fact carries a freshness TTL and is shown back later as "recently verified" while fresh, or "possibly outdated, re-verify" once the TTL passes. Do NOT use for timeless facts — use remember_fact for those.',
+      parameters: {
+        type: 'object',
+        properties: {
+          content: { type: 'string', description: 'The verified fact, concise and self-contained (e.g. "Latest stable React is 20.2, released May 2026")' },
+          source: { type: 'string', description: 'URL or origin where it was verified' },
+          ttl_days: { type: 'number', description: 'Optional freshness window in days. If omitted, inferred from content (prices/news ~1d, versions/APIs ~30d, else 14d).' }
         },
         required: ['content']
       }
@@ -484,7 +500,7 @@ export const SAFE_TOOLS = new Set([
   'read_file', 'search_files', 'list_directory', 'web_search', 'fetch_url', 'browser_get_text',
   'browser_get_links', 'browser_get_forms', 'browser_screenshot', 'browser_wait',
   'update_working_memory', 'plan_tasks', 'update_task_status', 'undo_last_write',
-  'remember_fact', 'load_skill'
+  'remember_fact', 'remember_fresh_fact', 'load_skill'
 ])
 
 export const DANGEROUS_TOOLS = new Set([

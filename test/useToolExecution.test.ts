@@ -113,7 +113,7 @@ describe('executeToolRaw — remember_fact', () => {
     const { result } = setup({ settings: { memoryEnabled: true } })
     const out = await result.current.executeToolRaw('remember_fact', { category: 'fact', content: 'usa MT5' })
     expect(out).toContain('Memória atualizada')
-    expect((window as any).electron.saveMemory).toHaveBeenCalledWith({ facts: ['usa MT5'], preferences: [], projects: [] })
+    expect((window as any).electron.saveMemory).toHaveBeenCalledWith({ facts: ['usa MT5'], preferences: [], projects: [], fresh: [] })
   })
 
   it('does nothing when memory is disabled', async () => {
@@ -129,6 +129,30 @@ describe('executeToolRaw — remember_fact', () => {
     const { result } = setup({ settings: { memoryEnabled: true } })
     const out = await result.current.executeToolRaw('remember_fact', { category: 'fact', content: 'usa mt5' })
     expect(out).toContain('Já estava na memória')
+    expect((window as any).electron.saveMemory).not.toHaveBeenCalled()
+  })
+})
+
+describe('executeToolRaw — remember_fresh_fact (Camada 3)', () => {
+  it('guarda um fato fresco no bucket fresh com fonte', async () => {
+    ;(window as any).electron = makeElectron()
+    const { result } = setup({ settings: { memoryEnabled: true } })
+    const out = await result.current.executeToolRaw('remember_fresh_fact', {
+      content: 'A última versão do Vite é a 7', source: 'https://vite.dev',
+    })
+    expect(out).toContain('Fato fresco guardado')
+    const arg = (window as any).electron.saveMemory.mock.calls[0][0]
+    expect(arg.fresh).toHaveLength(1)
+    expect(arg.fresh[0].text).toBe('A última versão do Vite é a 7')
+    expect(arg.fresh[0].source).toBe('https://vite.dev')
+    expect(typeof arg.fresh[0].verifiedAt).toBe('string')
+  })
+
+  it('não salva quando a memória está desativada', async () => {
+    ;(window as any).electron = makeElectron()
+    const { result } = setup({ settings: { memoryEnabled: false } })
+    const out = await result.current.executeToolRaw('remember_fresh_fact', { content: 'x' })
+    expect(out).toContain('desativada')
     expect((window as any).electron.saveMemory).not.toHaveBeenCalled()
   })
 })
