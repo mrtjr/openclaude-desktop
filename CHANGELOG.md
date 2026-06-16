@@ -7,6 +7,29 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.57.0] — 2026-06-15
+
+### Fixed — Agente refazia trabalho já feito ao pedir "foca nisso" (desperdício de contexto)
+
+Sintoma relatado: o agente verifica algo e entrega um relatório; ao pedir para
+FOCAR num item específico que já estava detalhado no relatório, ele refazia tudo
+do zero (re-scan/re-verify) em vez de usar o que já tinha.
+
+Investigação: a história da conversa É reconstruída por inteiro no follow-up —
+texto do assistente + `tool_calls` + **resultados de ferramentas** (useChat
+linhas 344-363) — e o relatório (mensagem mais recente) sobrevive ao trim. Ou
+seja, o detalhe JÁ estava no contexto. A causa era comportamental: o
+`AGENT_SYSTEM_PROMPT` empurrava "faça o trabalho de verdade / não pare no meio",
+mas não tinha **nenhuma** instrução para reaproveitar o que já foi descoberto na
+conversa.
+
+Correção: novo item **2.1 "REUSE o que já existe"** no system prompt (pt+en) —
+antes de re-executar qualquer verificação/scan/pesquisa, ler o histórico
+(relatórios e tool results já estão no contexto); num follow-up que pede para
+focar/aprofundar algo já reportado, partir do que foi achado e ir direto ao
+ponto, só re-executando o que faltar ou puder ter mudado. 718 testes (2 novos
+guardando a diretriz), typecheck e build OK.
+
 ## [2.56.0] — 2026-06-15
 
 ### Added — Auto-aprendizado Fase 5 (final): matching semântico de skills (opt-in)

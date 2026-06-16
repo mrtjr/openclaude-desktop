@@ -38,6 +38,11 @@ describe('AGENT_SYSTEM_PROMPT', () => {
         expect(p).toMatch(lang === 'pt' ? /PESQUISE/i : /RESEARCH/i)
         expect(p).toMatch(lang === 'pt' ? /VERIFIQUE/i : /VERIFY/i)
       })
+
+      it('manda REUSAR achados anteriores no follow-up (não refazer do zero) — v2.57.0', () => {
+        expect(p).toMatch(lang === 'pt' ? /REUSE O QUE J[ÁA] EXISTE/i : /REUSE WHAT ALREADY EXISTS/i)
+        expect(p).toMatch(lang === 'pt' ? /FOCAR/i : /FOCUS ON/i)
+      })
     })
   }
 })
