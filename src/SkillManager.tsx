@@ -71,6 +71,12 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
     e.target.value = ''
   }
 
+  // Skills aprendidas em rascunho (Fase 4) ficam numa seção de revisão separada;
+  // as demais na lista normal.
+  const stagingSkills = skills.filter(s => s.status === 'staging')
+  const regularSkills = skills.filter(s => s.status !== 'staging')
+  const approve = (id: string) => patch(id, { status: 'active', enabled: true })
+
   const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid rgba(127,127,127,0.12)' }
   const iconBtn: React.CSSProperties = { background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 4, display: 'inline-flex' }
 
@@ -109,8 +115,39 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
                 <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: 'none' }} onChange={handleImport} />
               </div>
 
+              {/* Seção de revisão das skills aprendidas (staging) — Fase 4 */}
+              {stagingSkills.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, opacity: 0.85, margin: '2px 0 6px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    ✨ {pt ? `Skills aprendidas — revisar (${stagingSkills.length})` : `Learned skills — review (${stagingSkills.length})`}
+                  </div>
+                  <p style={{ fontSize: 11, opacity: 0.6, margin: '0 0 8px' }}>
+                    {pt ? 'Rascunhos gerados automaticamente de conhecimento de domínio. Ficam INATIVOS até você aprovar.'
+                        : 'Auto-generated drafts from domain knowledge. They stay INACTIVE until you approve.'}
+                  </p>
+                  {stagingSkills.map(s => {
+                    const facts = (s.instructions || '').split('\n').filter(l => l.startsWith('- ')).length
+                    const conf = Math.round((s.provenance?.confidence ?? 0) * 100)
+                    return (
+                      <div key={s.id} style={{ ...row, background: 'color-mix(in srgb, var(--accent) 7%, transparent)', borderRadius: 8, padding: '10px 8px', border: '1px solid var(--accent-border)' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, fontFamily: 'monospace' }}>{s.name}</div>
+                          <div style={{ fontSize: 12, opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.description}</div>
+                          <div style={{ fontSize: 11, opacity: 0.55 }}>
+                            {pt ? `${facts} fato(s) · confiança ${conf}% · origem: agente` : `${facts} fact(s) · confidence ${conf}% · source: agent`}
+                          </div>
+                        </div>
+                        <button style={iconBtn} title={pt ? 'Ver/editar antes de aprovar' : 'View/edit before approving'} onClick={() => setEditing({ ...s, triggers: s.triggers || [] })}><Edit3 size={15} /></button>
+                        <button style={iconBtn} title={pt ? 'Aprovar (ativar)' : 'Approve (activate)'} onClick={() => approve(s.id)}><Check size={16} style={{ color: 'var(--success, #46a758)' }} /></button>
+                        <button style={iconBtn} title={pt ? 'Rejeitar (excluir)' : 'Reject (delete)'} onClick={() => remove(s.id)}><Trash2 size={15} /></button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
               {skills.length === 0 && <p style={{ opacity: 0.6 }}>{pt ? 'Nenhuma skill.' : 'No skills.'}</p>}
-              {skills.map(s => (
+              {regularSkills.map(s => (
                 <div key={s.id} style={row}>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: s.enabled ? 'var(--success, #46a758)' : 'rgba(127,127,127,0.4)' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>

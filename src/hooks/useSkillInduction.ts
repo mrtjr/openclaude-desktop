@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react'
 import type { Skill } from '../types/skill'
-import { induceLearnedSkills } from '../utils/memoryInduction'
+import { induceAndReconcile } from '../utils/memoryInduction'
 
 interface Options {
   enabled: boolean
@@ -29,12 +29,23 @@ export function useSkillInduction({ enabled, skillsRef, persistSkills, onToast, 
       const mem = await window.electron.loadMemory()
       const facts: string[] = Array.isArray((mem as any)?.facts) ? (mem as any).facts : []
       const current = skillsRef.current || []
-      const drafts = induceLearnedSkills(facts, current, { now: Date.now() })
-      if (drafts.length > 0) {
-        persistSkills([...current, ...drafts])
-        onToast?.(language === 'en'
-          ? `${drafts.length} learned skill draft(s) — review in Skills`
-          : `${drafts.length} skill(s) de domínio em rascunho — revise em Skills`)
+      const { drafts, updates } = induceAndReconcile(facts, current, { now: Date.now() })
+      if (drafts.length > 0 || updates.length > 0) {
+        let next = [...current, ...drafts]
+        if (updates.length > 0) {
+          const byId = new Map(updates.map(u => [u.id, u]))
+          next = next.map(s => byId.get(s.id) || s)
+        }
+        persistSkills(next)
+        if (drafts.length > 0) {
+          onToast?.(language === 'en'
+            ? `${drafts.length} learned skill draft(s) — review in Skills`
+            : `${drafts.length} skill(s) de domínio em rascunho — revise em Skills`)
+        } else if (updates.length > 0) {
+          onToast?.(language === 'en'
+            ? `${updates.length} learned skill(s) updated with new facts`
+            : `${updates.length} skill(s) aprendida(s) atualizada(s) com novos fatos`)
+        }
       }
     } catch (e) {
       console.warn('[skillInduction] error:', e)

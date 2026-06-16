@@ -1,8 +1,16 @@
 import { describe, it, expect } from 'vitest'
 import {
-  induceLearnedSkills, keywordsOf, slugifyDomain, sanitizeFact, isDangerousFact,
+  induceLearnedSkills, induceAndReconcile, reconcileLearnedSkill,
+  keywordsOf, slugifyDomain, sanitizeFact, isDangerousFact,
 } from '../src/utils/memoryInduction'
 import type { Skill } from '../src/types/skill'
+
+const learnedOtserv = (): Skill => ({
+  id: 'learned-otserv', name: 'otserv', description: 'dominio otserv',
+  instructions: 'Conhecimento aprendido sobre "otserv":\n- otserv usa a porta 7171 para login\n- otserv roda no protocolo do tibia',
+  triggers: ['otserv'], enabled: true, pinned: false, kind: 'learned', status: 'active',
+  provenance: { sourceConvIds: [], confidence: 0.6 }, createdAt: 0,
+})
 
 const otservFacts = [
   'no pentest de otserv a porta de login costuma ser a 7171',
@@ -56,5 +64,41 @@ describe('induceLearnedSkills', () => {
   })
   it('respeita minFacts (gate de recorrência)', () => {
     expect(induceLearnedSkills(otservFacts.slice(0, 2), [], { minFacts: 3 })).toEqual([])
+  })
+})
+
+describe('reconcileLearnedSkill (delta-update, Fase 4)', () => {
+  it('ADD: fato novo do domínio é anexado como bullet, preservando status/enabled', () => {
+    const upd = reconcileLearnedSkill(learnedOtserv(), ['otserv tem um painel admin oculto no client'])
+    expect(upd).not.toBeNull()
+    expect(upd!.instructions).toContain('painel admin oculto')
+    expect(upd!.status).toBe('active')
+    expect(upd!.enabled).toBe(true)
+    expect(upd!.provenance!.confidence).toBeGreaterThan(0.6) // reforço sobe confiança
+  })
+  it('NOOP: fato duplicado não muda nada (retorna null)', () => {
+    expect(reconcileLearnedSkill(learnedOtserv(), ['otserv usa a porta 7171 para login'])).toBeNull()
+  })
+  it('UPDATE: fato que contradiz substitui o bullet (não empilha)', () => {
+    const upd = reconcileLearnedSkill(learnedOtserv(), ['otserv nao usa a porta 7171 para login'])
+    expect(upd).not.toBeNull()
+    const bullets = upd!.instructions.split('\n').filter(l => l.startsWith('- '))
+    expect(bullets.length).toBe(2)                                  // substituiu, não duplicou
+    expect(upd!.instructions).toContain('nao usa a porta 7171')
+  })
+})
+
+describe('induceAndReconcile (Fase 4)', () => {
+  it('domínio novo → draft; nenhuma skill existente → 0 updates', () => {
+    const { drafts, updates } = induceAndReconcile(otservFacts, [], { now: 1 })
+    expect(drafts.length).toBe(1)
+    expect(updates.length).toBe(0)
+  })
+  it('skill learned existente + fato novo do domínio → update (delta), sem novo draft', () => {
+    const facts = ['otserv tem painel admin novo aqui', 'otserv usa a porta 7171 para login', 'otserv roda no protocolo do tibia']
+    const { drafts, updates } = induceAndReconcile(facts, [learnedOtserv()], { now: 1 })
+    expect(drafts.length).toBe(0)               // 'otserv' já existe → não recria
+    expect(updates.length).toBe(1)
+    expect(updates[0].instructions).toContain('painel admin novo')
   })
 })

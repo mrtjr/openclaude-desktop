@@ -18,6 +18,7 @@
 // Puro/determinístico (recebe `now`); a I/O fica no hook useSkillInduction.
 
 import type { Skill } from '../types/skill'
+import { factsContradict } from '../services/memoryDreaming'
 
 export const MIN_FACTS = 3            // recorrência mínima de um domínio
 export const MIN_KEYWORD_LEN = 4
@@ -89,7 +90,7 @@ export function induceLearnedSkills(
   const minFacts = opts.minFacts ?? MIN_FACTS
 
   // Sanitiza e descarta fatos perigosos ANTES de qualquer clustering.
-  const clean = (facts || []).map(sanitizeFact).filter(f => f && !isDangerousFact(f))
+  const clean = cleanFacts(facts)
   if (clean.length < minFacts) return []
 
   // keyword → índices dos fatos que a contêm
@@ -146,4 +147,92 @@ export function induceLearnedSkills(
   }
 
   return drafts
+}
+
+/** Sanitiza e remove fatos perigosos (compartilhado por induce/reconcile). */
+function cleanFacts(facts: string[]): string[] {
+  return (facts || []).map(sanitizeFact).filter(f => f && !isDangerousFact(f))
+}
+
+const BULLET = '- '
+
+function parseBody(instructions: string): { header: string; bullets: string[] } {
+  const lines = String(instructions || '').split('\n')
+  const header = lines.length && !lines[0].startsWith(BULLET) ? lines[0] : ''
+  const bullets = lines.filter(l => l.startsWith(BULLET)).map(l => l.slice(BULLET.length).trim()).filter(Boolean)
+  return { header, bullets }
+}
+
+/** Dois textos falam do mesmo "tópico" se compartilham ≥2 keywords. */
+function sameTopic(a: string, b: string): boolean {
+  const ka = new Set(keywordsOf(a))
+  let shared = 0
+  for (const k of keywordsOf(b)) if (ka.has(k)) shared++
+  return shared >= 2
+}
+
+const normLine = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim()
+
+/**
+ * DELTA-update (Fase 4): atualiza o CORPO de uma skill aprendida com fatos novos
+ * do mesmo domínio — em bullets, NUNCA reescrevendo o corpo inteiro (ACE prova
+ * que rewrite causa context-collapse). Por fato: duplicado → NOOP; contradiz um
+ * bullet do mesmo tópico → UPDATE (substitui); novo → ADD. Retorna a skill
+ * atualizada, ou null se nada mudou. Preserva status/enabled (não reativa nada).
+ */
+export function reconcileLearnedSkill(
+  skill: Skill,
+  newFacts: string[],
+  opts: { now?: number } = {},
+): Skill | null {
+  const incoming = cleanFacts(newFacts)
+  if (!incoming.length) return null
+  const { header, bullets } = parseBody(skill.instructions)
+  const have = new Set(bullets.map(normLine))
+  let next = [...bullets]
+  let changed = false
+
+  for (const f of incoming) {
+    if (have.has(normLine(f))) continue // NOOP: já consta
+    const ci = next.findIndex(b => sameTopic(b, f) && factsContradict(b, f))
+    if (ci >= 0) { next[ci] = f; have.add(normLine(f)); changed = true; continue } // UPDATE
+    next.push(f); have.add(normLine(f)); changed = true                            // ADD
+  }
+  if (!changed) return null
+  if (next.length > MAX_BODY_FACTS) next = next.slice(next.length - MAX_BODY_FACTS)
+
+  const head = header || `Conhecimento aprendido sobre "${skill.name}" (revise antes de confiar):`
+  const instructions = [head, ...next.map(b => `${BULLET}${b}`)].join('\n')
+  const confidence = Math.min(1, (skill.provenance?.confidence ?? 0.5) + 0.05)
+  return {
+    ...skill,
+    instructions,
+    provenance: { sourceConvIds: skill.provenance?.sourceConvIds || [], confidence },
+    createdAt: skill.createdAt || (opts.now ?? 0),
+  }
+}
+
+/**
+ * Induz rascunhos para domínios novos E reconcilia (delta-update) as skills
+ * aprendidas já existentes com fatos novos do mesmo domínio (objetivo 3:
+ * auto-atualização). Retorna { drafts, updates } para o hook aplicar.
+ */
+export function induceAndReconcile(
+  facts: string[],
+  existingSkills: Skill[],
+  opts: { now?: number; minFacts?: number } = {},
+): { drafts: Skill[]; updates: Skill[] } {
+  const drafts = induceLearnedSkills(facts, existingSkills, opts)
+  const clean = cleanFacts(facts)
+  const updates: Skill[] = []
+  for (const sk of existingSkills) {
+    if (sk.kind !== 'learned') continue
+    const term = (sk.name || '').toLowerCase()
+    if (!term) continue
+    const domainFacts = clean.filter(f => keywordsOf(f).includes(term))
+    if (!domainFacts.length) continue
+    const upd = reconcileLearnedSkill(sk, domainFacts, opts)
+    if (upd) updates.push(upd)
+  }
+  return { drafts, updates }
 }

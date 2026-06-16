@@ -7,6 +7,29 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.55.0] — 2026-06-15
+
+### Added — Auto-aprendizado Fase 4: aprovação 1-clique + delta-update
+
+Fecha o loop de auto-aprendizado (objetivos 2 e 3 do plano), tornando os
+rascunhos visíveis/utilizáveis e atualizáveis sem drift:
+
+- **UI de revisão** no SkillManager: seção "Skills aprendidas — revisar" lista os
+  rascunhos `status:'staging'` com proveniência (nº de fatos, confiança, origem:
+  agente), e botões **Aprovar** (→ `active`+`enabled`), **Ver/editar** e
+  **Rejeitar**. Nada entra no contexto sem o clique. Skills normais ficam na
+  lista de sempre (staging separadas).
+- **Delta-update** (`reconcileLearnedSkill`, puro + testado): quando chega fato
+  novo do mesmo domínio, o corpo da skill aprendida é atualizado em **bullets** —
+  duplicado=NOOP, contradição=UPDATE (substitui o bullet, não empilha), novo=ADD;
+  **nunca reescreve o corpo inteiro** (ACE: rewrite causa context-collapse).
+  Preserva status/enabled; reforço sobe a confiança.
+- `induceAndReconcile` (usado pelo `useSkillInduction`) cria rascunhos para
+  domínios novos E reconcilia as skills aprendidas existentes em background.
+
+Com isto, as Fases 1-4 (essenciais) do plano estão completas. A Fase 5 (retrieval
+semântico por embeddings) é opcional. 711 testes, typecheck e build OK.
+
 ## [2.54.1] — 2026-06-15
 
 ### Fixed — memoryInduction.ts virou "binário" no git (chars invisíveis no fonte)
