@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import type { Message, ToolResult, Conversation, AppSettings } from '../types'
 import { TOOLS, IDLE_STEP_THRESHOLD } from '../constants/tools'
 import { applySubagentModels } from '../utils/researchWorker'
+import type { BackgroundSubagentRegistry, BgEntry } from '../utils/backgroundSubagents'
 import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIMING, LANGUAGE_REMINDER } from '../constants/prompts'
 import { partitionTools, renderDeferredManifest, decideDeferral } from '../services/toolDeferral'
 import { generateId, isSmallModel } from '../utils/formatting'
@@ -37,6 +38,9 @@ interface UseChatOptions {
   setConversations: React.Dispatch<React.SetStateAction<Conversation[]>>
   isAgentMode: boolean
   executeTool: (name: string, args: Record<string, any>) => Promise<string>
+  /** Registro de subagentes em background (v2.65.0) — o loop coleta os
+   *  resultados prontos a cada passo e drena os pendentes antes de encerrar. */
+  backgroundTasks?: BackgroundSubagentRegistry
   speakText: (text: string) => void
   showToast: (message: string) => void
   onProviderSuccess?: () => void
@@ -59,6 +63,7 @@ export function useChat({
   setConversations,
   isAgentMode,
   executeTool,
+  backgroundTasks,
   speakText,
   showToast,
   onProviderSuccess,
@@ -134,6 +139,7 @@ export function useChat({
   const stopAgent = useCallback(() => {
     stopRequestedRef.current = true
     sendingRef.current = false
+    backgroundTasks?.clear() // abandona subagentes em background pendentes
     setIsLoading(false)
     setIsStreaming(false)
     setStreamingText(''); setStreamingPhase(null)
@@ -149,7 +155,7 @@ export function useChat({
     // (up to 600s) after the user pressed Stop, the loop frozen on its await.
     window.electron.killCommands?.().catch((e: any) => console.warn('[useChat] kill commands error:', e))
     showToast('Agente interrompido pelo usuário.')
-  }, [showToast])
+  }, [showToast, backgroundTasks])
 
   const sendMessage = useCallback(async (inputText: string, overrideConvId?: string) => {
     // Prefer an explicit conversation id when provided (e.g. scheduled
@@ -191,6 +197,7 @@ export function useChat({
     setStreamingConvId(convId)
     setAgentSteps(0)
     stopRequestedRef.current = false
+    backgroundTasks?.clear() // novo turno começa sem lotes de turnos anteriores
 
     // ─── Aprendizado de preferências (Fase 2, v2.53.0) ───────────────
     // Captura preferências EXPLÍCITAS desta mensagem e, após reforço (≥2
@@ -637,8 +644,23 @@ export function useChat({
       // guard de ociosidade (IDLE_STEP_THRESHOLD). `steps` segue contando para
       // telemetria/nudges, mas não limita mais o loop. NÃO reintroduza um cap
       // numérico sem alinhar — foi uma decisão deliberada do usuário.
+      // Injeta resultados de subagentes em background como contexto (v2.65.0).
+      const injectBg = (entries: BgEntry[]) => {
+        for (const e of entries) {
+          allMessages.push({
+            role: 'system',
+            content: (lang === 'en'
+              ? `[BACKGROUND SUBAGENT RESULT — batch ${e.id}]\n`
+              : `[RESULTADO DO SUBAGENTE EM BACKGROUND — lote ${e.id}]\n`) + (e.result || ''),
+          })
+        }
+      }
+
       while (continueLoop) {
         if (stopRequestedRef.current) break
+        // Subagentes em background que já terminaram entram no contexto deste
+        // passo, então o modelo pode usá-los enquanto segue trabalhando.
+        if (backgroundTasks) injectBg(backgroundTasks.takeCompleted())
         steps++
         bumpInsightStep()
         sessionTracker.agentSteps = steps
@@ -1196,6 +1218,20 @@ export function useChat({
         }
 
         sessionTracker.responseTimes.push(Date.now() - stepStartTime)
+
+        // Drenar no fim (v2.65.0): se o turno vai encerrar mas ainda há
+        // subagentes em background pendentes, espera os atrasados, injeta os
+        // resultados e força mais um passo — a resposta final reflete o
+        // trabalho deles em vez de descartá-lo.
+        if (!continueLoop && !stopRequestedRef.current && backgroundTasks?.hasAny()) {
+          setRunningTool({
+            name: lang === 'en' ? 'background subagents' : 'subagentes em background',
+            detail: lang === 'en' ? 'waiting for results…' : 'aguardando resultados…',
+          })
+          injectBg(await backgroundTasks.drain())
+          setRunningTool(null)
+          continueLoop = true
+        }
       }
     } catch (e: any) {
       console.error('[useChat] Error in sendMessage:', e)
@@ -1281,7 +1317,7 @@ export function useChat({
       // the ENTIRE conversation on every turn, causing exponential
       // double-counting and inflated costs in the dashboard.
     }
-  }, [isLoading, providerConfig, settings, isAgentMode, conversationsRef, setConversations, executeTool, speakText, showToast])
+  }, [isLoading, providerConfig, settings, isAgentMode, conversationsRef, setConversations, executeTool, backgroundTasks, speakText, showToast])
 
   // Helper: process tool calls (shared between streaming and non-streaming)
   async function processToolCalls(

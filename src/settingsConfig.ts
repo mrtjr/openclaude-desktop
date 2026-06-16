@@ -113,6 +113,11 @@ export interface AppSettings {
    *  delegate_subtasks); se não escolher, faz rodízio sobre esta lista. Vazio →
    *  usa `subagentModel`. Ver resolveSubagentModel/applySubagentModels. */
   subagentModels?: string[]
+  /** v2.65.0 — força delegate_subtasks SEMPRE em background (a IA principal
+   *  continua trabalhando enquanto os subagentes rodam; resultados injetados
+   *  quando prontos, com drenagem no fim do turno). Off → o modelo decide via
+   *  o parâmetro `background`. Ver backgroundSubagents.ts. */
+  subagentsBackground?: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -155,6 +160,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   subagentExecutor: 'ollama',
   subagentModel: 'llama3.2',
   subagentModels: [],
+  subagentsBackground: false,
 }
 
 export function loadSettings(): AppSettings {

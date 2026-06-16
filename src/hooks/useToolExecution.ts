@@ -23,6 +23,7 @@ import {
 } from '../utils/researchWorker'
 import type { Skill } from '../types/skill'
 import type { ModalKeyPool } from './useModalKeyPool'
+import type { BackgroundSubagentRegistry } from '../utils/backgroundSubagents'
 
 interface UseToolExecutionOptions {
   settings: AppSettings
@@ -37,9 +38,12 @@ interface UseToolExecutionOptions {
   skills?: Skill[]
   /** Roteador de chamadas a tools de servidores MCP (mcp__*) (v2.35.0). */
   callMcpTool?: (name: string, args: Record<string, any>) => Promise<string>
+  /** Registro de subagentes em background (v2.65.0) — delegate_subtasks registra
+   *  os lotes aqui quando em modo background; useChat coleta/drena. */
+  backgroundTasks?: BackgroundSubagentRegistry
 }
 
-export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool }: UseToolExecutionOptions) {
+export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool, backgroundTasks }: UseToolExecutionOptions) {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
 
   // Use refs to avoid stale closures
@@ -414,6 +418,21 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         const concurrency = useModal
           ? Math.min(modalKeyPool!.totalCount, subtasks.length)
           : DEFAULT_WORKER_CONCURRENCY
+
+        // Modo BACKGROUND (v2.65.0): dispara sem await, registra o lote e devolve
+        // na hora um handle — a IA principal segue trabalhando; useChat injeta o
+        // resultado quando pronto (e drena no fim do turno). Ligado pelo toggle
+        // global OU pelo parâmetro `background` que o modelo escolhe.
+        const background = (settings.subagentsBackground === true || args.background === true) && !!backgroundTasks
+        if (background) {
+          const work = runWithConcurrency(subtasks.map((st: any, i: number) => runOne(st, i)), concurrency)
+            .then((rs) => rs.join('\n\n---\n\n'))
+          const id = backgroundTasks!.register(`${subtasks.length} subtarefa(s)`, work)
+          return lang === 'en'
+            ? `🚀 Delegated ${subtasks.length} subtask(s) to BACKGROUND subagents (batch ${id}). They are running now; CONTINUE with other useful work — their results will be injected automatically when ready (and awaited before you finish if still pending). Do NOT stop and wait.`
+            : `🚀 Deleguei ${subtasks.length} subtarefa(s) a subagentes em BACKGROUND (lote ${id}). Eles estão rodando agora; CONTINUE com outro trabalho útil — os resultados serão injetados automaticamente quando prontos (e aguardados antes de você concluir, se ainda pendentes). NÃO pare para esperar.`
+        }
+
         const results = await runWithConcurrency(subtasks.map((st: any, i: number) => runOne(st, i)), concurrency)
         return results.join('\n\n---\n\n')
       }

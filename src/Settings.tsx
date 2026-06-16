@@ -479,6 +479,19 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                       language={local.language}
                     />
                   )}
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer', marginTop: '12px' }}>
+                    <input
+                      type="checkbox"
+                      checked={local.subagentsBackground || false}
+                      onChange={(e) => setLocal(s => ({ ...s, subagentsBackground: e.target.checked }))}
+                    />
+                    <span>
+                      {local.language === 'pt'
+                        ? 'Rodar subagentes em background (a IA principal continua trabalhando enquanto eles rodam)'
+                        : 'Run subagents in the background (the main AI keeps working while they run)'}
+                    </span>
+                  </label>
                 </div>
               </div>
             </div>

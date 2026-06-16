@@ -482,7 +482,8 @@ export const TOOLS = [
               }
             },
             description: 'List of subtasks to execute in parallel'
-          }
+          },
+          background: { type: 'boolean', description: 'Set true to run the subagents in the BACKGROUND: this returns immediately with a handle and you KEEP WORKING on other independent steps while they run; their results are injected automatically when ready (and awaited before you finish if still pending). Use it when you have other useful work to do meanwhile (the local workers can be slow). Omit/false to wait for the results inline.' }
         },
         required: ['subtasks']
       }
