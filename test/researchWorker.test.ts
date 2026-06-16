@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildWorkerTools, parseRawToolCalls, normalizeWorkerChat, summarizeToolsUsed,
-  runResearchWorker, runWithConcurrency, WORKER_TOOL_NAMES,
+  runResearchWorker, runWithConcurrency, resolveSubagentModel, applySubagentModels,
+  WORKER_TOOL_NAMES,
   type WorkerChat, type WorkerExec, type WorkerChatResult,
 } from '../src/utils/researchWorker'
 
@@ -135,6 +136,39 @@ describe('runResearchWorker', () => {
     const out = await runResearchWorker({ messages: [{ role: 'user', content: 'x' }], tools: [], chat, exec: async () => '' })
     expect(out.error).toBe(true)
     expect(out.text).toContain('Ollama offline')
+  })
+})
+
+describe('resolveSubagentModel', () => {
+  const allowed = ['llama3.2', 'qwen2.5-coder', 'mistral']
+  it('honra o pedido do orquestrador se estiver na lista', () => {
+    expect(resolveSubagentModel('qwen2.5-coder', 0, allowed, 'llama3.2')).toBe('qwen2.5-coder')
+  })
+  it('pedido fora da lista → rodízio pelo índice (não 404 num modelo não instalado)', () => {
+    expect(resolveSubagentModel('gpt-9', 0, allowed, 'fb')).toBe('llama3.2')
+    expect(resolveSubagentModel('gpt-9', 1, allowed, 'fb')).toBe('qwen2.5-coder')
+    expect(resolveSubagentModel(undefined, 3, allowed, 'fb')).toBe('llama3.2') // 3 % 3 = 0
+  })
+  it('sem lista configurada → respeita o pedido ou cai no fallback', () => {
+    expect(resolveSubagentModel('qualquer', 0, [], 'fb')).toBe('qualquer')
+    expect(resolveSubagentModel(undefined, 0, [], 'fb')).toBe('fb')
+  })
+})
+
+describe('applySubagentModels', () => {
+  const TOOLS = [
+    { type: 'function', function: { name: 'read_file', description: 'lê' } },
+    { type: 'function', function: { name: 'delegate_subtasks', description: 'delega.' } },
+  ]
+  it('injeta a lista na descrição só do delegate_subtasks, sem mutar', () => {
+    const out = applySubagentModels(TOOLS, ['llama3.2', 'mistral'])
+    const del = out.find(t => t.function.name === 'delegate_subtasks')!
+    expect(del.function.description).toContain('llama3.2, mistral')
+    expect(out.find(t => t.function.name === 'read_file')!.function.description).toBe('lê')
+    expect(TOOLS[1].function.description).toBe('delega.') // entrada intacta
+  })
+  it('lista vazia → retorna o array original', () => {
+    expect(applySubagentModels(TOOLS, [])).toBe(TOOLS)
   })
 })
 

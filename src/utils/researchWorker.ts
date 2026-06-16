@@ -66,6 +66,39 @@ export function buildWorkerTools(allTools: any[]): any[] {
   return allTools.filter((t) => WORKER_TOOL_NAMES.has(t?.function?.name))
 }
 
+/** Resolve o modelo Ollama de UMA subtarefa (multi-modelo, v2.64.0):
+ *  - se o orquestrador pediu um modelo E ele está na lista permitida → usa-o;
+ *  - senão, rodízio determinístico sobre a lista (pelo índice da subtarefa);
+ *  - sem lista configurada → respeita o pedido, ou cai no fallback.
+ *  Validar contra a lista impede o orquestrador de pedir um modelo não
+ *  instalado (que daria 404 no Ollama). */
+export function resolveSubagentModel(
+  requested: string | undefined,
+  index: number,
+  allowed: string[] | undefined,
+  fallback: string,
+): string {
+  const list = (allowed || []).map((s) => String(s).trim()).filter(Boolean)
+  const req = (requested || '').trim()
+  if (!list.length) return req || fallback
+  if (req && list.includes(req)) return req
+  const i = ((index % list.length) + list.length) % list.length
+  return list[i]
+}
+
+/** Injeta a lista de modelos configurados na descrição do delegate_subtasks, p/
+ *  o orquestrador saber o que pode pôr no campo "model" de cada subtarefa.
+ *  Clona raso só a tool afetada (não muta a entrada). Lista vazia → sem efeito. */
+export function applySubagentModels(tools: any[], models: string[] | undefined): any[] {
+  const list = (models || []).map((s) => String(s).trim()).filter(Boolean)
+  if (!Array.isArray(tools) || !list.length) return tools
+  return tools.map((t) => {
+    if (t?.function?.name !== 'delegate_subtasks') return t
+    const hint = ` You may set "model" per subtask to ONE of the configured Ollama models: ${list.join(', ')} — pick the best fit per subtask (e.g. a coding model for code research, a general model for web). Omit "model" to auto-rotate across them.`
+    return { ...t, function: { ...t.function, description: (t.function.description || '') + hint } }
+  })
+}
+
 /** Argumentos de tool_call podem chegar como string JSON (OpenAI/Modal) OU já
  *  como objeto (Ollama). Coage os dois com segurança. */
 function parseArgs(a: any): Record<string, any> {

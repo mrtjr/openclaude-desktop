@@ -105,9 +105,14 @@ export interface AppSettings {
    *  locais pesquisam). 'modal': usa o pool de keys do Modal. Ver
    *  researchWorker.ts. */
   subagentExecutor?: 'ollama' | 'modal'
-  /** v2.63.0 — modelo Ollama dos workers de pesquisa. Pequeno/rápido é o ideal
-   *  (eles só leem/buscam e sintetizam). */
+  /** v2.63.0 — modelo Ollama padrão dos workers de pesquisa (fallback quando
+   *  `subagentModels` está vazio). Pequeno/rápido é o ideal. */
   subagentModel?: string
+  /** v2.64.0 — LISTA de modelos Ollama que os subagentes podem usar. O
+   *  orquestrador escolhe o melhor por subtarefa (campo "model" do
+   *  delegate_subtasks); se não escolher, faz rodízio sobre esta lista. Vazio →
+   *  usa `subagentModel`. Ver resolveSubagentModel/applySubagentModels. */
+  subagentModels?: string[]
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -149,6 +154,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   toolDeferralMode: 'auto',
   subagentExecutor: 'ollama',
   subagentModel: 'llama3.2',
+  subagentModels: [],
 }
 
 export function loadSettings(): AppSettings {

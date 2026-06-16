@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import type { Message, ToolResult, Conversation, AppSettings } from '../types'
 import { TOOLS, IDLE_STEP_THRESHOLD } from '../constants/tools'
+import { applySubagentModels } from '../utils/researchWorker'
 import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIMING, LANGUAGE_REMINDER } from '../constants/prompts'
 import { partitionTools, renderDeferredManifest, decideDeferral } from '../services/toolDeferral'
 import { generateId, isSmallModel } from '../utils/formatting'
@@ -339,7 +340,13 @@ export function useChat({
       // MCP (v2.35.0): mescla as tools dos servidores MCP às TOOLS estáticas
       // antes de decidir deferral/particionar. Assim o modelo realmente recebe
       // as tools dos servidores configurados.
-      const allTools: any[] = extraToolsRef.current?.length ? [...TOOLS, ...extraToolsRef.current] : (TOOLS as any)
+      // v2.64.0: quando os subagentes rodam no Ollama com uma LISTA de modelos,
+      // injeta os nomes na descrição do delegate_subtasks p/ o orquestrador
+      // escolher o modelo por subtarefa.
+      const baseTools: any[] = (settings.subagentExecutor ?? 'ollama') !== 'modal' && settings.subagentModels?.length
+        ? applySubagentModels(TOOLS as any, settings.subagentModels)
+        : (TOOLS as any)
+      const allTools: any[] = extraToolsRef.current?.length ? [...baseTools, ...extraToolsRef.current] : baseTools
       const deferral = decideDeferral(
         settings.toolDeferralMode,
         effectiveContextLimit(finalProvider, finalModel, settings.ollamaNumCtx),

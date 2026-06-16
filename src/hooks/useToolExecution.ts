@@ -17,7 +17,8 @@ import { matchHooks } from '../utils/hooks'
 import { resolveSubagentPrompt } from '../constants/subagents'
 import {
   buildWorkerTools, runResearchWorker, runWithConcurrency, normalizeWorkerChat,
-  summarizeToolsUsed, WORKER_TOOL_NAMES, WORKER_SYSTEM_PROMPT, DEFAULT_WORKER_CONCURRENCY,
+  summarizeToolsUsed, resolveSubagentModel, WORKER_TOOL_NAMES, WORKER_SYSTEM_PROMPT,
+  DEFAULT_WORKER_CONCURRENCY,
   type WorkerChat, type WorkerExec, type WorkerMessage,
 } from '../utils/researchWorker'
 import type { Skill } from '../types/skill'
@@ -345,11 +346,16 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
             ? executeToolRaw(n, a)
             : `[A ferramenta "${n}" não está disponível para subagentes. Use só leitura/pesquisa: ${[...WORKER_TOOL_NAMES].join(', ')}.]`
 
-        const ollamaChat: WorkerChat = async (messages, tools) => {
+        // Multi-modelo (v2.64.0): cada worker Ollama pode usar um modelo
+        // diferente — o orquestrador escolhe por subtarefa (campo "model",
+        // validado contra a lista permitida) ou faz rodízio. Ver
+        // resolveSubagentModel.
+        const allowedModels = (settings.subagentModels || []).map(s => String(s).trim()).filter(Boolean)
+        const fallbackModel = settings.subagentModel || 'llama3.2'
+        const makeOllamaChat = (model: string): WorkerChat => async (messages, tools) => {
           try {
             const r = await window.electron.ollamaChat({
-              model: settings.subagentModel || 'llama3.2',
-              messages, tools,
+              model, messages, tools,
               temperature: settings.temperature,
               max_tokens: settings.maxTokens,
               numCtx: settings.ollamaNumCtx,
@@ -374,21 +380,29 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         const useModal = settings.subagentExecutor === 'modal'
           && settings.provider === 'modal' && !!modalKeyPool && modalKeyPool.totalCount > 0
 
-        const runOne = (st: any) => async (): Promise<string> => {
-          let chat: WorkerChat = ollamaChat
+        const runOne = (st: any, index: number) => async (): Promise<string> => {
+          let chat: WorkerChat
           let slot: { key: string } | null = null
+          let modelUsed: string
           if (useModal) {
             slot = await modalKeyPool!.acquireOrWait()
+            modelUsed = settings.modalModel || selectedModel || 'zai-org/GLM-5.1-FP8'
             if (slot) chat = makeModalChat(slot.key)
-            else if (settings.modalPoolFallbackOllama) chat = ollamaChat
-            else return `[Agent ${st.id ?? '?'}]: [pool Modal esgotado]`
+            else if (settings.modalPoolFallbackOllama) {
+              modelUsed = resolveSubagentModel(st.model, index, allowedModels, fallbackModel)
+              chat = makeOllamaChat(modelUsed)
+            } else return `[Agent ${st.id ?? '?'}]: [pool Modal esgotado]`
+          } else {
+            modelUsed = resolveSubagentModel(st.model, index, allowedModels, fallbackModel)
+            chat = makeOllamaChat(modelUsed)
           }
           let errored = false
           try {
             const out = await runResearchWorker({ messages: buildMessages(st), tools: workerTools, chat, exec: workerExec, finalNudge })
             errored = !!out.error
-            const meta = out.toolsUsed.length ? ` _(${out.steps}↻ · ${summarizeToolsUsed(out.toolsUsed)})_` : ''
-            return `[Agent ${st.id ?? '?'}]:${meta}\n${out.text}`
+            const bits = [`${out.steps}↻`, modelUsed]
+            if (out.toolsUsed.length) bits.push(summarizeToolsUsed(out.toolsUsed))
+            return `[Agent ${st.id ?? '?'}]: _(${bits.join(' · ')})_\n${out.text}`
           } catch (e: any) {
             errored = true
             return `[Agent ${st.id ?? '?'}]: [erro: ${e?.message || e}]`
@@ -400,7 +414,7 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         const concurrency = useModal
           ? Math.min(modalKeyPool!.totalCount, subtasks.length)
           : DEFAULT_WORKER_CONCURRENCY
-        const results = await runWithConcurrency(subtasks.map(runOne), concurrency)
+        const results = await runWithConcurrency(subtasks.map((st: any, i: number) => runOne(st, i)), concurrency)
         return results.join('\n\n---\n\n')
       }
       return 'Ferramenta nao reconhecida'

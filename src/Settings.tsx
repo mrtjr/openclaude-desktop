@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { X, Plus, Trash2, Search } from 'lucide-react'
 import { ProviderList } from './components/settings/ProviderList'
 import { ProviderDetail } from './components/settings/ProviderDetail'
+import { SubagentModelsPicker } from './components/settings/SubagentModelsPicker'
 import { PROVIDERS } from './config/providers'
 
 // Settings types, defaults and load/save moved to the boot-light
@@ -468,17 +469,16 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                       <option value="ollama">{local.language === 'pt' ? 'Ollama local (paralelo)' : 'Local Ollama (parallel)'}</option>
                       <option value="modal">{local.language === 'pt' ? 'Pool do Modal' : 'Modal pool'}</option>
                     </select>
-                    {(local.subagentExecutor || 'ollama') === 'ollama' && (
-                      <input
-                        type="text"
-                        value={local.subagentModel || 'llama3.2'}
-                        onChange={(e) => setLocal(s => ({ ...s, subagentModel: e.target.value }))}
-                        placeholder="llama3.2"
-                        style={{ padding: '6px 8px', fontSize: '0.85rem', flex: 1, minWidth: '140px' }}
-                        title={local.language === 'pt' ? 'Modelo Ollama dos workers' : 'Ollama model for workers'}
-                      />
-                    )}
                   </div>
+                  {(local.subagentExecutor || 'ollama') === 'ollama' && (
+                    <SubagentModelsPicker
+                      selected={local.subagentModels || []}
+                      onChange={(next) => setLocal(s => ({ ...s, subagentModels: next }))}
+                      fallbackModel={local.subagentModel || 'llama3.2'}
+                      onFallbackChange={(m) => setLocal(s => ({ ...s, subagentModel: m }))}
+                      language={local.language}
+                    />
+                  )}
                 </div>
               </div>
             </div>

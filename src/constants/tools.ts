@@ -477,7 +477,8 @@ export const TOOLS = [
               properties: {
                 id: { type: 'string' },
                 prompt: { type: 'string', description: 'The instruction for this agent' },
-                agent: { type: 'string', description: 'Optional named role: explorer | planner | reviewer | general (default). Prepends a specialized system prompt.' }
+                agent: { type: 'string', description: 'Optional named role: explorer | planner | reviewer | general (default). Prepends a specialized system prompt.' },
+                model: { type: 'string', description: 'Optional Ollama model for THIS subtask, chosen from the configured list (see this tool description). Omit to auto-rotate across the configured models.' }
               }
             },
             description: 'List of subtasks to execute in parallel'
