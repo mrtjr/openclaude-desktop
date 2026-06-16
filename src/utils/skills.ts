@@ -117,7 +117,9 @@ export function findSkill(skills: Skill[], nameOrId: string): Skill | null {
  *  bloco barato que vai no system prompt instruindo o modelo a chamar
  *  load_skill quando relevante. '' se não houver nenhuma. */
 export function renderSkillManifest(skills: Skill[]): string {
-  const avail = skills.filter(s => s.enabled && !s.pinned)
+  // status:'staging' (skills aprendidas não aprovadas, v2.54.0) nunca entram no
+  // manifesto — guarda-rail contra skill-poisoning, mesmo se enabled vazar true.
+  const avail = skills.filter(s => s.enabled && !s.pinned && s.status !== 'staging')
   if (avail.length === 0) return ''
   const lines = avail.map(s => `- ${s.name}: ${s.description}`)
   return [
@@ -129,7 +131,7 @@ export function renderSkillManifest(skills: Skill[]): string {
 /** Instruções COMPLETAS das skills fixadas (pinned) + ativas — injetadas direto,
  *  sem depender do modelo chamar load_skill. '' se não houver. */
 export function renderPinnedSkills(skills: Skill[]): string {
-  const pinned = skills.filter(s => s.enabled && s.pinned)
+  const pinned = skills.filter(s => s.enabled && s.pinned && s.status !== 'staging')
   if (pinned.length === 0) return ''
   return pinned.map(s => `[SKILL ATIVA: ${s.name}]\n${s.instructions}`).join('\n\n')
 }
@@ -146,7 +148,7 @@ export function matchSkillsByText(skills: Skill[], text: string): Skill[] {
   const t = (text || '').toLowerCase()
   if (!t) return []
   return skills.filter(s =>
-    s.enabled && !s.pinned &&
+    s.enabled && !s.pinned && s.status !== 'staging' &&
     Array.isArray(s.triggers) &&
     s.triggers.some(k => k && t.includes(k.toLowerCase())),
   )

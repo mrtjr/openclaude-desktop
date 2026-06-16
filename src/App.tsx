@@ -57,6 +57,7 @@ import { useConversations } from './hooks/useConversations'
 import { useToolExecution } from './hooks/useToolExecution'
 import { useModalKeyPool } from './hooks/useModalKeyPool'
 import { useMcp } from './hooks/useMcp'
+import { useSkillInduction } from './hooks/useSkillInduction'
 import { useChat } from './hooks/useChat'
 import { useConversationFork } from './hooks/useConversationFork'
 import { useProviderHealth } from './hooks/useProviderHealth'
@@ -592,6 +593,18 @@ export default function App() {
   useMemoryDreaming({
     enabled: settings.memoryEnabled,
     onToast: showToast,
+  })
+
+  // Indução de skills de domínio em background (Fase 3, v2.54.0): clusteriza os
+  // fatos persistidos por domínio e rascunha skills aprendidas em staging.
+  const skillsRef = useRef(skills)
+  skillsRef.current = skills
+  useSkillInduction({
+    enabled: settings.memoryEnabled,
+    skillsRef,
+    persistSkills,
+    onToast: showToast,
+    language: settings.language,
   })
 
   // ─── Dev Insights (privacy-safe usage telemetry) ───────────────

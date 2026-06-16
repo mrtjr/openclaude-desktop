@@ -7,6 +7,30 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+## [2.54.0] — 2026-06-15
+
+### Added — Auto-aprendizado Fase 3: indução de skill de domínio (em staging)
+
+Objetivo (2) do plano: conhecimento recorrente de um domínio (ex.: pentest em
+otserv) vira uma SKILL carregável por gatilho. Em background, clusteriza os fatos
+persistidos (bucket `facts`, do `remember_fact`) por termo de domínio recorrente
+e rascunha skills — **sempre em staging, nunca auto-ativadas**.
+
+- Motor puro `src/utils/memoryInduction.ts` (`induceLearnedSkills` + `keywordsOf`/
+  `slugifyDomain`/`sanitizeFact`/`isDangerousFact`; 11 testes): termo que recorre
+  em ≥3 fatos → `Skill {kind:'learned', status:'staging', enabled:false,
+  triggers:tags, provenance}`. Idempotente (não recria `learned-<slug>`).
+- **Guarda-rails:** descarta fatos perigosos (execute_command/browser_*/rm -rf/
+  curl|sh) — skill aprendida não carrega instrução de executar; sanitiza
+  zero-width/controle (anti-injeção); e `renderSkillManifest`/`renderPinnedSkills`/
+  `matchSkillsByText` agora **ignoram `status:'staging'`** mesmo se `enabled` vazar.
+- Hook `useSkillInduction` roda em background (3min após abrir + a cada 30min),
+  fora do caminho quente, gated por `memoryEnabled`; mescla rascunhos via
+  `persistSkills` e avisa por toast.
+
+Os rascunhos ficam inertes (não entram no contexto) até a aprovação 1-clique da
+Fase 4. 706 testes, typecheck e build OK.
+
 ## [2.53.0] — 2026-06-15
 
 ### Added — Auto-aprendizado Fase 2: aprende o gosto do usuário (preferências)
