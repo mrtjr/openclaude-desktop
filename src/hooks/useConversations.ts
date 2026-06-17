@@ -37,7 +37,12 @@ export function useConversations() {
         const parsed = data.map((c: any) => ({
           ...c,
           createdAt: new Date(c.createdAt),
-          messages: c.messages.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }))
+          // Defensivo: se UMA conversa salva tiver messages ausente/não-array,
+          // o .map lançava, o .catch chamava newConversation() e o usuário
+          // perdia TODO o histórico. Degrada para [] em vez de apagar tudo.
+          messages: Array.isArray(c.messages)
+            ? c.messages.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }))
+            : []
         }))
         setConversations(parsed)
         setActiveConvId(parsed[0].id)
@@ -106,7 +111,9 @@ export function useConversations() {
     let list = conversations
     if (debouncedSearch.trim()) {
       const q = debouncedSearch.toLowerCase()
-      list = list.filter(c => c.title.toLowerCase().includes(q) || c.messages.some(m => m.content.toLowerCase().includes(q)))
+      // (c.title/m.content podem ser undefined em dados legados — guarda p/ a
+      // busca não derrubar o render ao digitar.)
+      list = list.filter(c => (c.title || '').toLowerCase().includes(q) || (c.messages || []).some(m => (m.content || '').toLowerCase().includes(q)))
     }
     return [...list].sort((a, b) => {
       const ap = pinnedConvs.has(a.id) ? 1 : 0

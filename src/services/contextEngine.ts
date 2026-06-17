@@ -161,11 +161,13 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   'glm-4.5': 128_000,
   'glm-4': 128_000,
   'glm': 128_000,
-  // Common Ollama models
-  'llama3': 8_192,
+  // Common Ollama models. Ordem específico → genérico: 'llama3' (8k) é PREFIXO
+  // de 'llama3.1/3.2/3.3' e o getModelContextLimit retorna o 1º match parcial —
+  // se 'llama3' viesse antes, "llama3.1" casaria 8k em vez de 128k.
   'llama3.1': 128_000,
   'llama3.2': 128_000,
   'llama3.3': 128_000,
+  'llama3': 8_192,
   'mistral': 32_000,
   'mixtral': 32_000,
   'codestral': 32_000,

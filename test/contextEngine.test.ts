@@ -82,6 +82,16 @@ describe('getModelContextLimit', () => {
     expect(getModelContextLimit('some-random-local-model')).toBe(8_192)
   })
 
+  it('llama3.x resolve a janela grande, não o 8k do genérico "llama3" (regressão de ordem)', () => {
+    // 'llama3' (8k) é PREFIXO de 'llama3.1/3.2/3.3'; como o match parcial pega o
+    // primeiro, a ordem genérico-antes-de-específico fazia "llama3.1" cair em 8k.
+    expect(getModelContextLimit('llama3.1')).toBe(128_000)
+    expect(getModelContextLimit('llama3.2')).toBe(128_000)
+    expect(getModelContextLimit('llama3.3')).toBe(128_000)
+    // O genérico exato continua 8k.
+    expect(getModelContextLimit('llama3')).toBe(8_192)
+  })
+
   it('detects Z.ai/GLM models served via Modal/OpenRouter (regression: the timeout bug)', () => {
     // The exact id from the Modal deployment that fell through to 8192 →
     // spurious auto tool-deferral → extra `tool_search` round-trip → timeout.
