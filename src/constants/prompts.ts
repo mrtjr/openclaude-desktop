@@ -1,7 +1,7 @@
 // ─── System Prompts & Language Rules ────────────────────────────────
 // Extracted from App.tsx
 
-import { Code, FileCode, Info, Globe } from 'lucide-react'
+import { Code, FileCode, Info, Globe, Monitor, FolderTree } from 'lucide-react'
 
 export const AGENT_SYSTEM_PROMPT: Record<string, string> = {
   pt: `VOCÊ ESTÁ NO MODO AGENTE AUTÔNOMO. Sua missão é resolver o pedido por completo e ENTREGAR o resultado — fazendo o trabalho de verdade (rodar comandos, criar/editar arquivos, pesquisar), não apenas descrevê-lo.
@@ -65,13 +65,19 @@ export const PLACEHOLDER_HINTS = [
   'Tente: "Crie um script Python..."',
   'Tente: "Liste os arquivos em D:\\"',
   'Tente: "Pesquise na web sobre IA"',
-  'Tente: "Explique como funciona Ollama"',
+  // Capacidades fundidas no chat (v2.73–2.79): a IA aciona sozinha.
+  'Tente: "O que tem na minha tela?"',
+  'Tente: "Compare gpt-4o e claude nesta resposta"',
+  'Tente: "Responda como um especialista em segurança"',
+  'Tente: "Mostre a estrutura deste projeto"',
   'Shift+Enter para nova linha',
 ]
 
 export const SUGGESTIONS = [
   { text: 'Crie um script Python', icon: Code },
+  { text: 'O que está aberto na minha tela?', icon: Monitor },
+  { text: 'Mostre a estrutura deste projeto', icon: FolderTree },
+  { text: 'Pesquise na web sobre IA', icon: Globe },
   { text: 'Liste arquivos em D:\\', icon: FileCode },
   { text: 'Explique como funciona Ollama', icon: Info },
-  { text: 'Pesquise na web sobre IA', icon: Globe }
 ]
