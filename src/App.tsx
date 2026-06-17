@@ -1992,7 +1992,11 @@ export default function App() {
           <div className="input-area" onClick={() => showFeatureMenu && setShowFeatureMenu(false)}>
             <AmbientOrb visible={isActiveConvLoading} />
             {/* Painel de atividade dos subagentes (v2.66.0) — recebeu/trabalhando/entregou */}
-            {showSubagentPanel && <SubagentActivityPanel runs={subagentRuns} language={settings.language} />}
+            {showSubagentPanel && (subagentRuns.length > 0
+              ? <SubagentActivityPanel runs={subagentRuns} language={settings.language} />
+              : <div className="subagent-empty">{settings.language === 'en'
+                  ? 'No subagents active yet. They show up here when the AI delegates research.'
+                  : 'Nenhum subagente em atividade ainda. Eles aparecem aqui quando a IA delega pesquisas.'}</div>)}
             <div className="input-wrapper">
               <input type="file" id="image-upload" accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
                 const file = e.target.files?.[0]
@@ -2077,21 +2081,24 @@ export default function App() {
                   {settings.provider !== 'ollama' && usageTracking.getTodayCost() > 0 && (
                     <span className="cost-counter">{usageTracking.formatCost(usageTracking.getTodayCost())} hoje</span>
                   )}
-                  {subagentRuns.length > 0 && (() => {
+                  {(() => {
                     const working = subagentRuns.filter(r => r.status === 'working').length
                     const failed = subagentRuns.filter(r => r.status === 'error').length
+                    const total = subagentRuns.length
                     return (
                       <button
                         type="button"
                         className={`subagent-bolinha ${showSubagentPanel ? 'active' : ''}`}
                         onClick={() => setShowSubagentPanel(v => !v)}
-                        title={settings.language === 'en' ? 'Show what the subagents are doing' : 'Ver o que os subagentes estão fazendo'}
+                        title={settings.language === 'en'
+                          ? (total > 0 ? 'Show what the subagents are doing' : 'Subagents (none active)')
+                          : (total > 0 ? 'Ver o que os subagentes estão fazendo' : 'Subagentes (nenhum ativo)')}
                         aria-label={settings.language === 'en' ? 'Subagents' : 'Subagentes'}
                       >
                         {working > 0
                           ? <span className="sg-spinner" />
-                          : <span className="sg-dot" style={{ background: failed > 0 ? 'var(--red, #ef4444)' : '#22c55e' }} />}
-                        <span className="sg-count">{subagentRuns.length}</span>
+                          : <span className={`sg-dot ${total === 0 ? 'idle' : ''}`} style={total > 0 ? { background: failed > 0 ? 'var(--red, #ef4444)' : '#22c55e' } : undefined} />}
+                        {total > 0 && <span className="sg-count">{total}</span>}
                       </button>
                     )
                   })()}
