@@ -123,6 +123,11 @@ export interface AppSettings {
    *  600s; 0 = sem limite (para tarefas longas, com o risco de congelar se o
    *  Ollama realmente travar). */
   subagentTimeoutSec?: number
+  /** v2.67.0 — máximo de subagentes Ollama rodando AO MESMO TEMPO em todo o app
+   *  (entre lotes/turnos). Evita engarrafar a máquina com muitos modelos locais
+   *  carregados de uma vez. Default 2. A IA principal não delega mais enquanto o
+   *  limite estiver ocupado (controle de admissão). Ver semaphore.ts. */
+  subagentConcurrency?: number
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -167,6 +172,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   subagentModels: [],
   subagentsBackground: false,
   subagentTimeoutSec: 600,
+  subagentConcurrency: 2,
 }
 
 export function loadSettings(): AppSettings {

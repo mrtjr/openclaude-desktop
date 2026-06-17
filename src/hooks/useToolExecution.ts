@@ -18,13 +18,13 @@ import { resolveSubagentPrompt } from '../constants/subagents'
 import {
   buildWorkerTools, runResearchWorker, runWithConcurrency, normalizeWorkerChat,
   summarizeToolsUsed, resolveSubagentModel, WORKER_TOOL_NAMES, WORKER_SYSTEM_PROMPT,
-  DEFAULT_WORKER_CONCURRENCY,
   type WorkerChat, type WorkerExec, type WorkerMessage,
 } from '../utils/researchWorker'
 import type { Skill } from '../types/skill'
 import type { ModalKeyPool } from './useModalKeyPool'
 import type { BackgroundSubagentRegistry } from '../utils/backgroundSubagents'
 import type { SubagentActivityStore } from '../utils/subagentActivity'
+import type { Semaphore } from '../utils/semaphore'
 
 interface UseToolExecutionOptions {
   settings: AppSettings
@@ -44,9 +44,12 @@ interface UseToolExecutionOptions {
   backgroundTasks?: BackgroundSubagentRegistry
   /** Atividade ao vivo dos subagentes (v2.66.0) — alimenta o painel visual. */
   subagentActivity?: SubagentActivityStore
+  /** Gate de concorrência GLOBAL dos subagentes Ollama (v2.67.0) — ≤N workers
+   *  ao mesmo tempo em todo o app, entre lotes/turnos. */
+  subagentLimiter?: Semaphore
 }
 
-export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool, backgroundTasks, subagentActivity }: UseToolExecutionOptions) {
+export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool, backgroundTasks, subagentActivity, subagentLimiter }: UseToolExecutionOptions) {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
 
   // Use refs to avoid stale closures
@@ -435,9 +438,34 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
           }
         }
 
-        const concurrency = useModal
-          ? Math.min(modalKeyPool!.totalCount, subtasks.length)
-          : DEFAULT_WORKER_CONCURRENCY
+        // Concorrência GLOBAL dos workers Ollama (v2.67.0): um semáforo limita
+        // quantos rodam AO MESMO TEMPO em todo o app (entre lotes/turnos), pra
+        // muitos modelos locais não engarrafarem/travarem a máquina. Modal usa
+        // o pool de keys (cloud, sem trava local).
+        const maxConc = Math.max(1, Number(settings.subagentConcurrency) || 2)
+        if (!useModal && subagentLimiter) subagentLimiter.setMax(maxConc)
+
+        // Controle de ADMISSÃO: se o limite já está ocupado (por lotes/turnos
+        // anteriores ainda rodando), NÃO aceita nova delegação — manda a IA
+        // principal aguardar uma vaga em vez de empilhar e congelar.
+        if (!useModal && subagentLimiter && (subagentLimiter.running >= maxConc || subagentLimiter.waiting > 0)) {
+          return lang === 'en'
+            ? `⚠️ ${subagentLimiter.running} subagent(s) already working and ${subagentLimiter.waiting} queued (limit ${maxConc} at a time). Do NOT delegate more now — wait for them to deliver (their results arrive automatically), then delegate again, or do other work meanwhile.`
+            : `⚠️ Já há ${subagentLimiter.running} subagente(s) trabalhando e ${subagentLimiter.waiting} na fila (limite ${maxConc} por vez). NÃO delegue mais agora — aguarde eles entregarem (os resultados chegam sozinhos) e então delegue de novo, ou faça outro trabalho enquanto isso.`
+        }
+
+        // Executa o lote: Modal mantém o cap por key-pool; Ollama passa pelo
+        // semáforo global (≤maxConc concorrentes em todo o app).
+        const runBatch = (): Promise<string[]> => {
+          if (useModal) {
+            return runWithConcurrency(subtasks.map((st: any, i: number) => runOne(st, i)), Math.min(modalKeyPool!.totalCount, subtasks.length))
+          }
+          if (subagentLimiter) {
+            const lim = subagentLimiter
+            return Promise.all(subtasks.map((st: any, i: number) => lim.run(() => runOne(st, i)())))
+          }
+          return runWithConcurrency(subtasks.map((st: any, i: number) => runOne(st, i)), maxConc)
+        }
 
         // Modo BACKGROUND (v2.65.0): dispara sem await, registra o lote e devolve
         // na hora um handle — a IA principal segue trabalhando; useChat injeta o
@@ -445,15 +473,14 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         // global OU pelo parâmetro `background` que o modelo escolhe.
         const background = (settings.subagentsBackground === true || args.background === true) && !!backgroundTasks
         if (background) {
-          const work = runWithConcurrency(subtasks.map((st: any, i: number) => runOne(st, i)), concurrency)
-            .then((rs) => rs.join('\n\n---\n\n'))
+          const work = runBatch().then((rs) => rs.join('\n\n---\n\n'))
           const id = backgroundTasks!.register(`${subtasks.length} subtarefa(s)`, work)
           return lang === 'en'
-            ? `🚀 Delegated ${subtasks.length} subtask(s) to BACKGROUND subagents (batch ${id}). They are running now; CONTINUE with other useful work — their results will be injected automatically when ready (and awaited before you finish if still pending). Do NOT stop and wait.`
-            : `🚀 Deleguei ${subtasks.length} subtarefa(s) a subagentes em BACKGROUND (lote ${id}). Eles estão rodando agora; CONTINUE com outro trabalho útil — os resultados serão injetados automaticamente quando prontos (e aguardados antes de você concluir, se ainda pendentes). NÃO pare para esperar.`
+            ? `🚀 Delegated ${subtasks.length} subtask(s) to BACKGROUND subagents (batch ${id}, ${maxConc} running at a time). They are running now; CONTINUE with other useful work — their results will be injected automatically when ready (and awaited before you finish if still pending). Do NOT stop and wait.`
+            : `🚀 Deleguei ${subtasks.length} subtarefa(s) a subagentes em BACKGROUND (lote ${id}, ${maxConc} por vez). Eles estão rodando agora; CONTINUE com outro trabalho útil — os resultados serão injetados automaticamente quando prontos (e aguardados antes de você concluir, se ainda pendentes). NÃO pare para esperar.`
         }
 
-        const results = await runWithConcurrency(subtasks.map((st: any, i: number) => runOne(st, i)), concurrency)
+        const results = await runBatch()
         return results.join('\n\n---\n\n')
       }
       return 'Ferramenta nao reconhecida'

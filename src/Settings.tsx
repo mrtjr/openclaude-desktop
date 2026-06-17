@@ -511,6 +511,23 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                       ? 'É só uma rede de segurança contra um Ollama travado, não um limite de trabalho. Em 0 (sem limite), uma tarefa grande nunca é cortada — mas se o Ollama realmente travar, pode congelar.'
                       : 'Just a safety net against a stuck Ollama, not a work limit. At 0 (no limit) a big task is never cut — but a truly stuck Ollama can freeze.'}
                   </p>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', fontSize: '0.85rem', flexWrap: 'wrap' }}>
+                    <span>{local.language === 'pt' ? 'Máx. de subagentes ao mesmo tempo:' : 'Max subagents at a time:'}</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={8}
+                      value={local.subagentConcurrency ?? 2}
+                      onChange={(e) => setLocal(s => ({ ...s, subagentConcurrency: Math.max(1, Math.round(Number(e.target.value) || 1)) }))}
+                      style={{ padding: '6px 8px', fontSize: '0.85rem', width: '90px' }}
+                    />
+                  </div>
+                  <p style={{ fontSize: '0.74rem', color: 'var(--color-text-muted, #888)', margin: '4px 0 0' }}>
+                    {local.language === 'pt'
+                      ? 'Quantos workers Ollama rodam ao mesmo tempo em todo o app. Muitos modelos locais de uma vez engarrafam/travam a máquina — 2 é o recomendado. A IA principal não delega mais enquanto o limite estiver ocupado.'
+                      : 'How many Ollama workers run at once across the whole app. Too many local models at once jam/freeze the machine — 2 is recommended. The main AI won’t delegate more while the limit is full.'}
+                  </p>
                 </div>
               </div>
             </div>

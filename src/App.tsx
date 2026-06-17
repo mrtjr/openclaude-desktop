@@ -4,6 +4,7 @@ import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, ArrowD
 import { loadSettings, type AppSettings } from './settingsConfig'
 import { BackgroundSubagentRegistry } from './utils/backgroundSubagents'
 import { SubagentActivityStore } from './utils/subagentActivity'
+import { Semaphore } from './utils/semaphore'
 import { SubagentActivityPanel } from './components/SubagentActivityPanel'
 import type { Persona } from './PersonaEngine'
 // Small / hot-path components — eager
@@ -488,6 +489,9 @@ export default function App() {
   // transições; o painel abaixo do chat assina via useSyncExternalStore.
   const subagentActivity = useMemo(() => new SubagentActivityStore(), [])
   const subagentRuns = useSyncExternalStore(subagentActivity.subscribe, subagentActivity.getSnapshot)
+  // Gate de concorrência GLOBAL dos subagentes Ollama (v2.67.0): no máximo N
+  // workers ao mesmo tempo em todo o app — evita engarrafar a máquina.
+  const subagentLimiter = useMemo(() => new Semaphore(2), [])
 
   const toolExec = useToolExecution({
     settings: effectiveSettings,
@@ -500,6 +504,7 @@ export default function App() {
     callMcpTool: mcp.callMcpTool,
     backgroundTasks,
     subagentActivity,
+    subagentLimiter,
   })
 
   // Matching semântico de skills (Fase 5, v2.56.0) — opt-in, best-effort (Ollama).
