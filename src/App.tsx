@@ -1995,8 +1995,12 @@ export default function App() {
             {showSubagentPanel && (subagentRuns.length > 0
               ? <SubagentActivityPanel runs={subagentRuns} language={settings.language} />
               : <div className="subagent-empty">{settings.language === 'en'
-                  ? 'No subagents active yet. They show up here when the AI delegates research.'
-                  : 'Nenhum subagente em atividade ainda. Eles aparecem aqui quando a IA delega pesquisas.'}</div>)}
+                  ? (settings.scoutEnabled
+                      ? 'No subagents active right now. They appear here when the AI delegates research, or when the proactive scout researches while the AI works.'
+                      : 'No subagents active. They appear when the AI delegates research. Tip: enable “Proactive research (scout)” in Settings so an idle subagent researches up-to-date info while the AI works.')
+                  : (settings.scoutEnabled
+                      ? 'Nenhum subagente ativo agora. Eles aparecem aqui quando a IA delega pesquisas, ou quando o scout proativo pesquisa enquanto a IA trabalha.'
+                      : 'Nenhum subagente ativo. Eles aparecem quando a IA delega pesquisas. Dica: ative a “Pesquisa proativa (scout)” nas Configurações para um subagente ocioso pesquisar dados atualizados enquanto a IA trabalha.')}</div>)}
             <div className="input-wrapper">
               <input type="file" id="image-upload" accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
                 const file = e.target.files?.[0]

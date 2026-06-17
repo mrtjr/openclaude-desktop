@@ -214,7 +214,7 @@ export function useChat({
     stopRequestedRef.current = false
     backgroundTasks?.clear() // novo turno começa sem lotes de turnos anteriores
     subagentActivity?.clear() // painel de atividade zera a cada turno
-    scoutController?.reset(!!settings.scoutEnabled && isAgentMode) // scout proativo (opt-in, só agêntico)
+    scoutController?.reset(!!settings.scoutEnabled) // scout proativo (opt-in; roda em qualquer turno com tema — não exige "modo agente")
 
     // ─── Aprendizado de preferências (Fase 2, v2.53.0) ───────────────
     // Captura preferências EXPLÍCITAS desta mensagem e, após reforço (≥2

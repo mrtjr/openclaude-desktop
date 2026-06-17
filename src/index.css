@@ -880,7 +880,7 @@ body {
 .sg-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 .sg-dot.idle { width: 11px; height: 11px; background: transparent; border: 2px solid var(--text-muted, #8a8a96); opacity: 0.65; }
 @keyframes oc-ring-spin { to { transform: rotate(360deg) } }
-.subagent-empty { max-width: 600px; margin: 0 0 10px; padding: 10px 13px; font-size: 0.8rem; color: var(--text-muted); background: var(--bg-secondary, rgba(255,255,255,0.025)); border: 1px solid var(--color-border, #2a2a35); border-radius: 12px; }
+.subagent-empty { max-width: 820px; margin: 0 auto 10px; padding: 10px 13px; font-size: 0.8rem; color: var(--text-muted); background: var(--bg-secondary, rgba(255,255,255,0.025)); border: 1px solid var(--color-border, #2a2a35); border-radius: 12px; }
 
 @media (max-width: 700px) { .sidebar { width: 0 !important; overflow: hidden; border: none; } }
 

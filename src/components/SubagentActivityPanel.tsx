@@ -133,7 +133,7 @@ export function SubagentActivityPanel({ runs, language }: Props) {
 
   return (
     <div style={{
-      maxWidth: 600, margin: '0 0 10px', overflow: 'hidden',
+      maxWidth: 820, margin: '0 auto 10px', overflow: 'hidden',
       background: 'var(--bg-secondary, rgba(255,255,255,0.025))',
       border: '1px solid var(--color-border, #2a2a35)', borderRadius: 12,
       boxShadow: '0 2px 10px rgba(0,0,0,0.18)',
