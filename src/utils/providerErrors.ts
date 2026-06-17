@@ -20,6 +20,7 @@ export type ProviderErrorKind =
   | 'context'
   | 'not_found'
   | 'stall'
+  | 'bad_response'
   | 'unknown'
 
 export interface ProviderErrorInfo {
@@ -44,12 +45,30 @@ export function classifyProviderError(raw: string | undefined): ProviderErrorInf
 
   if (has('overloaded', '529', 'http 503', 'error 503', 'http 502', 'error 502',
           'http 500', 'error 500', 'service unavailable', 'bad gateway',
-          'internal server error', 'server_error'))
+          'internal server error', 'server_error',
+          // 504 (gateway timeout) é transitório do lado do servidor — checado
+          // aqui, ANTES do bloco de timeout (que casaria "gateway timeout" como
+          // não-retryable). 'gateway timeout' contém "timeout" de propósito.
+          '504', 'http 504', 'error 504', 'gateway timeout', 'gateway time-out', 'gateway_timeout'))
     return { kind: 'overloaded', retryable: true }
 
   if (has('econnreset', 'enotfound', 'econnrefused', 'eai_again', 'epipe',
-          'socket hang up', 'network', 'fetch failed', 'getaddrinfo'))
+          'socket hang up', 'network', 'fetch failed', 'getaddrinfo',
+          // alcance/roteamento + TLS: também são falhas de conexão (retryable).
+          'enetunreach', 'ehostunreach', 'econnaborted', 'connection reset',
+          'connection refused', 'connection closed', 'tls', 'ssl',
+          'certificate', 'self signed', 'self-signed', 'err_cert',
+          'unable to verify', 'unable to get local issuer'))
     return { kind: 'network', retryable: true }
+
+  // Resposta inválida/incompleta do provedor (JSON truncado/garbled, corpo
+  // não-JSON) — vinha do main.js como "… response parse error: …" e caía em
+  // 'unknown' (categoria nº1 da telemetria). É transitório: a 2ª tentativa
+  // costuma vir íntegra. Retryable, com mensagem própria e honesta.
+  if (has('parse error', 'response parse', 'json parse', 'unexpected token',
+          'unexpected end of', 'invalid json', 'not valid json', 'malformed',
+          'jsondecodeerror'))
+    return { kind: 'bad_response', retryable: true }
 
   // Stream stall (watchdog em electron/main.js): o provider mandou keep-alive
   // mas parou de produzir conteúdo. Diferente de timeout — é recuperável
@@ -125,6 +144,10 @@ const MESSAGES: Record<ProviderErrorKind, { pt: string; en: string }> = {
   stall: {
     pt: 'O provedor travou no meio da resposta (parou de enviar conteúdo).',
     en: 'The provider stalled mid-response (stopped sending content).',
+  },
+  bad_response: {
+    pt: 'O provedor retornou uma resposta inválida ou incompleta. Tente novamente — se persistir, troque de modelo/provedor.',
+    en: 'The provider returned an invalid or incomplete response. Try again — if it persists, switch model/provider.',
   },
   unknown: { pt: '', en: '' },
 }

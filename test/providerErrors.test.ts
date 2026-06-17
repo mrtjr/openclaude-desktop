@@ -50,6 +50,32 @@ describe('classifyProviderError', () => {
     }
   })
 
+  it('504 / gateway timeout → overloaded (retryable), não timeout', () => {
+    // "gateway timeout" contém "timeout" mas é transitório do servidor — a
+    // checagem de overloaded vem ANTES da de timeout.
+    expect(classifyProviderError('HTTP 504 Gateway Timeout')).toEqual({ kind: 'overloaded', retryable: true })
+    expect(classifyProviderError('error 504').kind).toBe('overloaded')
+  })
+
+  it('TLS/cert/inalcançável → network (retryable)', () => {
+    for (const msg of ['ENETUNREACH', 'self signed certificate', 'unable to verify the first certificate', 'ERR_CERT_AUTHORITY_INVALID', 'TLS handshake failed']) {
+      expect(classifyProviderError(msg)).toEqual({ kind: 'network', retryable: true })
+    }
+  })
+
+  it('resposta inválida/incompleta → bad_response (retryable), não unknown', () => {
+    for (const msg of [
+      'Ollama response parse error: Unexpected token < in JSON',
+      'provider response parse error',
+      'Unexpected end of JSON input',
+      'malformed response',
+    ]) {
+      expect(classifyProviderError(msg)).toEqual({ kind: 'bad_response', retryable: true })
+    }
+    // mensagem humanizada é específica (não o dump cru)
+    expect(humanizeProviderError('Ollama response parse error: x', 'pt')).toContain('inválida ou incompleta')
+  })
+
   it('classifica stall pela string real do watchdog e é retryável; não colide com timeout', () => {
     // A mensagem real (electron/main.js) NÃO contém "timeout" → não vira 'timeout'.
     const real = 'Stream travado: provider parou de enviar conteúdo por 150s (só keep-alive)'
