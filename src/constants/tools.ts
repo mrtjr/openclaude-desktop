@@ -442,6 +442,36 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'computer_click',
+      // Fusão do ORION no chat (v2.78.0): clique por coordenada no DESKTOP real.
+      description: 'Left-click at pixel coordinates (x, y) on the Windows DESKTOP (the user\'s real screen — NOT the in-app browser). Use capture_screen FIRST to see the screen and locate where to click, then click. This is what lets you drive desktop apps visually (see → click → see again) in your own step loop.',
+      parameters: {
+        type: 'object',
+        properties: {
+          x: { type: 'number', description: 'X coordinate in screen pixels (from the left edge)' },
+          y: { type: 'number', description: 'Y coordinate in screen pixels (from the top edge)' }
+        },
+        required: ['x', 'y']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'computer_scroll',
+      // Fusão do ORION no chat (v2.78.0): rolar a janela ativa do desktop.
+      description: 'Scroll the active Windows DESKTOP window with the mouse wheel. Positive amount scrolls up, negative scrolls down (e.g. -3 = three notches down). Use between capture_screen calls to reveal off-screen content.',
+      parameters: {
+        type: 'object',
+        properties: {
+          amount: { type: 'number', description: 'Wheel notches: positive = up, negative = down. Default -3 (down).' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'git_command',
       description: 'Run a git command in a specified directory. Supports: status, diff, log, add, commit, branch, checkout, stash. Use for version control awareness.',
       parameters: {
@@ -607,6 +637,9 @@ export const SAFE_TOOLS = new Set([
 export const DANGEROUS_TOOLS = new Set([
   'execute_command', 'write_file', 'edit_file', 'open_file_or_url', 'git_command',
   'computer_open_app', 'computer_type_text', 'computer_press_keys',
+  // ORION no chat (v2.78.0): clique/scroll no desktop real — gateados pela
+  // permissão como os demais computer_* (bypass libera p/ power users).
+  'computer_click', 'computer_scroll',
   'browser_navigate', 'browser_click', 'browser_type', 'delegate_subtasks',
   // run_workflow pode rodar comandos/escrever arquivos → aprovação como unidade
   'run_workflow',

@@ -372,6 +372,19 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         const r = await window.electron.orionRunAction({ type: 'key_press', params: { key: args.keys } })
         return r.error ? `Erro ao enviar teclas: ${r.error}` : `Teclas enviadas: ${args.keys}`
       }
+      if (name === 'computer_click') {
+        // Fusão do ORION (v2.78.0): clique por coordenada no desktop real
+        // (reusa o IPC orion-run-action). Ver capture_screen para localizar.
+        const x = Math.round(Number(args.x)), y = Math.round(Number(args.y))
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return 'computer_click: x e y numéricos são obrigatórios (use capture_screen para localizar).'
+        const r = await window.electron.orionRunAction({ type: 'click', params: { x, y } })
+        return r.error ? `Erro ao clicar em (${x}, ${y}): ${r.error}` : `Clique em (${x}, ${y}).`
+      }
+      if (name === 'computer_scroll') {
+        const amount = Number.isFinite(Number(args.amount)) ? Math.round(Number(args.amount)) : -3
+        const r = await window.electron.orionRunAction({ type: 'scroll', params: { delta: amount } })
+        return r.error ? `Erro ao rolar: ${r.error}` : `Rolagem (${amount > 0 ? 'cima' : 'baixo'}, ${Math.abs(amount)}).`
+      }
       if (name === 'git_command') {
         const result = await window.electron.gitCommand({ command: args.command, cwd: args.cwd })
         if (result.error) return `Git error: ${result.error}`
