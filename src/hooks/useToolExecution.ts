@@ -130,7 +130,7 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         return formatWriteResult(result, args.path, content.length)
       }
       if (name === 'edit_file') {
-        const result = await window.electron.editFile({ filePath: args.path, oldString: args.old_string, newString: args.new_string ?? '' })
+        const result = await window.electron.editFile({ filePath: args.path, oldString: args.old_string, newString: args.new_string ?? '', replaceAll: args.replace_all === true })
         return formatEditResult(result, args.path)
       }
       if (name === 'search_files') {

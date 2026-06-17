@@ -137,8 +137,9 @@ export const TOOLS = [
         type: 'object',
         properties: {
           path: { type: 'string', description: 'The file path to edit' },
-          old_string: { type: 'string', description: 'The exact text to find (must be unique in the file)' },
-          new_string: { type: 'string', description: 'The text to replace it with' }
+          old_string: { type: 'string', description: 'The exact text to find (must be unique in the file UNLESS replace_all is true)' },
+          new_string: { type: 'string', description: 'The text to replace it with' },
+          replace_all: { type: 'boolean', description: 'Replace ALL occurrences of old_string instead of requiring a single unique match. Use for renaming a variable/string repeated across the file. Default false.' }
         },
         required: ['path', 'old_string', 'new_string']
       }

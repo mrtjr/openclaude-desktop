@@ -14,7 +14,7 @@ interface Window {
     readFile: (path: string) => Promise<{ content: string | null; error: string | null }>
     getPathForFile?: (file: File) => string
     writeFile: (params: { filePath: string; content: string }) => Promise<{ error: string | null; existed?: boolean; bytes?: number }>
-    editFile: (params: { filePath: string; oldString: string; newString: string }) => Promise<{ error: string | null; replaced?: boolean; occurrences?: number }>
+    editFile: (params: { filePath: string; oldString: string; newString: string; replaceAll?: boolean }) => Promise<{ error: string | null; replaced?: boolean; occurrences?: number }>
     searchFiles: (params: { query: string; path?: string; exts?: string[] | null; maxResults?: number; caseSensitive?: boolean }) => Promise<{ matches?: { file: string; line: number; text: string }[]; filesScanned?: number; truncated?: boolean; error?: string | null }>
     undoLastWrite: () => Promise<{ error: string | null; restored: string | null }>
     listSnapshots: () => Promise<{ filePath: string; timestamp: number; fileName: string }[]>

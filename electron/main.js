@@ -583,7 +583,7 @@ ipcMain.handle('write-file', async (event, { filePath, content }) => {
 // ─── IPC: Edit file (surgical old_string → new_string, unique match) ──
 // Lets a non-frontier model change part of a large file without regenerating
 // it whole. Reuses the same snapshot/undo as write-file.
-ipcMain.handle('edit-file', async (event, { filePath, oldString, newString }) => {
+ipcMain.handle('edit-file', async (event, { filePath, oldString, newString, replaceAll }) => {
   try {
     if (!isPathSafe(filePath)) {
       return { error: 'Access denied: path is in a protected directory' }
@@ -600,10 +600,13 @@ ipcMain.handle('edit-file', async (event, { filePath, oldString, newString }) =>
     const parts = content.split(oldString)
     const occurrences = parts.length - 1
     if (occurrences === 0) return { error: 'not_found', occurrences: 0 }
-    if (occurrences > 1) return { error: 'ambiguous', occurrences }
+    // replaceAll (estilo Edit do Claude Code, v2.82.0): com replaceAll, a
+    // ambiguidade é INTENCIONAL — substitui todas; sem ele, mantém a exigência
+    // de match único (segurança contra edição acidental no lugar errado).
+    if (occurrences > 1 && !replaceAll) return { error: 'ambiguous', occurrences }
     snapshotFile(filePath)
     fs.writeFileSync(filePath, parts.join(newString ?? ''), 'utf-8')
-    return { error: null, replaced: true, occurrences: 1 }
+    return { error: null, replaced: true, occurrences }
   } catch (e) {
     return { error: e.message }
   }

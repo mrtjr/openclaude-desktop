@@ -37,7 +37,10 @@ export function formatWriteResult(r: WriteIpcResult, path: string, contentLength
 
 export function formatEditResult(r: EditIpcResult, path: string): string {
   if (r && r.replaced && !r.error) {
-    return `Arquivo editado: ${path}`
+    // replace_all: informa quantas ocorrências foram trocadas (v2.82.0).
+    return (r.occurrences ?? 1) > 1
+      ? `Arquivo editado: ${path} (${r.occurrences} ocorrências substituídas)`
+      : `Arquivo editado: ${path}`
   }
   switch (r?.error) {
     case 'not_found':

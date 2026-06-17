@@ -42,6 +42,12 @@ describe('formatEditResult', () => {
     expect(isToolError(out)).toBe(false)
   })
 
+  it('replace_all: reporta a contagem de ocorrências substituídas (v2.82.0)', () => {
+    const out = formatEditResult({ error: null, replaced: true, occurrences: 5 }, 'a.ts')
+    expect(out).toBe('Arquivo editado: a.ts (5 ocorrências substituídas)')
+    expect(isToolError(out)).toBe(false)
+  })
+
   it('gives an actionable message when the snippet is not found', () => {
     const out = formatEditResult({ error: 'not_found', occurrences: 0 }, 'a.ts')
     expect(out).toContain('não foi encontrado')
