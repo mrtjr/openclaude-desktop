@@ -14,6 +14,9 @@ interface AppSettings {
   modalApiKey: string; modalModel: string; modalHostname: string
   language: 'pt' | 'en'
   temperature: number; maxTokens: number
+  /** Modelo de embedding compartilhado com a ferramenta rag_search do chat
+   *  (v2.80.0) — indexar e buscar PRECISAM usar o mesmo. */
+  ragEmbeddingModel?: string
 }
 
 interface RAGPanelProps {
@@ -75,7 +78,9 @@ export default function RAGPanel({
   const [tab, setTab] = useState<'text' | 'file'>('text')
   const [textInput, setTextInput] = useState('')
   const [textSource, setTextSource] = useState('texto-manual')
-  const [embeddingModel, setEmbeddingModel] = useState('mxbai-embed-large')
+  // Inicia do modelo configurado em Settings (compartilhado com o rag_search do
+  // chat) para indexar e buscar com o MESMO modelo (v2.80.0).
+  const [embeddingModel, setEmbeddingModel] = useState(settings.ragEmbeddingModel || 'mxbai-embed-large')
   const [allChunks, setAllChunks] = useState<RagChunk[]>([])
   const [files, setFiles] = useState<RagFile[]>([])
   const [indexing, setIndexing] = useState(false)

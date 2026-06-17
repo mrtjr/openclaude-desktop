@@ -355,6 +355,44 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                 </p>
               </div>
 
+              {/* Modelo de embedding do RAG (fusão do RAGPanel no chat, v2.73.0) */}
+              <div className="settings-group">
+                <label className="settings-label">
+                  <span>{local.language === 'en' ? 'RAG embedding model (Ollama)' : 'Modelo de embedding do RAG (Ollama)'}</span>
+                </label>
+                <input
+                  type="text"
+                  value={local.ragEmbeddingModel ?? ''}
+                  onChange={(e) => setLocal(s => ({ ...s, ragEmbeddingModel: e.target.value }))}
+                  placeholder="mxbai-embed-large"
+                  className="settings-input"
+                />
+                <p className="settings-hint">
+                  {local.language === 'en'
+                    ? 'Embedding model the chat\'s rag_search tool uses to query your indexed knowledge base. It MUST match the model you indexed with in the RAG panel — different models live in different vector spaces and scores become garbage. Empty = mxbai-embed-large (the panel default).'
+                    : 'Modelo de embedding que a ferramenta rag_search do chat usa para consultar sua base indexada. Ele PRECISA ser o mesmo com que você indexou no painel RAG — modelos diferentes vivem em espaços vetoriais diferentes e o score vira lixo. Vazio = mxbai-embed-large (padrão do painel).'}
+                </p>
+              </div>
+
+              {/* Modelo de visão (fusão do VisionMode no chat, v2.74.0) */}
+              <div className="settings-group">
+                <label className="settings-label">
+                  <span>{local.language === 'en' ? 'Vision model (Ollama)' : 'Modelo de visão (Ollama)'}</span>
+                </label>
+                <input
+                  type="text"
+                  value={local.visionModel ?? ''}
+                  onChange={(e) => setLocal(s => ({ ...s, visionModel: e.target.value }))}
+                  placeholder="llava"
+                  className="settings-input"
+                />
+                <p className="settings-hint">
+                  {local.language === 'en'
+                    ? 'Vision model the chat\'s capture_screen / analyze_image tools use when the provider is Ollama (your chat model is usually text-only). Needs a multimodal model installed (e.g. llava, llama3.2-vision). Empty = llava. On cloud providers the configured model (gpt-4o/gemini/claude) is used instead.'
+                    : 'Modelo de visão que as ferramentas capture_screen / analyze_image do chat usam quando o provider é Ollama (seu modelo de chat costuma ser só-texto). Precisa de um modelo multimodal instalado (ex.: llava, llama3.2-vision). Vazio = llava. Na nuvem usa-se o modelo configurado (gpt-4o/gemini/claude).'}
+                </p>
+              </div>
+
               {/* Esforço de raciocínio (v2.25.0) */}
               <div className="settings-group">
                 <label className="settings-label">
