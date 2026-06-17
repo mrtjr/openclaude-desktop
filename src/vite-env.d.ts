@@ -37,6 +37,9 @@ interface Window {
     saveDialog: (opts: any) => Promise<{ filePath: string | null; error: string | null }>
     openFileDialog: (opts?: any) => Promise<{ filePaths: string[]; canceled: boolean }>
     openFolderDialog: () => Promise<{ path: string | null; error?: string | null }>
+    reportLoad: (params: { id: string }) => Promise<{ content: string; error?: string | null }>
+    reportSave: (params: { id: string; content: string }) => Promise<{ error: string | null }>
+    reportDelete: (params: { id: string }) => Promise<{ error: string | null }>
     readDroppedFile: (path: string) => Promise<{ content: string | null; name?: string; error: string | null }>
     exportUserData: () => Promise<{ files: Record<string, unknown>; error: string | null }>
     importUserData: (payload: { files: Record<string, unknown> }) => Promise<{ restored: number; error: string | null }>

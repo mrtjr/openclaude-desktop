@@ -50,6 +50,9 @@ contextBridge.exposeInMainWorld('electron', {
   saveDialog: (opts) => ipcRenderer.invoke('save-dialog', opts),
   openFileDialog: (opts) => ipcRenderer.invoke('open-file-dialog', opts),
   openFolderDialog: () => ipcRenderer.invoke('open-folder-dialog'),
+  reportLoad: (params) => ipcRenderer.invoke('report-load', params),
+  reportSave: (params) => ipcRenderer.invoke('report-save', params),
+  reportDelete: (params) => ipcRenderer.invoke('report-delete', params),
 
   // Dropped files
   readDroppedFile: (path) => ipcRenderer.invoke('read-dropped-file', path),

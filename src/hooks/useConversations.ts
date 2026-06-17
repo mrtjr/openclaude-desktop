@@ -123,6 +123,9 @@ export function useConversations() {
   }, [conversations, debouncedSearch, pinnedConvs])
 
   const deleteConversation = useCallback((id: string) => {
+    // Apaga o relatório .md vinculado a esta conversa (v2.85.0) — o registro
+    // não sobrevive à conversa nem vaza para outra.
+    window.electron.reportDelete?.({ id }).catch(() => { /* best-effort */ })
     setConversations(prev => {
       const remaining = prev.filter(c => c.id !== id)
       if (id === activeConvId) {

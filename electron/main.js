@@ -53,6 +53,14 @@ const AUDIT_LOG_PATH = path.join(app.getPath('userData'), 'audit-log.json')
 const DEV_INSIGHTS_PATH = path.join(app.getPath('userData'), 'dev-insights.json')
 const DEV_INSIGHTS_DIGEST_PATH = path.join(app.getPath('userData'), 'dev-insights-digest.json')
 const DEV_INSIGHTS_CAP = 5000
+// Relatórios .md POR CONVERSA (continuidade anti-refazer, v2.85.0) — um arquivo
+// por conversa, vinculado pelo id; apagado junto com a conversa; nunca lido por
+// outra conversa.
+const REPORTS_DIR = path.join(app.getPath('userData'), 'reports')
+function reportPath(id) {
+  const safe = String(id || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80)
+  return path.join(REPORTS_DIR, `${safe || 'sem-id'}.md`)
+}
 const DEV_INSIGHTS_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
 
 // ─── Analytics Engine (MCD + MASA) ──────────────────────────────────
@@ -760,6 +768,32 @@ ipcMain.handle('dev-insights-clear', async () => {
   } catch (e) {
     return { error: e.message }
   }
+})
+
+// ─── IPC: Relatório .md por conversa (continuidade, v2.85.0) ────────
+ipcMain.handle('report-load', async (event, { id } = {}) => {
+  try {
+    const p = reportPath(id)
+    return { content: fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : '', error: null }
+  } catch (e) { return { content: '', error: e.message } }
+})
+ipcMain.handle('report-save', async (event, { id, content } = {}) => {
+  try {
+    fs.mkdirSync(REPORTS_DIR, { recursive: true })
+    const p = reportPath(id)
+    // tmp + rename → escrita atômica (uma escrita rasgada não corrompe o relatório).
+    const tmp = p + '.tmp'
+    fs.writeFileSync(tmp, String(content ?? ''), 'utf-8')
+    fs.renameSync(tmp, p)
+    return { error: null }
+  } catch (e) { return { error: e.message } }
+})
+ipcMain.handle('report-delete', async (event, { id } = {}) => {
+  try {
+    const p = reportPath(id)
+    if (fs.existsSync(p)) fs.unlinkSync(p)
+    return { error: null }
+  } catch (e) { return { error: e.message } }
 })
 
 // ─── IPC: Web search (DuckDuckGo HTML scraping) ─────────────────────

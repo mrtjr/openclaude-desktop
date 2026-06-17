@@ -21,7 +21,9 @@ import { detectFreshness, buildDateLine, FRESHNESS_RULE, buildFreshnessNudge } f
 import { buildRagRouterHint, type RagStats } from '../utils/rag'
 import { buildWorkflowRouterHint, type WorkflowSummary } from '../utils/workflows'
 import { buildPersonaRouterHint, type PersonaLike } from '../utils/personas'
+import { buildTurnEntry, appendTurn, renderReportForInjection, type ReportAction } from '../utils/conversationReport'
 import { toolCallSummary } from '../utils/toolDisplay'
+import { isToolError } from '../utils/toolPolicy'
 import { nextStreamPhase, classifyDelta, createPhaseProfiler, type StreamPhase } from '../utils/streamPhase'
 import { runCompaction, mergeSummary, planEmergencyCompaction } from '../services/compaction'
 import { renderWorkingMemory, renderPersistentMemory } from '../utils/memoryRender'
@@ -285,6 +287,11 @@ export function useChat({
     // do 'chat/complete'; turno sem complete = zumbi no digest.
     beginInsightTurn()
     let turnOutcome: 'ok' | 'error' | 'aborted' = 'ok'
+    // Relatório .md por conversa (v2.85.0): carregado no início (injetado para a
+    // IA continuar sem refazer) e acrescido com o passo a passo deste turno no
+    // fim. `turnFinalAnswer` guarda a última resposta committada do turno.
+    let reportMd = ''
+    let turnFinalAnswer = ''
 
     // Checkpoint/rewind (v2.37.0): marca o estado dos arquivos no início do
     // turno. Se o turno alterar arquivos, o finally oferece "Reverter" — como o
@@ -305,6 +312,7 @@ export function useChat({
       model: finalModel,
       provider: finalProvider,
       responseTimes: [] as number[],
+      actions: [] as ReportAction[], // passo a passo p/ o relatório .md (v2.85.0)
     }
 
     try {
@@ -537,9 +545,16 @@ export function useChat({
         }
       }
 
+      // Relatório .md DESTA conversa (v2.85.0): registro completo e fiel do que
+      // já foi feito. Carregado do disco (vinculado ao convId, nunca de outro
+      // chat) e injetado PRIMEIRO — a IA continua de onde parou sem refazer.
+      try { reportMd = (await window.electron.reportLoad?.({ id: convId }))?.content || '' } catch { /* sem relatório ainda */ }
+
       // Inject memory context (persistent memory was already loaded above,
       // pre-budget, via renderPersistentMemory — single source with the panel)
       const memoryContext: string[] = []
+      const reportInject = renderReportForInjection(reportMd, lang)
+      if (reportInject) memoryContext.push(reportInject)
       if (contextSummary) {
         memoryContext.push(`[CONTEXT SUMMARY — earlier conversation]\n${contextSummary}`)
       }
@@ -1122,6 +1137,7 @@ export function useChat({
               ...(turnThinking ? { thinking: turnThinking } : {}),
               timestamp: new Date()
             }
+            turnFinalAnswer = safeContent || turnFinalAnswer // p/ o relatório .md
             setConversations(prev => prev.map(c =>
               c.id !== convId ? c : { ...c, messages: [...c.messages, finalMsg] }
             ))
@@ -1296,6 +1312,7 @@ export function useChat({
               ...(turnThinking ? { thinking: turnThinking } : {}),
               timestamp: new Date()
             }
+            turnFinalAnswer = safeContent || turnFinalAnswer // p/ o relatório .md
             setConversations(prev => prev.map(c =>
               c.id !== convId ? c : { ...c, messages: [...c.messages, finalMsg] }
             ))
@@ -1366,6 +1383,23 @@ export function useChat({
       if (stopRequestedRef.current) turnOutcome = 'aborted'
       logInsight('chat', 'complete', { ms: avgRT, totalMs: Date.now() - sessionTracker.startTime, steps: sessionTracker.agentSteps, outcome: turnOutcome })
       endInsightTurn()
+
+      // Relatório .md da conversa (v2.85.0): acrescenta o passo a passo DESTE
+      // turno (pedido + ações + entrega) e persiste — registro fiel e completo
+      // que o próximo turno lê para continuar sem refazer. Só registra turnos
+      // que de fato rodaram (não os abortados sem nenhuma ação/resposta).
+      try {
+        const acts = sessionTracker.actions || []
+        if (turnFinalAnswer.trim() || acts.length) {
+          const conv = conversationsRef.current.find(c => c.id === convId)
+          const n = (reportMd.match(/## Turno /g) || []).length + 1
+          const now = new Date()
+          const dateLabel = `${now.toISOString().slice(0, 10)} ${now.toTimeString().slice(0, 5)}`
+          const entry = buildTurnEntry({ n, dateLabel, userMessage: inputText, actions: acts, finalAnswer: turnFinalAnswer })
+          const nextMd = appendTurn(reportMd, conv?.title || 'Conversa', entry)
+          await window.electron.reportSave?.({ id: convId, content: nextMd })
+        }
+      } catch (e) { console.warn('[useChat] report save:', e) }
 
       // Checkpoint/rewind: se o turno alterou arquivos, oferece reverter tudo
       // de uma vez (restaura modificados e apaga os criados neste turno).
@@ -1492,6 +1526,9 @@ export function useChat({
         recentToolCalls.splice(0, recentToolCalls.length - CIRCUIT_WINDOW)
       }
       toolResults.push({ toolCallId: tc.id, name: tc.function.name, result })
+      // Passo a passo p/ o relatório .md (v2.85.0): registra cada ferramenta
+      // com seu argumento-resumo e se deu certo (✓/✕).
+      tracker.actions?.push({ tool: tc.function.name, detail: toolCallSummary(tc.function.name, args), ok: !isToolError(result, tc.function.name) })
     }
 
     thinkingMsg.toolResults = toolResults
