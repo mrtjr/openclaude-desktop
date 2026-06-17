@@ -30,6 +30,7 @@ import { compressOutput } from '../utils/outputCompression'
 import { formatRagResults, DEFAULT_RAG_EMBED_MODEL } from '../utils/rag'
 import { resolveVisionTarget, formatVisionResult } from '../utils/vision'
 import { parseCompareSpecs, providerApiKey, extractChatText, formatComparison, type CompareResult } from '../utils/compareModels'
+import { findWorkflow, topoOrder, formatWorkflowRun, type WfRunEntry } from '../utils/workflows'
 
 interface UseToolExecutionOptions {
   settings: AppSettings
@@ -234,6 +235,80 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
           }
         }))
         return formatComparison(prompt, results)
+      }
+      if (name === 'run_workflow') {
+        // Fusão do WorkflowBuilder (v2.76.0): roda um workflow SALVO pelo nome.
+        // A tool inteira é gateada por aprovação (DANGEROUS_TOOLS) — uma
+        // aprovação para o workflow nomeado, que o próprio usuário criou; por
+        // isso aqui dentro chamamos o IPC direto. Ver utils/workflows.ts.
+        const wfName = String(args.name ?? '').trim()
+        if (!wfName) return 'run_workflow: faltou o parâmetro "name".'
+        const loaded = await window.electron.workflowLoad()
+        const list = loaded?.workflows || []
+        const wf = findWorkflow(list as any, wfName)
+        if (!wf) {
+          const names = list.map((w: any) => w?.name).filter(Boolean).join(', ')
+          return `Workflow "${wfName}" não encontrado. Salvos: ${names || '(nenhum)'}.`
+        }
+        const order = topoOrder(wf.nodes || [], wf.edges || [])
+        if (!order.length) return `O workflow "${wf.name}" não tem nós para executar.`
+        const entries: WfRunEntry[] = []
+        let prevOutput = ''
+        for (const nd of order) {
+          try {
+            let output = ''
+            if (nd.type === 'trigger') {
+              output = 'gatilho acionado'
+            } else if (nd.type === 'prompt') {
+              const tpl = String(nd.config.promptTemplate || '{{input}}').replace(/{{input}}/g, prevOutput)
+              const provider = nd.config.provider || settings.provider
+              const res = await window.electron.providerChat({
+                provider, apiKey: providerApiKey(settings, provider), model: nd.config.model || 'llama3',
+                messages: [{ role: 'user', content: tpl }], temperature: settings.temperature,
+                max_tokens: settings.maxTokens, modalHostname: settings.modalHostname, customBaseUrl: settings.customBaseUrl,
+              })
+              if (res?.error) throw new Error(res.error)
+              output = extractChatText(res)
+            } else if (nd.type === 'tool') {
+              const tn = nd.config.toolName || 'exec_command'
+              if (tn === 'exec_command') {
+                const r = await window.electron.execCommand({ command: nd.config.params?.command || '', cwd: projectCwdRef.current })
+                output = formatExecResult(r)
+              } else if (tn === 'web_search') {
+                const r = await window.electron.webSearch(String(nd.config.params?.query || prevOutput).replace(/{{input}}/g, prevOutput))
+                output = r.result || r.error || ''
+              } else if (tn === 'read_file') {
+                const r = await window.electron.readFile(nd.config.params?.filePath || '')
+                output = r.content ?? (r.error || '')
+              } else if (tn === 'write_file') {
+                const content = String(nd.config.params?.content || prevOutput).replace(/{{input}}/g, prevOutput)
+                const r = await window.electron.writeFile({ filePath: nd.config.params?.filePath || '', content })
+                output = r.error ? `Erro: ${r.error}` : 'arquivo escrito'
+              }
+            } else if (nd.type === 'condition') {
+              const expr = String(nd.config.expression || '')
+              const matches = prevOutput.toLowerCase().includes(expr.toLowerCase())
+              if (!matches) { entries.push({ label: nd.label, status: 'skipped', output: `condição falsa: "${expr}"` }); continue }
+              output = `condição verdadeira: "${expr}"`
+            } else if (nd.type === 'output') {
+              const dest = nd.config.destination || 'chat'
+              if (dest === 'file' && nd.config.filePath) {
+                const r = await window.electron.writeFile({ filePath: nd.config.filePath, content: prevOutput })
+                output = r.error ? `Erro: ${r.error}` : `salvo em ${nd.config.filePath}`
+              } else {
+                output = prevOutput // chat/clipboard → o conteúdo vira a saída final
+              }
+            }
+            // condition-true e nós de status preservam o pipe como no painel;
+            // output(chat) deixa o conteúdo seguir.
+            prevOutput = output
+            entries.push({ label: nd.label, status: 'done', output })
+          } catch (e: any) {
+            entries.push({ label: nd.label, status: 'error', output: e?.message || String(e) })
+            break
+          }
+        }
+        return formatWorkflowRun(wf.name, entries, prevOutput)
       }
       if (name === 'fetch_url') {
         const result = await window.electron.fetchUrl(args.url)

@@ -206,6 +206,16 @@ export default function App() {
       .catch(() => { /* base ausente / Ollama offline — segue sem RAG */ })
   }, [])
   useEffect(() => { refreshRagStats() }, [refreshRagStats])
+  // Workflows salvos (nome+descrição) — quando há algum, o useChat injeta a regra
+  // do run_workflow no system prompt (fusão do WorkflowBuilder, v2.76.0).
+  // Recarregado ao montar e ao fechar o painel (único lugar que muda a lista).
+  const [workflowList, setWorkflowList] = useState<{ name: string; description?: string }[]>([])
+  const refreshWorkflowList = useCallback(() => {
+    window.electron.workflowLoad?.()
+      .then((r) => setWorkflowList((r?.workflows || []).map((w: any) => ({ name: w?.name, description: w?.description })).filter((w: any) => w.name)))
+      .catch(() => { /* sem workflows */ })
+  }, [])
+  useEffect(() => { refreshWorkflowList() }, [refreshWorkflowList])
   const [showFeatureMenu, setShowFeatureMenu] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
   const [showProfiles, setShowProfiles] = useState(false)
@@ -574,6 +584,7 @@ export default function App() {
     extraTools: mcp.mcpTools,
     semanticMatch: semantic.matchSemantic,
     ragStats,
+    workflowList,
   })
 
   const activeConv = convManager.activeConv
@@ -1462,7 +1473,7 @@ export default function App() {
         )}
         {showRAG && <RAGPanel settings={settings} ollamaModels={models} onClose={() => { setShowRAG(false); refreshRagStats() }} ragEnabled={ragEnabled} onToggleRAG={setRagEnabled} />}
         {showWorkflow && (
-          <WorkflowBuilder settings={settings} onClose={() => setShowWorkflow(false)}
+          <WorkflowBuilder settings={settings} onClose={() => { setShowWorkflow(false); refreshWorkflowList() }}
             onInsertToChat={(text) => { setInput(prev => (prev ? prev + '\n\n' : '') + text); setShowWorkflow(false) }} />
         )}
         {showOrion && <ORION settings={settings} onClose={() => setShowOrion(false)} />}

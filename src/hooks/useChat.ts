@@ -19,6 +19,7 @@ import { applyPlanToolCalls, planIsIncomplete, type LocalTask } from '../utils/p
 import { resolveAdaptiveEffort } from '../utils/adaptiveEffort'
 import { detectFreshness, buildDateLine, FRESHNESS_RULE, buildFreshnessNudge } from '../utils/freshness'
 import { buildRagRouterHint, type RagStats } from '../utils/rag'
+import { buildWorkflowRouterHint, type WorkflowSummary } from '../utils/workflows'
 import { toolCallSummary } from '../utils/toolDisplay'
 import { nextStreamPhase, classifyDelta, createPhaseProfiler, type StreamPhase } from '../utils/streamPhase'
 import { runCompaction, mergeSummary, planEmergencyCompaction } from '../services/compaction'
@@ -68,6 +69,9 @@ interface UseChatOptions {
    *  regra de roteamento do rag_search no system prompt (fusão do RAGPanel,
    *  v2.73.0). Ausente/zero = nenhuma menção (a IA não usa a tool à toa). */
   ragStats?: RagStats
+  /** Workflows salvos (nome+descrição) — quando há algum, injeta a regra do
+   *  run_workflow no system prompt (fusão do WorkflowBuilder, v2.76.0). */
+  workflowList?: WorkflowSummary[]
 }
 
 export function useChat({
@@ -92,6 +96,7 @@ export function useChat({
   extraTools,
   semanticMatch,
   ragStats,
+  workflowList,
 }: UseChatOptions) {
   // Use refs for callback props to avoid stale closures in useCallback
   const skillsRef = useRef(skills)
@@ -102,6 +107,8 @@ export function useChat({
   semanticMatchRef.current = semanticMatch
   const ragStatsRef = useRef(ragStats)
   ragStatsRef.current = ragStats
+  const workflowListRef = useRef(workflowList)
+  workflowListRef.current = workflowList
   const onProviderSuccessRef = useRef(onProviderSuccess)
   onProviderSuccessRef.current = onProviderSuccess
   const onProviderErrorRef = useRef(onProviderError)
@@ -370,6 +377,11 @@ export function useChat({
       // toa. Mesmo padrão do manifesto de skills. Ver utils/rag.ts.
       const ragHint = buildRagRouterHint(ragStatsRef.current, lang)
       if (ragHint) systemPrompt += `\n\n${ragHint}`
+
+      // Workflows salvos (fusão do WorkflowBuilder, v2.76.0): lista o que a IA
+      // pode rodar via run_workflow; vazio quando não há nenhum. Ver utils/workflows.ts.
+      const wfHint = buildWorkflowRouterHint(workflowListRef.current, lang)
+      if (wfHint) systemPrompt += `\n\n${wfHint}`
 
       // Tool deferral (v2.12.6; auto-decided since v2.12.11): move
       // rarely-used tools out of the request schema list into a compact

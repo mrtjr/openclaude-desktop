@@ -556,6 +556,21 @@ export const TOOLS = [
         required: ['prompt', 'models']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'run_workflow',
+      // Fusão do WorkflowBuilder no chat (v2.76.0): roda um workflow salvo.
+      description: 'Run a SAVED automation workflow (built in the workflow panel) by name. The saved workflows and what they do are listed in the system prompt when any exist. Use this instead of planning from scratch when the task matches a saved workflow — it runs the node pipeline deterministically (prompt/command/web/read/write steps, piping output). Requires user approval before running (it may run commands / write files).',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'The saved workflow name (or id) to run' }
+        },
+        required: ['name']
+      }
+    }
   }
 ]
 
@@ -578,6 +593,8 @@ export const DANGEROUS_TOOLS = new Set([
   'execute_command', 'write_file', 'edit_file', 'open_file_or_url', 'git_command',
   'computer_open_app', 'computer_type_text', 'computer_press_keys',
   'browser_navigate', 'browser_click', 'browser_type', 'delegate_subtasks',
+  // run_workflow pode rodar comandos/escrever arquivos → aprovação como unidade
+  'run_workflow',
   // Computer Use — vision-based coordinate interaction
   'browser_click_at', 'browser_type_text', 'browser_key_press', 'browser_scroll',
 ])
