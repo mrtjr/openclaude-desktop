@@ -34,3 +34,20 @@ export function toolCallSummary(
   const oneLine = value.replace(/\s+/g, ' ').trim()
   return oneLine.length > max ? oneLine.slice(0, max - 1) + '…' : oneLine
 }
+
+// ─── Render do RESULTADO da tool (v2.81.0) ──────────────────────────
+//
+// Ferramentas cuja saída é PROSA/markdown autoral renderizam como markdown
+// (links clicáveis, títulos, listas) em vez de <pre> cru. As de saída LITERAL/
+// código (execute_command, read_file, git, project_tree, browser_*) ficam em
+// <pre> — onde markdown mancharia logs/código. web_search já era assim; isto
+// estende às ferramentas fundidas no chat (rag_search com fontes, compare_models
+// com seções por modelo, análises de visão).
+const MARKDOWN_RESULT_TOOLS = new Set<string>([
+  'web_search', 'rag_search', 'compare_models', 'analyze_image', 'capture_screen',
+])
+
+/** A saída desta tool deve ser renderizada como markdown (vs. <pre> literal)? */
+export function shouldRenderToolResultAsMarkdown(name: string): boolean {
+  return MARKDOWN_RESULT_TOOLS.has(name)
+}

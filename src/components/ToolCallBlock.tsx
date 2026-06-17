@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { Play, ChevronDown, Wrench, Terminal } from 'lucide-react'
 import type { ToolCall, ToolResult } from '../types'
 import { formatMarkdown } from '../utils/formatting'
-import { toolCallSummary } from '../utils/toolDisplay'
+import { toolCallSummary, shouldRenderToolResultAsMarkdown } from '../utils/toolDisplay'
 import { isToolError } from '../utils/toolPolicy'
 
 // One tool call + its result, with the collapse/expand header. Extracted from
@@ -47,10 +47,11 @@ function ToolCallBlockInner({
         <>
           <pre className="tool-call-args">{JSON.stringify(tc.arguments, null, 2)}</pre>
           {result && (
-            tc.name === 'web_search'
-              // Render search results as markdown so the source
-              // links are clickable (citation-ready format from
-              // electron/web-search-util.js).
+            shouldRenderToolResultAsMarkdown(tc.name)
+              // Saída de prosa/markdown autoral (web_search, rag_search,
+              // compare_models, visão): renderiza como markdown — links
+              // clicáveis, títulos por modelo, citações de fonte. As demais
+              // (logs/código) ficam em <pre> literal. Ver toolDisplay.ts.
               ? <div className="tool-result tool-result-search" dangerouslySetInnerHTML={{ __html: formatMarkdown(result.result || '') }} />
               : <div className="tool-result"><Terminal size={12} /><pre>{result.result}</pre></div>
           )}

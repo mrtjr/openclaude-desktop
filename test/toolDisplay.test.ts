@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toolCallSummary } from '../src/utils/toolDisplay'
+import { toolCallSummary, shouldRenderToolResultAsMarkdown } from '../src/utils/toolDisplay'
 
 describe('toolCallSummary', () => {
   it('picks the primary argument per tool shape', () => {
@@ -33,5 +33,18 @@ describe('toolCallSummary', () => {
     expect(toolCallSummary('x', null)).toBe('')
     expect(toolCallSummary('x', { command: '   ' })).toBe('')
     expect(toolCallSummary('x', { command: 123 as unknown as string })).toBe('')
+  })
+})
+
+describe('shouldRenderToolResultAsMarkdown', () => {
+  it('prosa/markdown autoral → markdown', () => {
+    for (const t of ['web_search', 'rag_search', 'compare_models', 'analyze_image', 'capture_screen']) {
+      expect(shouldRenderToolResultAsMarkdown(t)).toBe(true)
+    }
+  })
+  it('saída literal/código → pre (não markdown)', () => {
+    for (const t of ['execute_command', 'read_file', 'project_tree', 'git_command', 'browser_get_text', 'fetch_url', 'list_directory']) {
+      expect(shouldRenderToolResultAsMarkdown(t)).toBe(false)
+    }
   })
 })
