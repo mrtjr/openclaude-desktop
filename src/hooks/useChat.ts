@@ -20,6 +20,7 @@ import { resolveAdaptiveEffort } from '../utils/adaptiveEffort'
 import { detectFreshness, buildDateLine, FRESHNESS_RULE, buildFreshnessNudge } from '../utils/freshness'
 import { buildRagRouterHint, type RagStats } from '../utils/rag'
 import { buildWorkflowRouterHint, type WorkflowSummary } from '../utils/workflows'
+import { buildPersonaRouterHint, type PersonaLike } from '../utils/personas'
 import { toolCallSummary } from '../utils/toolDisplay'
 import { nextStreamPhase, classifyDelta, createPhaseProfiler, type StreamPhase } from '../utils/streamPhase'
 import { runCompaction, mergeSummary, planEmergencyCompaction } from '../services/compaction'
@@ -72,6 +73,10 @@ interface UseChatOptions {
   /** Workflows salvos (nome+descrição) — quando há algum, injeta a regra do
    *  run_workflow no system prompt (fusão do WorkflowBuilder, v2.76.0). */
   workflowList?: WorkflowSummary[]
+  /** Personas disponíveis + a ativa — injeta a regra do set_persona no system
+   *  prompt (fusão do PersonaEngine, v2.77.0). */
+  personaList?: PersonaLike[]
+  activePersonaName?: string | null
 }
 
 export function useChat({
@@ -97,6 +102,8 @@ export function useChat({
   semanticMatch,
   ragStats,
   workflowList,
+  personaList,
+  activePersonaName,
 }: UseChatOptions) {
   // Use refs for callback props to avoid stale closures in useCallback
   const skillsRef = useRef(skills)
@@ -109,6 +116,10 @@ export function useChat({
   ragStatsRef.current = ragStats
   const workflowListRef = useRef(workflowList)
   workflowListRef.current = workflowList
+  const personaListRef = useRef(personaList)
+  personaListRef.current = personaList
+  const activePersonaNameRef = useRef(activePersonaName)
+  activePersonaNameRef.current = activePersonaName
   const onProviderSuccessRef = useRef(onProviderSuccess)
   onProviderSuccessRef.current = onProviderSuccess
   const onProviderErrorRef = useRef(onProviderError)
@@ -382,6 +393,11 @@ export function useChat({
       // pode rodar via run_workflow; vazio quando não há nenhum. Ver utils/workflows.ts.
       const wfHint = buildWorkflowRouterHint(workflowListRef.current, lang)
       if (wfHint) systemPrompt += `\n\n${wfHint}`
+
+      // Personas (fusão do PersonaEngine, v2.77.0): regra do set_persona +
+      // personas disponíveis + a ativa. Ver utils/personas.ts.
+      const personaHint = buildPersonaRouterHint(personaListRef.current, activePersonaNameRef.current, lang)
+      if (personaHint) systemPrompt += `\n\n${personaHint}`
 
       // Tool deferral (v2.12.6; auto-decided since v2.12.11): move
       // rarely-used tools out of the request schema list into a compact

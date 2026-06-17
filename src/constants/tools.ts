@@ -571,6 +571,21 @@ export const TOOLS = [
         required: ['name']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'set_persona',
+      // Fusão do PersonaEngine no chat (v2.77.0): adota/troca/limpa a persona.
+      description: 'Adopt a PERSONA (a saved character with its own system prompt — e.g. a security expert, a creative writer) for your subsequent replies. Use when the user asks you to take on a specific role, voice, or expertise. The available personas are listed in the system prompt. Pass the persona name, or "default"/"padrão" to clear it and return to the normal assistant. Takes effect on your NEXT reply (not the current turn).',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Persona name (or id) to adopt; "default"/"padrão"/"none" to clear.' }
+        },
+        required: ['name']
+      }
+    }
   }
 ]
 
@@ -586,7 +601,7 @@ export const SAFE_TOOLS = new Set([
   'browser_get_links', 'browser_get_forms', 'browser_screenshot', 'browser_wait',
   'update_working_memory', 'plan_tasks', 'update_task_status', 'undo_last_write',
   'remember_fact', 'remember_fresh_fact', 'load_skill', 'rag_search',
-  'capture_screen', 'analyze_image', 'compare_models'
+  'capture_screen', 'analyze_image', 'compare_models', 'set_persona'
 ])
 
 export const DANGEROUS_TOOLS = new Set([

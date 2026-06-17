@@ -31,6 +31,7 @@ import { formatRagResults, DEFAULT_RAG_EMBED_MODEL } from '../utils/rag'
 import { resolveVisionTarget, formatVisionResult } from '../utils/vision'
 import { parseCompareSpecs, providerApiKey, extractChatText, formatComparison, type CompareResult } from '../utils/compareModels'
 import { findWorkflow, topoOrder, formatWorkflowRun, type WfRunEntry } from '../utils/workflows'
+import { findPersona, isClearPersona, formatSetPersonaResult, type PersonaLike } from '../utils/personas'
 
 interface UseToolExecutionOptions {
   settings: AppSettings
@@ -53,11 +54,19 @@ interface UseToolExecutionOptions {
   /** Gate de concorrência GLOBAL dos subagentes Ollama (v2.67.0) — ≤N workers
    *  ao mesmo tempo em todo o app, entre lotes/turnos. */
   subagentLimiter?: Semaphore
+  /** Personas disponíveis + callback de ativação — para a ferramenta set_persona
+   *  (fusão do PersonaEngine, v2.77.0). */
+  personas?: PersonaLike[]
+  onSetPersona?: (persona: PersonaLike | null) => void
 }
 
-export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool, backgroundTasks, subagentActivity, subagentLimiter }: UseToolExecutionOptions) {
+export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool, backgroundTasks, subagentActivity, subagentLimiter, personas, onSetPersona }: UseToolExecutionOptions) {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
   const scoutSeqRef = useRef(0) // ids únicos + rodízio de modelo do scout
+  const personasRef = useRef(personas)
+  personasRef.current = personas
+  const onSetPersonaRef = useRef(onSetPersona)
+  onSetPersonaRef.current = onSetPersona
 
   // Use refs to avoid stale closures
   const activeConvIdRef = useRef(activeConvId)
@@ -309,6 +318,23 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
           }
         }
         return formatWorkflowRun(wf.name, entries, prevOutput)
+      }
+      if (name === 'set_persona') {
+        // Fusão do PersonaEngine (v2.77.0): adota/troca/limpa a persona. Vale a
+        // partir da próxima resposta. Ver utils/personas.ts.
+        if (!onSetPersonaRef.current) return 'Personas indisponíveis nesta sessão.'
+        const wanted = String(args.name ?? '').trim()
+        if (!wanted || isClearPersona(wanted)) {
+          onSetPersonaRef.current(null)
+          return formatSetPersonaResult(null, settings.language || 'pt')
+        }
+        const persona = findPersona(personasRef.current, wanted)
+        if (!persona) {
+          const names = (personasRef.current || []).map(p => p.name).filter(Boolean).join(', ')
+          return `Persona "${wanted}" não encontrada. Disponíveis: ${names || '(nenhuma)'}. Use "padrão" para limpar.`
+        }
+        onSetPersonaRef.current(persona)
+        return formatSetPersonaResult(persona, settings.language || 'pt')
       }
       if (name === 'fetch_url') {
         const result = await window.electron.fetchUrl(args.url)

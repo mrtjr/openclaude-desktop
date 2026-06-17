@@ -8,7 +8,7 @@ import { Semaphore } from './utils/semaphore'
 import { ScoutController } from './utils/scout'
 import { SubagentActivityPanel } from './components/SubagentActivityPanel'
 import { ContextRing } from './components/ContextRing'
-import type { Persona } from './PersonaEngine'
+import { BUILTIN_PERSONAS, type Persona } from './constants/builtinPersonas'
 // Small / hot-path components — eager
 import CommandPalette from './components/CommandPalette'
 import Toasts from './components/Toasts'
@@ -216,6 +216,23 @@ export default function App() {
       .catch(() => { /* sem workflows */ })
   }, [])
   useEffect(() => { refreshWorkflowList() }, [refreshWorkflowList])
+  // Personas disponíveis — o useChat injeta a regra do set_persona e o
+  // useToolExecution as usa para a tool (fusão do PersonaEngine, v2.77.0).
+  // Recarregado ao montar e ao fechar o painel.
+  const [personaList, setPersonaList] = useState<Persona[]>([])
+  const refreshPersonaList = useCallback(() => {
+    // Mescla built-ins + custom salvas (mesma lógica do painel) para o
+    // set_persona/router conhecerem TODAS, não só as custom do personaLoad.
+    window.electron.personaLoad?.()
+      .then((r) => {
+        const loaded: Persona[] = r?.personas || []
+        const ids = new Set(loaded.map((p) => p.id))
+        const missing = BUILTIN_PERSONAS.filter((p) => !ids.has(p.id))
+        setPersonaList([...missing, ...loaded])
+      })
+      .catch(() => setPersonaList(BUILTIN_PERSONAS))
+  }, [])
+  useEffect(() => { refreshPersonaList() }, [refreshPersonaList])
   const [showFeatureMenu, setShowFeatureMenu] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
   const [showProfiles, setShowProfiles] = useState(false)
@@ -478,13 +495,20 @@ export default function App() {
   // the system prompt (a thin layer over effectiveSettings, so useChat needs no
   // change — it already reads settings.systemPrompt).
   const effectiveSettingsWithProject = useMemo(() => {
+    // Persona ativa (fusão do PersonaEngine, v2.77.0): seu systemPrompt vira a
+    // BASE do chat (personagem completo, substitui o prompt padrão). Antes a
+    // persona era só um pill e não chegava ao modelo. As instruções de projeto
+    // ainda somam por cima.
+    const base = activePersona?.systemPrompt
+      ? { ...effectiveSettings, systemPrompt: activePersona.systemPrompt }
+      : effectiveSettings
     const conv = convManager.activeConv
-    if (!conv?.projectId) return effectiveSettings
+    if (!conv?.projectId) return base
     const project = projManager.projects.find(p => p.id === conv.projectId)
     const addition = projectInstructionsAddition(project) + projectCwdAddition(project)
-    if (!addition) return effectiveSettings
-    return { ...effectiveSettings, systemPrompt: (effectiveSettings.systemPrompt || '') + addition }
-  }, [effectiveSettings, convManager.activeConv?.projectId, projManager.projects])
+    if (!addition) return base
+    return { ...base, systemPrompt: (base.systemPrompt || '') + addition }
+  }, [effectiveSettings, activePersona, convManager.activeConv?.projectId, projManager.projects])
   // Projects ciclo 4 (v2.12.47): the project folder is no longer prompt-only —
   // execute_command actually runs there (default cwd, model can override).
   const activeProjectCwd = useMemo(() => {
@@ -532,6 +556,8 @@ export default function App() {
     backgroundTasks,
     subagentActivity,
     subagentLimiter,
+    personas: personaList,
+    onSetPersona: (p) => { setActivePersona(p as any); setActivePersonaId((p as any)?.id ?? null) },
   })
 
   // Matching semântico de skills (Fase 5, v2.56.0) — opt-in, best-effort (Ollama).
@@ -585,6 +611,8 @@ export default function App() {
     semanticMatch: semantic.matchSemantic,
     ragStats,
     workflowList,
+    personaList,
+    activePersonaName: activePersona?.name ?? null,
   })
 
   const activeConv = convManager.activeConv
@@ -1459,7 +1487,7 @@ export default function App() {
         )}
         {showPersona && (
           <PersonaEngine settings={settings} ollamaModels={models} activePersonaId={activePersonaId}
-            onClose={() => setShowPersona(false)}
+            onClose={() => { setShowPersona(false); refreshPersonaList() }}
             onActivatePersona={(persona) => { setActivePersona(persona); setActivePersonaId(persona?.id ?? null) }} />
         )}
         {showArena && <ModelArena settings={settings} ollamaModels={models} onClose={() => setShowArena(false)} />}
