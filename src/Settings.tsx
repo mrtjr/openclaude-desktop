@@ -507,6 +507,20 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                     </span>
                   </label>
 
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.85rem', cursor: 'pointer', marginTop: '12px' }}>
+                    <input
+                      type="checkbox"
+                      style={{ marginTop: 3 }}
+                      checked={local.compressToolOutputs !== false}
+                      onChange={(e) => setLocal(s => ({ ...s, compressToolOutputs: e.target.checked }))}
+                    />
+                    <span>
+                      {local.language === 'pt'
+                        ? 'Comprimir saídas de ferramentas (headroom): remove redundância de logs/builds repetitivos antes de ir ao modelo, economizando tokens. Conservador — só repetição óbvia, nunca conteúdo único.'
+                        : 'Compress tool outputs (headroom): strips redundancy from repetitive logs/builds before they reach the model, saving tokens. Conservative — only obvious repetition, never unique content.'}
+                    </span>
+                  </label>
+
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', fontSize: '0.85rem', flexWrap: 'wrap' }}>
                     <span>{local.language === 'pt' ? 'Timeout por passo do subagente:' : 'Subagent per-step timeout:'}</span>
                     <input

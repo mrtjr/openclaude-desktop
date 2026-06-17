@@ -26,6 +26,7 @@ import type { BackgroundSubagentRegistry } from '../utils/backgroundSubagents'
 import type { SubagentActivityStore } from '../utils/subagentActivity'
 import type { Semaphore } from '../utils/semaphore'
 import { scoutSystemPrompt } from '../utils/scout'
+import { compressOutput } from '../utils/outputCompression'
 
 interface UseToolExecutionOptions {
   settings: AppSettings
@@ -582,7 +583,10 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
       conversationId: convId,
     }).catch(e => console.warn('[toolExec] audit error:', e))
 
-    return truncateToolOutput(out)
+    // headroom nativo (v2.72.0): comprime a redundância da saída ANTES de
+    // truncar, então mais sinal real cabe no orçamento de tokens.
+    const compacted = settings.compressToolOutputs !== false ? compressOutput(out).text : out
+    return truncateToolOutput(compacted)
   }, [settings, executeToolRaw, requestApproval])
 
   // ── Scout proativo (v2.69.0): roda UM worker de pesquisa sobre `topic`,

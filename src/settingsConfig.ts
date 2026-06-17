@@ -134,6 +134,11 @@ export interface AppSettings {
    *  injeta no contexto dela. Pausa em delegações explícitas; reinicia quando o
    *  tema muda. Só roda em vaga ociosa do semáforo. Ver scout.ts. */
   scoutEnabled?: boolean
+  /** v2.72.0 — headroom nativo: comprime a saída das ferramentas (remove
+   *  redundância de logs/builds repetitivos) ANTES de ir ao modelo, economizando
+   *  tokens. Conservador (só repetição óbvia). Default on. Ver
+   *  outputCompression.ts. */
+  compressToolOutputs?: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -180,6 +185,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   subagentTimeoutSec: 600,
   subagentConcurrency: 2,
   scoutEnabled: false,
+  compressToolOutputs: true,
 }
 
 export function loadSettings(): AppSettings {
