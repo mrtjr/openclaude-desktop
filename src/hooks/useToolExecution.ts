@@ -863,10 +863,13 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
     const workerTools = buildWorkerTools(TOOLS as any)
     const workerExec: WorkerExec = async (n, a) =>
       WORKER_TOOL_NAMES.has(n) ? executeToolRaw(n, a) : `[indisponível para o scout: ${n}]`
-    const chat: WorkerChat = async (messages, tools) => {
+    // Fábrica de chat por modelo (v2.86.1): permite retry-com-fallback se o
+    // modelo atribuído falhar (ex.: 9b não cabe na VRAM — mesma causa das
+    // falhas do delegate_subtasks).
+    const makeChat = (m: string): WorkerChat => async (messages, tools) => {
       try {
         const r = await window.electron.ollamaChat({
-          model, messages, tools,
+          model: m, messages, tools,
           temperature: settings.temperature, max_tokens: settings.maxTokens,
           numCtx: settings.ollamaNumCtx, timeoutMs: timeoutSec > 0 ? timeoutSec * 1000 : 0,
         })
@@ -882,12 +885,23 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
     ]
     subagentActivity?.start(runId, `🔭 ${topic.slice(0, 70)}`, model, Date.now())
     try {
-      const out = await runResearchWorker({
-        messages, tools: workerTools, chat, exec: workerExec,
+      const runOpts = {
+        messages, tools: workerTools, exec: workerExec,
         finalNudge: lang === 'en' ? 'Summarize the most current, useful findings now.' : 'Resuma agora os achados mais atuais e úteis.',
         isStopped: () => signal.aborted,
-        onProgress: (p) => subagentActivity?.progress(runId, p.step, p.toolsUsed, p.lastTool),
-      })
+        onProgress: (p: { step: number; toolsUsed: string[]; lastTool?: string }) => subagentActivity?.progress(runId, p.step, p.toolsUsed, p.lastTool),
+      }
+      let out = await runResearchWorker({ ...runOpts, chat: makeChat(model) })
+      // Retry-com-fallback (v2.86.1): se falhou (e não foi pausa), tenta 1× em
+      // OUTRO modelo da lista (um menor que cabe na VRAM) — igual ao delegate.
+      if (out.error && !signal.aborted) {
+        const fb = pickFallbackModel(model, allowedModels, settings.subagentModel || 'llama3.2')
+        if (fb) {
+          subagentActivity?.start(runId, `🔭 ${topic.slice(0, 70)}`, `${fb} (fallback)`, Date.now())
+          const out2 = await runResearchWorker({ ...runOpts, chat: makeChat(fb) })
+          if (!out2.error) out = out2
+        }
+      }
       if (signal.aborted) { subagentActivity?.fail(runId, lang === 'en' ? '[paused]' : '[pausado]', Date.now()); return null }
       if (out.error) { subagentActivity?.fail(runId, out.text, Date.now()); return null }
       subagentActivity?.finish(runId, out.text, out.steps, out.toolsUsed, Date.now())
