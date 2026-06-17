@@ -620,6 +620,23 @@ export default function App() {
   // True only when the currently visible conversation is the one loading
   const isActiveConvLoading = chat.isLoading && chat.streamingConvId === convManager.activeConvId
 
+  // Trocar de conversa LIMPA o painel de subagentes (o store é global) +
+  // abandona background/scout pendentes — senão as runs da conversa ANTERIOR
+  // "vazam" para a nova (bug relatado: ao abrir nova conversa, os subagentes
+  // vinham junto). Só limpa em ociosidade: um turno em andamento já zera no
+  // próximo início; limpar no meio apagaria o indicador ao vivo. (v2.83.1)
+  const prevConvRef = useRef(convManager.activeConvId)
+  useEffect(() => {
+    const prev = prevConvRef.current
+    if (prev === convManager.activeConvId) return
+    prevConvRef.current = convManager.activeConvId
+    if (!chat.isLoading) {
+      subagentActivity.clear()
+      backgroundTasks.clear()
+      scoutController.clear()
+    }
+  }, [convManager.activeConvId, chat.isLoading, subagentActivity, backgroundTasks, scoutController])
+
   // Continuar a partir de outra conversa (v2.58.0): renderiza a conversa-fonte
   // (verbatim se couber; resumida via LLM se for grande) e injeta no
   // contextSummary da conversa ATUAL — que o useChat já manda todo turno.

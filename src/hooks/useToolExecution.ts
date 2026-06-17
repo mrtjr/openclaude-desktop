@@ -17,7 +17,7 @@ import { matchHooks } from '../utils/hooks'
 import { resolveSubagentPrompt } from '../constants/subagents'
 import {
   buildWorkerTools, runResearchWorker, runWithConcurrency, normalizeWorkerChat,
-  summarizeToolsUsed, resolveSubagentModel, WORKER_TOOL_NAMES, WORKER_SYSTEM_PROMPT,
+  summarizeToolsUsed, resolveSubagentModel, pickFallbackModel, WORKER_TOOL_NAMES, WORKER_SYSTEM_PROMPT,
   type WorkerChat, type WorkerExec, type WorkerMessage,
 } from '../utils/researchWorker'
 import type { Skill } from '../types/skill'
@@ -665,10 +665,25 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
           subagentActivity?.start(runId, taskLabel, modelUsed, Date.now())
           let errored = false
           try {
-            const out = await runResearchWorker({
+            let out = await runResearchWorker({
               messages: buildMessages(st), tools: workerTools, chat, exec: workerExec, finalNudge,
               onProgress: (p) => subagentActivity?.progress(runId, p.step, p.toolsUsed, p.lastTool),
             })
+            // Retry-com-fallback (v2.83.1): se o worker Ollama falhou no modelo
+            // atribuído (ex.: 9b não coube na VRAM sob concorrência), tenta 1×
+            // em OUTRO modelo da lista (um menor que cabe), não num fallback fixo
+            // que pode nem estar instalado. Recupera o subtask em vez de "falhou".
+            if (out.error && !useModal) {
+              const retryModel = pickFallbackModel(modelUsed, allowedModels, fallbackModel)
+              if (retryModel) {
+                subagentActivity?.start(runId, taskLabel, `${retryModel} (fallback)`, Date.now())
+                const out2 = await runResearchWorker({
+                  messages: buildMessages(st), tools: workerTools, chat: makeOllamaChat(retryModel), exec: workerExec, finalNudge,
+                  onProgress: (p) => subagentActivity?.progress(runId, p.step, p.toolsUsed, p.lastTool),
+                })
+                if (!out2.error) { out = out2; modelUsed = `${retryModel} (fallback)` }
+              }
+            }
             errored = !!out.error
             if (errored) subagentActivity?.fail(runId, out.text, Date.now())
             else subagentActivity?.finish(runId, out.text, out.steps, out.toolsUsed, Date.now())

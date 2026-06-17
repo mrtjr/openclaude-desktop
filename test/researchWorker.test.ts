@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildWorkerTools, parseRawToolCalls, normalizeWorkerChat, summarizeToolsUsed,
-  runResearchWorker, runWithConcurrency, resolveSubagentModel, applySubagentModels,
+  runResearchWorker, runWithConcurrency, resolveSubagentModel, pickFallbackModel, applySubagentModels,
   WORKER_TOOL_NAMES,
   type WorkerChat, type WorkerExec, type WorkerChatResult,
 } from '../src/utils/researchWorker'
@@ -169,6 +169,23 @@ describe('resolveSubagentModel', () => {
   it('sem lista configurada → respeita o pedido ou cai no fallback', () => {
     expect(resolveSubagentModel('qualquer', 0, [], 'fb')).toBe('qualquer')
     expect(resolveSubagentModel(undefined, 0, [], 'fb')).toBe('fb')
+  })
+})
+
+describe('pickFallbackModel (retry quando um worker falha — v2.83.1)', () => {
+  it('prefere OUTRO modelo da lista permitida (não o que falhou)', () => {
+    // caso real: 9b falha por VRAM, mas o qwen3:8b da mesma lista entrega
+    expect(pickFallbackModel('huihui_ai/qwen3.5-abliterated:9b', ['huihui_ai/qwen3.5-abliterated:9b', 'qwen3:8b'], 'llama3.2'))
+      .toBe('qwen3:8b')
+  })
+  it('cai no fallback fixo se a lista não tem alternativa distinta', () => {
+    expect(pickFallbackModel('m', ['m'], 'fb')).toBe('fb')
+    expect(pickFallbackModel('m', [], 'fb')).toBe('fb')
+  })
+  it('devolve "" quando não há alternativa distinta (→ sem retry)', () => {
+    expect(pickFallbackModel('m', ['m'], 'm')).toBe('')
+    expect(pickFallbackModel('m', [], 'm')).toBe('')
+    expect(pickFallbackModel('m', [], '')).toBe('')
   })
 })
 

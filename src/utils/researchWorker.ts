@@ -86,6 +86,24 @@ export function resolveSubagentModel(
   return list[i]
 }
 
+/** Escolhe um modelo de FALLBACK quando um worker FALHOU no modelo atribuído
+ *  (v2.83.1): prefere OUTRO modelo da lista permitida (ex.: um menor que cabe na
+ *  VRAM), pois um fallback fixo pode nem estar instalado. Devolve '' quando não
+ *  há alternativa distinta (→ sem retry). Resolve o caso real: modelo de 9b
+ *  falha por OOM/thrash sob concorrência, mas o qwen3:8b da mesma lista entrega. */
+export function pickFallbackModel(
+  failedModel: string,
+  allowed: string[] | undefined,
+  fallback: string,
+): string {
+  const failed = (failedModel || '').trim()
+  const list = (allowed || []).map((s) => String(s).trim()).filter(Boolean)
+  const alt = list.find((m) => m && m !== failed)
+  if (alt) return alt
+  const fb = (fallback || '').trim()
+  return fb && fb !== failed ? fb : ''
+}
+
 /** Injeta a lista de modelos configurados na descrição do delegate_subtasks, p/
  *  o orquestrador saber o que pode pôr no campo "model" de cada subtarefa.
  *  Clona raso só a tool afetada (não muta a entrada). Lista vazia → sem efeito. */
