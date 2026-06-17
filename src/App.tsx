@@ -7,6 +7,7 @@ import { SubagentActivityStore } from './utils/subagentActivity'
 import { Semaphore } from './utils/semaphore'
 import { ScoutController } from './utils/scout'
 import { SubagentActivityPanel } from './components/SubagentActivityPanel'
+import { ContextRing } from './components/ContextRing'
 import type { Persona } from './PersonaEngine'
 // Small / hot-path components — eager
 import CommandPalette from './components/CommandPalette'
@@ -203,6 +204,7 @@ export default function App() {
   const [showUserMenu, setShowUserMenu] = useState(false)
   const userMenuAnchorRef = useRef<HTMLButtonElement>(null)
   const [showContextPanel, setShowContextPanel] = useState(false)
+  const [showSubagentPanel, setShowSubagentPanel] = useState(false)
   const contextPanelAnchorRef = useRef<HTMLButtonElement>(null)
   const [enabledFeatures, setEnabledFeatures] = useState<Record<string, boolean>>(loadEnabledFeatures)
 
@@ -1990,7 +1992,7 @@ export default function App() {
           <div className="input-area" onClick={() => showFeatureMenu && setShowFeatureMenu(false)}>
             <AmbientOrb visible={isActiveConvLoading} />
             {/* Painel de atividade dos subagentes (v2.66.0) — recebeu/trabalhando/entregou */}
-            <SubagentActivityPanel runs={subagentRuns} language={settings.language} />
+            {showSubagentPanel && <SubagentActivityPanel runs={subagentRuns} language={settings.language} />}
             <div className="input-wrapper">
               <input type="file" id="image-upload" accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
                 const file = e.target.files?.[0]
@@ -2075,14 +2077,36 @@ export default function App() {
                   {settings.provider !== 'ollama' && usageTracking.getTodayCost() > 0 && (
                     <span className="cost-counter">{usageTracking.formatCost(usageTracking.getTodayCost())} hoje</span>
                   )}
+                  {subagentRuns.length > 0 && (() => {
+                    const working = subagentRuns.filter(r => r.status === 'working').length
+                    const failed = subagentRuns.filter(r => r.status === 'error').length
+                    return (
+                      <button
+                        type="button"
+                        className={`subagent-bolinha ${showSubagentPanel ? 'active' : ''}`}
+                        onClick={() => setShowSubagentPanel(v => !v)}
+                        title={settings.language === 'en' ? 'Show what the subagents are doing' : 'Ver o que os subagentes estão fazendo'}
+                        aria-label={settings.language === 'en' ? 'Subagents' : 'Subagentes'}
+                      >
+                        {working > 0
+                          ? <span className="sg-spinner" />
+                          : <span className="sg-dot" style={{ background: failed > 0 ? 'var(--red, #ef4444)' : '#22c55e' }} />}
+                        <span className="sg-count">{subagentRuns.length}</span>
+                      </button>
+                    )
+                  })()}
                   <button
                     ref={contextPanelAnchorRef}
                     type="button"
-                    className={`token-counter ${tokenInfo.critical ? 'critical' : tokenInfo.warning ? 'warning' : ''}`}
+                    className={`context-ring-btn ${tokenInfo.critical ? 'critical' : tokenInfo.warning ? 'warning' : ''}`}
                     onClick={() => setShowContextPanel(v => !v)}
-                    title={settings.language === 'en' ? 'Open context window panel' : 'Abrir painel da janela de contexto'}
+                    title={`${formatTokenCount(tokenInfo.used)}/${formatTokenCount(tokenInfo.limit)} (${tokenInfo.percentage}%) — ${settings.language === 'en' ? 'context window' : 'janela de contexto'}`}
+                    aria-label={settings.language === 'en' ? 'Context window' : 'Janela de contexto'}
                   >
-                    {formatTokenCount(tokenInfo.used)}/{formatTokenCount(tokenInfo.limit)} ({tokenInfo.percentage}%)
+                    <ContextRing
+                      percentage={tokenInfo.percentage}
+                      state={tokenInfo.critical ? 'critical' : tokenInfo.warning ? 'warning' : 'normal'}
+                    />
                   </button>
                   <ContextWindowPanel
                     open={showContextPanel}

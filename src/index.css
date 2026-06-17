@@ -869,6 +869,17 @@ body {
 .token-counter.critical { color: var(--red); font-weight: 600; }
 .cost-counter { font-size: 11px; color: var(--accent); font-family: monospace; white-space: nowrap; opacity: 0.8; }
 
+/* Bolinhas do footer (v2.70.0): contexto (anel) + toggle dos subagentes */
+.context-ring-btn { display: inline-flex; align-items: center; justify-content: center; background: transparent; border: none; padding: 3px; border-radius: 999px; cursor: pointer; flex-shrink: 0; transition: background 0.15s; line-height: 0; }
+.context-ring-btn:hover { background: rgba(255,255,255,0.07); }
+.subagent-bolinha { display: inline-flex; align-items: center; gap: 5px; background: var(--bg-elevated); border: none; padding: 3px 8px 3px 6px; border-radius: 999px; cursor: pointer; color: var(--text-muted); flex-shrink: 0; transition: background 0.15s; }
+.subagent-bolinha:hover { background: rgba(255,255,255,0.09); }
+.subagent-bolinha.active { background: rgba(var(--accent-rgb, 224,122,95), 0.20); color: var(--text-primary); }
+.subagent-bolinha .sg-count { font-size: 0.66rem; font-variant-numeric: tabular-nums; }
+.sg-spinner { width: 11px; height: 11px; border-radius: 50%; border: 2px solid rgba(234,179,8,0.3); border-top-color: #eab308; animation: oc-ring-spin 0.7s linear infinite; flex-shrink: 0; }
+.sg-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+@keyframes oc-ring-spin { to { transform: rotate(360deg) } }
+
 @media (max-width: 700px) { .sidebar { width: 0 !important; overflow: hidden; border: none; } }
 
 /* ── Update Banner ─────────────────────────────────────────────
