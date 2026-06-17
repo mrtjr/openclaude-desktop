@@ -121,6 +121,23 @@ describe('runResearchWorker', () => {
     expect(lastTools).toEqual([]) // a chamada de síntese final não recebe ferramentas
   })
 
+  it('emite onProgress a cada passo com ferramentas (painel ao vivo)', async () => {
+    const { chat } = scriptedChat([
+      { content: '', toolCalls: [{ id: '1', name: 'web_search', args: {} }] },
+      { content: '', toolCalls: [{ id: '2', name: 'fetch_url', args: {} }] },
+      { content: 'pronto', toolCalls: [] },
+    ])
+    const progress: any[] = []
+    await runResearchWorker({
+      messages: [{ role: 'user', content: 'x' }], tools: [], chat, exec: async () => 'ok',
+      onProgress: (p) => progress.push(p),
+    })
+    expect(progress).toEqual([
+      { step: 1, toolsUsed: ['web_search'], lastTool: 'web_search' },
+      { step: 2, toolsUsed: ['web_search', 'fetch_url'], lastTool: 'fetch_url' },
+    ])
+  })
+
   it('para no isStopped sem chamar o modelo de novo', async () => {
     let calls = 0
     const chat: WorkerChat = async () => { calls++; return { content: 'x', toolCalls: [] } }

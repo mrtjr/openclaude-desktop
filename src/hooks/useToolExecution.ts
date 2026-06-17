@@ -24,6 +24,7 @@ import {
 import type { Skill } from '../types/skill'
 import type { ModalKeyPool } from './useModalKeyPool'
 import type { BackgroundSubagentRegistry } from '../utils/backgroundSubagents'
+import type { SubagentActivityStore } from '../utils/subagentActivity'
 
 interface UseToolExecutionOptions {
   settings: AppSettings
@@ -41,9 +42,11 @@ interface UseToolExecutionOptions {
   /** Registro de subagentes em background (v2.65.0) — delegate_subtasks registra
    *  os lotes aqui quando em modo background; useChat coleta/drena. */
   backgroundTasks?: BackgroundSubagentRegistry
+  /** Atividade ao vivo dos subagentes (v2.66.0) — alimenta o painel visual. */
+  subagentActivity?: SubagentActivityStore
 }
 
-export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool, backgroundTasks }: UseToolExecutionOptions) {
+export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool, backgroundTasks, subagentActivity }: UseToolExecutionOptions) {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
 
   // Use refs to avoid stale closures
@@ -356,6 +359,11 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         // resolveSubagentModel.
         const allowedModels = (settings.subagentModels || []).map(s => String(s).trim()).filter(Boolean)
         const fallbackModel = settings.subagentModel || 'llama3.2'
+        // Timeout por-passo CONFIGURÁVEL (v2.66.0). É só uma rede de segurança
+        // contra um Ollama TRAVADO — não um limite de trabalho. Default generoso
+        // (600s/passo); 0 = sem limite (respeitando quem deleta tarefas grandes,
+        // com o caveat de que um Ollama realmente preso volta a congelar).
+        const stepTimeoutMs = Math.max(0, Math.round((settings.subagentTimeoutSec ?? 600) * 1000))
         const makeOllamaChat = (model: string): WorkerChat => async (messages, tools) => {
           try {
             const r = await window.electron.ollamaChat({
@@ -363,9 +371,7 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
               temperature: settings.temperature,
               max_tokens: settings.maxTokens,
               numCtx: settings.ollamaNumCtx,
-              // Limite por-passo (v2.65.1): um worker travado vira erro em vez de
-              // congelar o lote/turno. O modelo cold-loading ainda cabe em 2 min.
-              timeoutMs: 120000,
+              timeoutMs: stepTimeoutMs, // 0 → sem timeout no handler
             })
             return normalizeWorkerChat(r)
           } catch (e: any) { return { content: '', toolCalls: [], error: e?.message || 'ollama error' } }
@@ -387,7 +393,10 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         const useModal = settings.subagentExecutor === 'modal'
           && settings.provider === 'modal' && !!modalKeyPool && modalKeyPool.totalCount > 0
 
+        const batchTag = Date.now().toString(36)
         const runOne = (st: any, index: number) => async (): Promise<string> => {
+          const runId = `${batchTag}-${index}`
+          const taskLabel = String(st.prompt ?? '').replace(/\s+/g, ' ').trim().slice(0, 120)
           let chat: WorkerChat
           let slot: { key: string } | null = null
           let modelUsed: string
@@ -403,15 +412,23 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
             modelUsed = resolveSubagentModel(st.model, index, allowedModels, fallbackModel)
             chat = makeOllamaChat(modelUsed)
           }
+          // Worker recebeu a ordem → aparece no painel como "trabalhando".
+          subagentActivity?.start(runId, taskLabel, modelUsed, Date.now())
           let errored = false
           try {
-            const out = await runResearchWorker({ messages: buildMessages(st), tools: workerTools, chat, exec: workerExec, finalNudge })
+            const out = await runResearchWorker({
+              messages: buildMessages(st), tools: workerTools, chat, exec: workerExec, finalNudge,
+              onProgress: (p) => subagentActivity?.progress(runId, p.step, p.toolsUsed, p.lastTool),
+            })
             errored = !!out.error
+            if (errored) subagentActivity?.fail(runId, out.text, Date.now())
+            else subagentActivity?.finish(runId, out.text, out.steps, out.toolsUsed, Date.now())
             const bits = [`${out.steps}↻`, modelUsed]
             if (out.toolsUsed.length) bits.push(summarizeToolsUsed(out.toolsUsed))
             return `[Agent ${st.id ?? '?'}]: _(${bits.join(' · ')})_\n${out.text}`
           } catch (e: any) {
             errored = true
+            subagentActivity?.fail(runId, `[erro: ${e?.message || e}]`, Date.now())
             return `[Agent ${st.id ?? '?'}]: [erro: ${e?.message || e}]`
           } finally {
             if (slot) errored ? modalKeyPool!.markError(slot.key, 'worker error') : modalKeyPool!.release(slot.key)

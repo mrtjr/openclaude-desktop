@@ -151,6 +151,9 @@ export interface RunWorkerOpts {
   finalNudge?: string
   /** Permite cancelar entre passos (ex.: botão Parar). */
   isStopped?: () => boolean
+  /** Progresso ao vivo (passo concluído + ferramentas usadas) — alimenta o
+   *  painel de atividade dos subagentes (v2.66.0). */
+  onProgress?: (p: { step: number; toolsUsed: string[]; lastTool?: string }) => void
 }
 
 export interface WorkerOutcome {
@@ -199,6 +202,8 @@ export async function runResearchWorker(opts: RunWorkerOpts): Promise<WorkerOutc
       }
       convo.push({ role: 'tool', tool_call_id: tc.id, content: String(result ?? '').slice(0, cap) })
     }
+    // Progresso ao vivo: passo concluído + ferramentas usadas (painel v2.66.0).
+    opts.onProgress?.({ step: step + 1, toolsUsed: [...toolsUsed], lastTool: res.toolCalls[res.toolCalls.length - 1]?.name })
   }
 
   // Bateu o teto de passos: força UMA síntese final sem ferramentas.

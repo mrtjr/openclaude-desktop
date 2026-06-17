@@ -3,6 +3,7 @@ import type { Message, ToolResult, Conversation, AppSettings } from '../types'
 import { TOOLS, IDLE_STEP_THRESHOLD } from '../constants/tools'
 import { applySubagentModels } from '../utils/researchWorker'
 import type { BackgroundSubagentRegistry, BgEntry } from '../utils/backgroundSubagents'
+import type { SubagentActivityStore } from '../utils/subagentActivity'
 import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIMING, LANGUAGE_REMINDER } from '../constants/prompts'
 import { partitionTools, renderDeferredManifest, decideDeferral } from '../services/toolDeferral'
 import { generateId, isSmallModel } from '../utils/formatting'
@@ -41,6 +42,8 @@ interface UseChatOptions {
   /** Registro de subagentes em background (v2.65.0) — o loop coleta os
    *  resultados prontos a cada passo e drena os pendentes antes de encerrar. */
   backgroundTasks?: BackgroundSubagentRegistry
+  /** Atividade ao vivo dos subagentes (v2.66.0) — zerada a cada turno. */
+  subagentActivity?: SubagentActivityStore
   speakText: (text: string) => void
   showToast: (message: string) => void
   onProviderSuccess?: () => void
@@ -64,6 +67,7 @@ export function useChat({
   isAgentMode,
   executeTool,
   backgroundTasks,
+  subagentActivity,
   speakText,
   showToast,
   onProviderSuccess,
@@ -198,6 +202,7 @@ export function useChat({
     setAgentSteps(0)
     stopRequestedRef.current = false
     backgroundTasks?.clear() // novo turno começa sem lotes de turnos anteriores
+    subagentActivity?.clear() // painel de atividade zera a cada turno
 
     // ─── Aprendizado de preferências (Fase 2, v2.53.0) ───────────────
     // Captura preferências EXPLÍCITAS desta mensagem e, após reforço (≥2
@@ -1317,7 +1322,7 @@ export function useChat({
       // the ENTIRE conversation on every turn, causing exponential
       // double-counting and inflated costs in the dashboard.
     }
-  }, [isLoading, providerConfig, settings, isAgentMode, conversationsRef, setConversations, executeTool, backgroundTasks, speakText, showToast])
+  }, [isLoading, providerConfig, settings, isAgentMode, conversationsRef, setConversations, executeTool, backgroundTasks, subagentActivity, speakText, showToast])
 
   // Helper: process tool calls (shared between streaming and non-streaming)
   async function processToolCalls(

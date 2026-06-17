@@ -287,7 +287,9 @@ ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperatur
     // Os workers passam um limite por-passo; o chat principal usa o default.
     let settled = false
     let timer = null
-    const TIMEOUT = timeoutMs || 300000
+    // timeoutMs ausente → default 300s; <= 0 → SEM timeout (rede de segurança
+    // opcional, v2.66.0 — o usuário pode desligar p/ tarefas longas).
+    const TIMEOUT = (timeoutMs == null) ? 300000 : timeoutMs
     const finish = (fn, v) => { if (settled) return; settled = true; if (timer) clearTimeout(timer); fn(v) }
 
     const req = http.request(options, (res) => {
@@ -307,11 +309,13 @@ ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperatur
       })
     })
     req.on('error', (err) => { activeOllamaStream = null; finish(reject, err) })
-    timer = setTimeout(() => {
-      try { req.destroy() } catch { /* já fechado */ }
-      activeOllamaStream = null
-      finish(resolve, { error: `Ollama timeout após ${Math.round(TIMEOUT / 1000)}s — o modelo "${model}" pode estar carregando ou travado (rode "ollama run ${model}" uma vez para pré-carregar).` })
-    }, TIMEOUT)
+    if (TIMEOUT > 0) {
+      timer = setTimeout(() => {
+        try { req.destroy() } catch { /* já fechado */ }
+        activeOllamaStream = null
+        finish(resolve, { error: `Ollama timeout após ${Math.round(TIMEOUT / 1000)}s — o modelo "${model}" pode estar carregando ou travado (rode "ollama run ${model}" uma vez para pré-carregar).` })
+      }, TIMEOUT)
+    }
     activeOllamaStream = req
     req.write(body)
     req.end()

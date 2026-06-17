@@ -118,6 +118,11 @@ export interface AppSettings {
    *  quando prontos, com drenagem no fim do turno). Off → o modelo decide via
    *  o parâmetro `background`. Ver backgroundSubagents.ts. */
   subagentsBackground?: boolean
+  /** v2.66.0 — timeout POR PASSO de cada subagente Ollama, em segundos (rede de
+   *  segurança contra um Ollama travado, NÃO um limite de trabalho). Default
+   *  600s; 0 = sem limite (para tarefas longas, com o risco de congelar se o
+   *  Ollama realmente travar). */
+  subagentTimeoutSec?: number
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -161,6 +166,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   subagentModel: 'llama3.2',
   subagentModels: [],
   subagentsBackground: false,
+  subagentTimeoutSec: 600,
 }
 
 export function loadSettings(): AppSettings {

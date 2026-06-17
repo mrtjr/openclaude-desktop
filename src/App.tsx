@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore, Suspense, lazy } from 'react'
 import 'highlight.js/styles/github-dark.css'
 import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, ArrowDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder, Wrench, BrainCircuit, Check } from 'lucide-react'
 import { loadSettings, type AppSettings } from './settingsConfig'
 import { BackgroundSubagentRegistry } from './utils/backgroundSubagents'
+import { SubagentActivityStore } from './utils/subagentActivity'
+import { SubagentActivityPanel } from './components/SubagentActivityPanel'
 import type { Persona } from './PersonaEngine'
 // Small / hot-path components — eager
 import CommandPalette from './components/CommandPalette'
@@ -482,6 +484,10 @@ export default function App() {
   // Registro compartilhado de subagentes em background (v2.65.0): useToolExecution
   // registra os lotes; useChat coleta/drena. Instância estável por toda a sessão.
   const backgroundTasks = useMemo(() => new BackgroundSubagentRegistry(), [])
+  // Atividade ao vivo dos subagentes (v2.66.0): useToolExecution escreve as
+  // transições; o painel abaixo do chat assina via useSyncExternalStore.
+  const subagentActivity = useMemo(() => new SubagentActivityStore(), [])
+  const subagentRuns = useSyncExternalStore(subagentActivity.subscribe, subagentActivity.getSnapshot)
 
   const toolExec = useToolExecution({
     settings: effectiveSettings,
@@ -493,6 +499,7 @@ export default function App() {
     skills,
     callMcpTool: mcp.callMcpTool,
     backgroundTasks,
+    subagentActivity,
   })
 
   // Matching semântico de skills (Fase 5, v2.56.0) — opt-in, best-effort (Ollama).
@@ -510,6 +517,7 @@ export default function App() {
     isAgentMode,
     executeTool: toolExec.executeTool,
     backgroundTasks,
+    subagentActivity,
     speakText: voice.speakText,
     showToast,
     onProviderSuccess: providerHealth.reportSuccess,
@@ -1969,6 +1977,8 @@ export default function App() {
           {/* Input area */}
           <div className="input-area" onClick={() => showFeatureMenu && setShowFeatureMenu(false)}>
             <AmbientOrb visible={isActiveConvLoading} />
+            {/* Painel de atividade dos subagentes (v2.66.0) — recebeu/trabalhando/entregou */}
+            <SubagentActivityPanel runs={subagentRuns} language={settings.language} />
             <div className="input-wrapper">
               <input type="file" id="image-upload" accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
                 const file = e.target.files?.[0]

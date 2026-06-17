@@ -492,6 +492,25 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                         : 'Run subagents in the background (the main AI keeps working while they run)'}
                     </span>
                   </label>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', fontSize: '0.85rem', flexWrap: 'wrap' }}>
+                    <span>{local.language === 'pt' ? 'Timeout por passo do subagente:' : 'Subagent per-step timeout:'}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={local.subagentTimeoutSec ?? 600}
+                      onChange={(e) => setLocal(s => ({ ...s, subagentTimeoutSec: Math.max(0, Math.round(Number(e.target.value) || 0)) }))}
+                      style={{ padding: '6px 8px', fontSize: '0.85rem', width: '90px' }}
+                    />
+                    <span style={{ color: 'var(--color-text-muted, #888)', fontSize: '0.78rem' }}>
+                      {local.language === 'pt' ? 'segundos (0 = sem limite)' : 'seconds (0 = no limit)'}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.74rem', color: 'var(--color-text-muted, #888)', margin: '4px 0 0' }}>
+                    {local.language === 'pt'
+                      ? 'É só uma rede de segurança contra um Ollama travado, não um limite de trabalho. Em 0 (sem limite), uma tarefa grande nunca é cortada — mas se o Ollama realmente travar, pode congelar.'
+                      : 'Just a safety net against a stuck Ollama, not a work limit. At 0 (no limit) a big task is never cut — but a truly stuck Ollama can freeze.'}
+                  </p>
                 </div>
               </div>
             </div>
