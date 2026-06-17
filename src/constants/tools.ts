@@ -616,6 +616,20 @@ export const TOOLS = [
         required: ['name']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'project_tree',
+      // Fusão do CodeWorkspace no chat (v2.79.0): visão recursiva da estrutura.
+      description: 'Get the RECURSIVE file/folder structure of a project directory in ONE call (ignores node_modules/.git/dist/build and hidden files; depth-limited). Use this to quickly understand a codebase layout before reading files — faster than many list_directory calls. Defaults to the active project folder. Read-only.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Absolute directory to map. Defaults to the active project folder.' }
+        }
+      }
+    }
   }
 ]
 
@@ -631,7 +645,7 @@ export const SAFE_TOOLS = new Set([
   'browser_get_links', 'browser_get_forms', 'browser_screenshot', 'browser_wait',
   'update_working_memory', 'plan_tasks', 'update_task_status', 'undo_last_write',
   'remember_fact', 'remember_fresh_fact', 'load_skill', 'rag_search',
-  'capture_screen', 'analyze_image', 'compare_models', 'set_persona'
+  'capture_screen', 'analyze_image', 'compare_models', 'set_persona', 'project_tree'
 ])
 
 export const DANGEROUS_TOOLS = new Set([

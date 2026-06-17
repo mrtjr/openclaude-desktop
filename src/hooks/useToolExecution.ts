@@ -32,6 +32,7 @@ import { resolveVisionTarget, formatVisionResult } from '../utils/vision'
 import { parseCompareSpecs, providerApiKey, extractChatText, formatComparison, type CompareResult } from '../utils/compareModels'
 import { findWorkflow, topoOrder, formatWorkflowRun, type WfRunEntry } from '../utils/workflows'
 import { findPersona, isClearPersona, formatSetPersonaResult, type PersonaLike } from '../utils/personas'
+import { formatProjectTree } from '../utils/projectTree'
 
 interface UseToolExecutionOptions {
   settings: AppSettings
@@ -346,6 +347,13 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
           result.truncated ? '(truncated)' : '',
         ].filter(Boolean).join('\n')
         return `${header}\n\n${result.text || '(empty page)'}`
+      }
+      if (name === 'project_tree') {
+        // Fusão do CodeWorkspace (v2.79.0): estrutura recursiva em uma chamada.
+        const dir = resolveExecCwd(args.path, projectCwdRef.current)
+        if (!dir) return 'project_tree: informe "path" (ou abra um projeto para usar a pasta ativa).'
+        const res = await window.electron.workspaceTree(dir)
+        return formatProjectTree(res, dir)
       }
       if (name === 'list_directory') {
         const result = await window.electron.listDirectory(args.path)
