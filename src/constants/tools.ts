@@ -536,6 +536,26 @@ export const TOOLS = [
         required: ['path']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'compare_models',
+      // Fusão do ModelArena no chat (v2.75.0): roda o mesmo prompt em N modelos.
+      description: 'Run the SAME prompt across 2-4 models and get their answers side by side to compare/synthesize (which is more correct/complete, where they diverge). Use when the user asks to compare models, benchmark, get a "second opinion", or wants a best-of-N answer on a critical question. Each model can be just a name (uses the current provider) or {model, provider} for cross-provider (ollama/openai/gemini/anthropic/openrouter/modal). Note: cloud models cost money per call.',
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: { type: 'string', description: 'The prompt to send to every model' },
+          models: {
+            type: 'array',
+            description: '2-4 models. Each item is a model name string (current provider) OR an object { model, provider }.',
+            items: { type: 'object', properties: { model: { type: 'string' }, provider: { type: 'string' } } }
+          }
+        },
+        required: ['prompt', 'models']
+      }
+    }
   }
 ]
 
@@ -551,7 +571,7 @@ export const SAFE_TOOLS = new Set([
   'browser_get_links', 'browser_get_forms', 'browser_screenshot', 'browser_wait',
   'update_working_memory', 'plan_tasks', 'update_task_status', 'undo_last_write',
   'remember_fact', 'remember_fresh_fact', 'load_skill', 'rag_search',
-  'capture_screen', 'analyze_image'
+  'capture_screen', 'analyze_image', 'compare_models'
 ])
 
 export const DANGEROUS_TOOLS = new Set([

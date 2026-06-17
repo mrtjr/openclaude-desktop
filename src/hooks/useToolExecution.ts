@@ -29,6 +29,7 @@ import { scoutSystemPrompt } from '../utils/scout'
 import { compressOutput } from '../utils/outputCompression'
 import { formatRagResults, DEFAULT_RAG_EMBED_MODEL } from '../utils/rag'
 import { resolveVisionTarget, formatVisionResult } from '../utils/vision'
+import { parseCompareSpecs, providerApiKey, extractChatText, formatComparison, type CompareResult } from '../utils/compareModels'
 
 interface UseToolExecutionOptions {
   settings: AppSettings
@@ -210,6 +211,29 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
           prompt, imageBase64: doc.base64, modalHostname: settings.modalHostname,
         })
         return formatVisionResult(res, `a imagem ${doc.name || path}`)
+      }
+      if (name === 'compare_models') {
+        // Fusão do ModelArena (v2.75.0): mesmo prompt em N modelos, em paralelo,
+        // e devolve lado a lado p/ a IA sintetizar. Ver utils/compareModels.ts.
+        const prompt = String(args.prompt ?? '').trim()
+        if (!prompt) return 'compare_models: faltou o parâmetro "prompt".'
+        const specs = parseCompareSpecs(args.models, settings.provider)
+        if (specs.length < 2) return 'compare_models: forneça pelo menos 2 modelos válidos em "models".'
+        const results = await Promise.all(specs.map(async (s): Promise<CompareResult> => {
+          const start = Date.now()
+          try {
+            const res = await window.electron.providerChat({
+              provider: s.provider, apiKey: providerApiKey(settings, s.provider), model: s.model,
+              messages: [{ role: 'user', content: prompt }],
+              temperature: settings.temperature, max_tokens: Math.min(settings.maxTokens || 1024, 2048),
+              modalHostname: settings.modalHostname, customBaseUrl: settings.customBaseUrl,
+            })
+            return { provider: s.provider, model: s.model, text: extractChatText(res), ms: Date.now() - start, error: res?.error || null }
+          } catch (e: any) {
+            return { provider: s.provider, model: s.model, text: '', ms: Date.now() - start, error: e?.message || String(e) }
+          }
+        }))
+        return formatComparison(prompt, results)
       }
       if (name === 'fetch_url') {
         const result = await window.electron.fetchUrl(args.url)
