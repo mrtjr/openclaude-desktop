@@ -9,6 +9,7 @@ import {
   beginInsightTurn,
   bumpInsightStep,
   endInsightTurn,
+  flushInterruptedTurn,
   compareVersionSegments,
   drillEvents,
   type InsightCategory,
@@ -144,6 +145,34 @@ describe('contexto de turno (correlação turn/step)', () => {
     endInsightTurn()
     const [e] = drainInsights()
     expect(e.m?.step).toBe(99)
+  })
+
+  it('flushInterruptedTurn: turno em voo no unload vira complete aborted (não zumbi)', () => {
+    const id = beginInsightTurn()
+    logInsight('tool', 'use', { name: 'execute_command' }) // turno trabalhando
+    flushInterruptedTurn()
+    const evs = drainInsights()
+    const complete = evs.find(e => e.c === 'chat' && e.a === 'complete')
+    expect(complete?.m).toMatchObject({ turn: id, outcome: 'aborted', reason: 'app_closed' })
+    // turno foi encerrado: um log seguinte não carrega mais o turn id
+    logInsight('feature', 'open', {})
+    expect(drainInsights()[0].m?.turn).toBeUndefined()
+  })
+
+  it('flushInterruptedTurn é no-op quando não há turno ativo', () => {
+    flushInterruptedTurn()
+    expect(hasBufferedInsights()).toBe(false)
+  })
+
+  it('um turno fechado por flushInterruptedTurn NÃO conta como zumbi no digest', () => {
+    // simula: turn começou, foi "interrompido" no unload (complete aborted)
+    const events: InsightEvent[] = [
+      { t: 100, c: 'chat', a: 'turn', m: { turn: 'z1', provider: 'modal', model: 'glm' } },
+      { t: 200, c: 'chat', a: 'complete', m: { turn: 'z1', outcome: 'aborted', reason: 'app_closed', ms: 5 } },
+    ]
+    const d = summarizeInsights(events, 30 as any, 1_000_000)
+    expect(d.turns.zombies).toBe(0)
+    expect(d.turns.aborted).toBe(1)
   })
 })
 

@@ -4,6 +4,7 @@ import {
   hasBufferedInsights,
   setInsightsEnabled,
   summarizeInsights,
+  flushInterruptedTurn,
   type InsightEvent,
 } from '../services/devInsights'
 
@@ -40,7 +41,9 @@ export function useDevInsights(enabled: boolean): { flush: () => void } {
 
   useEffect(() => {
     const id = setInterval(() => { if (hasBufferedInsights()) persist(false) }, 20000)
-    const onUnload = () => persist(true)
+    // Fecha um turno em voo como 'aborted' (app_closed) ANTES do flush, p/ não
+    // virar zumbi no digest (ver flushInterruptedTurn). Crash real não passa aqui.
+    const onUnload = () => { flushInterruptedTurn(); persist(true) }
     window.addEventListener('beforeunload', onUnload)
     return () => {
       clearInterval(id)

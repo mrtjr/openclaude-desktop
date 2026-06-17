@@ -327,6 +327,19 @@ export function endInsightTurn(): void {
   turnCtx = null
 }
 
+/** Se um turno ainda está ATIVO (sem 'complete') quando o app fecha/recarrega,
+ *  registra um 'complete' sintético (outcome 'aborted', reason 'app_closed')
+ *  ANTES do flush final — senão o turno vira "zumbi" no digest. Importante: um
+ *  CRASH real (renderer morto) NÃO dispara beforeunload, então não passa por
+ *  aqui e segue zumbi — exatamente o sinal que vale investigar. Chamado pelo
+ *  useDevInsights no beforeunload, antes de persistir. Turnos de 8+ min (cold
+ *  start do GLM) fechados no meio eram a maior fonte de falsos zumbis. */
+export function flushInterruptedTurn(): void {
+  if (!turnCtx) return
+  logInsight('chat', 'complete', { outcome: 'aborted', reason: 'app_closed' })
+  endInsightTurn()
+}
+
 /** Mirror the user's `analyticsEnabled` setting — when off, nothing is recorded. */
 export function setInsightsEnabled(on: boolean): void {
   enabled = on
