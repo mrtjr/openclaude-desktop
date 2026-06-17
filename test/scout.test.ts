@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   topicKey, keyOverlap, shouldRestart, inferScoutFocus, scoutSystemPrompt,
-  ScoutController, SCOUT_MAX_PER_TURN, type RunScout,
+  pickScoutActivity, ScoutController, SCOUT_MAX_PER_TURN, type RunScout,
 } from '../src/utils/scout'
 
 const flush = () => new Promise<void>((r) => setTimeout(r, 0))
@@ -20,6 +20,43 @@ describe('topicKey / overlap / shouldRestart', () => {
   it('keyOverlap é Jaccard', () => {
     expect(keyOverlap(topicKey('react hooks'), topicKey('react hooks'))).toBe(1)
     expect(keyOverlap(topicKey('react'), topicKey('bitcoin'))).toBe(0)
+  })
+})
+
+describe('pickScoutActivity (v2.86.0 — ação, não prosa)', () => {
+  const sum = (name: string, args: any) => (args?.url || args?.query || args?.command || '')
+
+  it('pega a ÚLTIMA ferramenta chamada (nome + arg), ignorando a prosa', () => {
+    const msgs = [
+      { role: 'user', content: 'investigue imperiodabritannia.com' },
+      { role: 'assistant', content: 'Excelente! Agora vou olhar o domínio…', tool_calls: [{ function: { name: 'browser_navigate', arguments: JSON.stringify({ url: 'imperiodabritannia.com/formulario' }) } }] },
+    ]
+    expect(pickScoutActivity(msgs, 1, sum)).toBe('browser_navigate: imperiodabritannia.com/formulario')
+  })
+
+  it('prosa pura (sem tool call) → vazio (foco fica só no objetivo)', () => {
+    const msgs = [
+      { role: 'user', content: 'oi' },
+      { role: 'assistant', content: 'Excelente! Agora vou…' },
+    ]
+    expect(pickScoutActivity(msgs, 1, sum)).toBe('')
+  })
+
+  it('respeita baseLen (ignora ações de turnos anteriores)', () => {
+    const msgs = [
+      { role: 'assistant', content: '', tool_calls: [{ function: { name: 'web_search', arguments: '{"query":"antigo"}' } }] },
+      { role: 'user', content: 'novo pedido' },
+    ]
+    // baseLen=1 → não enxerga a tool call do índice 0 (turno anterior)
+    expect(pickScoutActivity(msgs, 1, sum)).toBe('')
+  })
+
+  it('tolera args malformados e arguments como objeto', () => {
+    const msgs = [{ role: 'assistant', tool_calls: [{ function: { name: 'execute_command', arguments: { command: 'npm test' } } }] }]
+    expect(pickScoutActivity(msgs, 0, sum)).toBe('execute_command: npm test')
+    const bad = [{ role: 'assistant', tool_calls: [{ function: { name: 'x', arguments: '{nope' } }] }]
+    expect(pickScoutActivity(bad, 0, sum)).toBe('x')
+    expect(pickScoutActivity(undefined, 0, sum)).toBe('')
   })
 })
 

@@ -56,6 +56,39 @@ export function inferScoutFocus(objective: string, activity: string): string {
   return [objective, activity].map((s) => (s || '').trim()).filter(Boolean).join(' — ').slice(0, 400)
 }
 
+export interface ScoutMsgLike { role?: string; content?: string; tool_calls?: any[] }
+
+/** "O que a IA está fazendo AGORA" = a ÚLTIMA ferramenta chamada NESTE turno
+ *  (nome + resumo do argumento), olhando só de `baseLen` em diante. A PROSA do
+ *  assistente é IGNORADA de propósito: ela é conversa ("Excelente!", "Agora
+ *  vou…", "O domínio…") e fazia o scout pesquisar lixo (v2.86.0). A ação é o
+ *  sinal real do que está sendo feito. `summarize` é injetado (toolCallSummary).
+ *  Devolve '' quando não houve ação ainda — aí o foco fica só no objetivo. */
+export function pickScoutActivity(
+  messages: ScoutMsgLike[] | undefined,
+  baseLen: number,
+  summarize: (name: string, args: Record<string, any>) => string,
+): string {
+  if (!Array.isArray(messages)) return ''
+  const from = Math.max(0, baseLen | 0)
+  for (let i = messages.length - 1; i >= from; i--) {
+    const m = messages[i]
+    if (!m || m.role !== 'assistant' || !Array.isArray(m.tool_calls) || !m.tool_calls[0]) continue
+    const tc = m.tool_calls[0]
+    const name = String(tc?.function?.name || '').trim()
+    if (!name) continue
+    let args: Record<string, any> = {}
+    try {
+      const raw = tc.function?.arguments
+      args = typeof raw === 'string' ? JSON.parse(raw || '{}') : (raw || {})
+    } catch { args = {} }
+    let sum = ''
+    try { sum = summarize(name, args) } catch { sum = '' }
+    return sum ? `${name}: ${sum}` : name
+  }
+  return ''
+}
+
 /** System prompt do scout: foco em frescor (data de hoje) + atalhos. */
 export function scoutSystemPrompt(lang: string, todayISO: string): string {
   return lang === 'en'

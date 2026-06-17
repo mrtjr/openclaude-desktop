@@ -3,7 +3,7 @@ import type { Message, ToolResult, Conversation, AppSettings } from '../types'
 import { TOOLS, IDLE_STEP_THRESHOLD } from '../constants/tools'
 import { applySubagentModels } from '../utils/researchWorker'
 import type { BackgroundSubagentRegistry, BgEntry } from '../utils/backgroundSubagents'
-import { inferScoutFocus, type ScoutController, type RunScout } from '../utils/scout'
+import { inferScoutFocus, pickScoutActivity, type ScoutController, type RunScout } from '../utils/scout'
 import type { SubagentActivityStore } from '../utils/subagentActivity'
 import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIMING, LANGUAGE_REMINDER } from '../constants/prompts'
 import { partitionTools, renderDeferredManifest, decideDeferral } from '../services/toolDeferral'
@@ -751,19 +751,10 @@ export function useChat({
                 : `[PESQUISA PROATIVA — info de hoje / caminhos alternativos para: ${sr.topic}]\n`) + sr.text,
             })
           }
-          // Atividade SÓ deste turno (a partir de scoutBaseLen) → não confunde
-          // com a resposta de um turno anterior do histórico.
-          let activity = ''
-          for (let i = allMessages.length - 1; i >= scoutBaseLen; i--) {
-            const m = allMessages[i]
-            if (m.role !== 'assistant') continue
-            activity = String(m.content || '').slice(0, 160)
-            if (!activity && Array.isArray(m.tool_calls) && m.tool_calls[0]) {
-              const tc = m.tool_calls[0]
-              try { activity = toolCallSummary(tc.function?.name, JSON.parse(tc.function?.arguments || '{}')) } catch { activity = tc.function?.name || '' }
-            }
-            break
-          }
+          // Atividade = o que a IA está FAZENDO agora = a última ferramenta
+          // chamada NESTE turno (não a prosa "Excelente!/Agora vou…", que fazia
+          // o scout pesquisar lixo). Só deste turno (>= scoutBaseLen). v2.86.0.
+          const activity = pickScoutActivity(allMessages, scoutBaseLen, toolCallSummary)
           scoutController.step(inferScoutFocus(String(inputText || ''), activity), runScout, canScout || (() => true))
         }
         steps++
