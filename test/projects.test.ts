@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   PROJECT_COLORS, colorForIndex, validateProjectName,
   conversationsInProject, countByProject, removeProject, projectInstructionsAddition, projectCwdAddition,
+  workingDirAddition,
 } from '../src/utils/projects'
 import type { Conversation, Project } from '../src/types'
 
@@ -78,6 +79,20 @@ describe('projectCwdAddition', () => {
     expect(projectCwdAddition(null)).toBe('')
     expect(projectCwdAddition({ id: 'p', name: 'x', createdAt: new Date(0) })).toBe('')
     expect(projectCwdAddition({ id: 'p', name: 'x', createdAt: new Date(0), cwd: '  ' })).toBe('')
+  })
+})
+
+describe('workingDirAddition (cwd por conversa, v2.84.0)', () => {
+  it('monta a nota com o caminho e avisa que comandos já rodam lá', () => {
+    const out = workingDirAddition('D:/meu-projeto')
+    expect(out).toContain('Pasta de trabalho: D:/meu-projeto')
+    expect(out).toContain('execute_command')
+    expect(out).toContain('não use `cd`')
+  })
+  it('vazio quando não há cwd', () => {
+    expect(workingDirAddition(null)).toBe('')
+    expect(workingDirAddition('')).toBe('')
+    expect(workingDirAddition('  ')).toBe('')
   })
 })
 

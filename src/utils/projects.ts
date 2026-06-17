@@ -70,6 +70,17 @@ export function projectCwdAddition(project: Project | null | undefined): string 
   return `\n\n# Pasta de trabalho do projeto: ${cwd}\nOs comandos (execute_command) já rodam nesta pasta por padrão. Para operações de arquivo (read_file, list_directory, write_file), use caminhos absolutos sob ela.`
 }
 
+/** Nota de pasta de trabalho POR CONVERSA (v2.84.0) — estilo "pasta apontada"
+ *  do Claude Code. Quando a conversa tem um cwd próprio, ele vence o do projeto
+ *  e é injetado no system prompt para o modelo SABER onde está (corrige o caso
+ *  do "npm run dev" rodando na pasta de instalação por falta de cwd). Vazio
+ *  quando não há cwd. */
+export function workingDirAddition(cwd: string | null | undefined): string {
+  const dir = (cwd || '').trim()
+  if (!dir) return ''
+  return `\n\n# Pasta de trabalho: ${dir}\nOs comandos (execute_command, run_command_background) já rodam NESTA pasta por padrão — não use \`cd\` para chegar nela. Para operações de arquivo (read_file/write_file/list_directory/glob_files), use caminhos absolutos sob ela.`
+}
+
 /** Remove a project from the list and detach it from any conversation that
  *  referenced it (those conversations fall back to "Todas"). Pure — returns new
  *  arrays, mutates nothing. */

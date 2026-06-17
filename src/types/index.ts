@@ -53,6 +53,10 @@ export interface Conversation {
   /** Título da conversa-fonte cujo contexto foi importado para continuar aqui
    *  (v2.58.0). Só para exibir o chip "Continuando de: …". */
   importedFromTitle?: string
+  /** Pasta de trabalho APONTADA para esta conversa (v2.84.0, estilo Claude
+   *  Code) — execute_command/run_command_background e ops de arquivo rodam aqui
+   *  por padrão. Vence o cwd do projeto. Undefined = sem pasta apontada. */
+  cwd?: string
 }
 
 /** A Project groups related conversations into a workspace (Claude-style).

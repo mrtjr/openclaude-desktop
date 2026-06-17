@@ -1092,6 +1092,22 @@ ipcMain.handle('save-dialog', async (event, { defaultName, filters }) => {
   }
 })
 
+// ─── IPC: Folder picker (working directory, estilo Claude Code) ─────
+// Seleciona a PASTA de trabalho da conversa — onde execute_command/
+// run_command_background e ops de arquivo rodam por padrão (v2.84.0).
+ipcMain.handle('open-folder-dialog', async () => {
+  try {
+    const result = await dialog.showOpenDialog(win, {
+      properties: ['openDirectory'],
+      title: 'Selecionar pasta de trabalho',
+    })
+    if (result.canceled || !result.filePaths.length) return { path: null, error: null }
+    return { path: result.filePaths[0], error: null }
+  } catch (e) {
+    return { path: null, error: e.message }
+  }
+})
+
 // ─── IPC: Backup / restore (full user data export/import) ────────────
 // Additive: reads/writes the known userData JSON files. The renderer pairs
 // this with the localStorage half (see utils/backup.ts). Never touches an

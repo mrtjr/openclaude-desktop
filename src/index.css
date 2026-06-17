@@ -2494,6 +2494,13 @@ body .update-banner {
 .status-pill.steps { background: rgba(255,255,255,0.05); color: var(--text-secondary); border: 1px solid var(--border); }
 .status-pill.stop-pill { cursor: pointer; background: rgba(224,92,92,0.2); color: #e05c5c; border: 1px solid rgba(224,92,92,0.4); transition: all 0.15s; }
 .status-pill.stop-pill:hover { background: rgba(224,92,92,0.35); }
+/* Pasta de trabalho (v2.84.0) — clicável; realça quando uma pasta está apontada. */
+.status-pill.folder-pill { cursor: pointer; max-width: 220px; background: rgba(255,255,255,0.05); color: var(--text-secondary); border: 1px solid var(--border); transition: all 0.15s; text-transform: none; }
+.status-pill.folder-pill > span, .status-pill.folder-pill { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-pill.folder-pill:hover { background: var(--bg-tertiary); border-color: var(--border-light); }
+.status-pill.folder-pill.set { background: rgba(91,155,213,0.15); color: #5b9bd5; border-color: rgba(91,155,213,0.35); }
+.status-pill.folder-clear { cursor: pointer; padding: 3px 6px; background: rgba(255,255,255,0.05); color: var(--text-secondary); border: 1px solid var(--border); transition: all 0.15s; }
+.status-pill.folder-clear:hover { background: rgba(224,92,92,0.2); color: #e05c5c; border-color: rgba(224,92,92,0.4); }
 
 /* ── Main pill container (Claude.ai style border+shadow) ── */
 .input-pill {

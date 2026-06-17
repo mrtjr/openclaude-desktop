@@ -36,6 +36,7 @@ interface Window {
     setAutoStart: (enabled: boolean) => Promise<{ error: string | null }>
     saveDialog: (opts: any) => Promise<{ filePath: string | null; error: string | null }>
     openFileDialog: (opts?: any) => Promise<{ filePaths: string[]; canceled: boolean }>
+    openFolderDialog: () => Promise<{ path: string | null; error?: string | null }>
     readDroppedFile: (path: string) => Promise<{ content: string | null; name?: string; error: string | null }>
     exportUserData: () => Promise<{ files: Record<string, unknown>; error: string | null }>
     importUserData: (payload: { files: Record<string, unknown> }) => Promise<{ restored: number; error: string | null }>

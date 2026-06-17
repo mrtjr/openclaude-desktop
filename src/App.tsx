@@ -21,7 +21,7 @@ import { ThinkingTimer } from './components/ThinkingTimer'
 import ProjectsBar from './components/ProjectsBar'
 import ProjectEditModal from './components/ProjectEditModal'
 import { useProjects } from './hooks/useProjects'
-import { conversationsInProject, countByProject, removeProject, projectInstructionsAddition, projectCwdAddition } from './utils/projects'
+import { conversationsInProject, countByProject, removeProject, projectInstructionsAddition, projectCwdAddition, workingDirAddition } from './utils/projects'
 import type { Project, Conversation } from './types'
 
 // Heavy feature panels — lazy-loaded on first use.
@@ -503,12 +503,15 @@ export default function App() {
       ? { ...effectiveSettings, systemPrompt: activePersona.systemPrompt }
       : effectiveSettings
     const conv = convManager.activeConv
-    if (!conv?.projectId) return base
-    const project = projManager.projects.find(p => p.id === conv.projectId)
-    const addition = projectInstructionsAddition(project) + projectCwdAddition(project)
+    const project = conv?.projectId ? projManager.projects.find(p => p.id === conv.projectId) : null
+    // Pasta de trabalho da CONVERSA (v2.84.0, estilo Claude Code) vence a do
+    // projeto — e é injetada no system prompt para o modelo saber onde está.
+    const convCwd = conv?.cwd?.trim()
+    const cwdNote = convCwd ? workingDirAddition(convCwd) : projectCwdAddition(project)
+    const addition = projectInstructionsAddition(project) + cwdNote
     if (!addition) return base
     return { ...base, systemPrompt: (base.systemPrompt || '') + addition }
-  }, [effectiveSettings, activePersona, convManager.activeConv?.projectId, projManager.projects])
+  }, [effectiveSettings, activePersona, convManager.activeConv?.projectId, convManager.activeConv?.cwd, projManager.projects])
   // Projects ciclo 4 (v2.12.47): the project folder is no longer prompt-only —
   // execute_command actually runs there (default cwd, model can override).
   const activeProjectCwd = useMemo(() => {
@@ -516,6 +519,25 @@ export default function App() {
     if (!conv?.projectId) return undefined
     return projManager.projects.find(p => p.id === conv.projectId)?.cwd?.trim() || undefined
   }, [convManager.activeConv?.projectId, projManager.projects])
+  // Pasta de trabalho EFETIVA (v2.84.0): a apontada na conversa vence a do
+  // projeto. É o cwd que execute_command/run_command_background usam por padrão.
+  const activeCwd = useMemo(
+    () => convManager.activeConv?.cwd?.trim() || activeProjectCwd,
+    [convManager.activeConv?.cwd, activeProjectCwd],
+  )
+  // Apontar a pasta de trabalho da conversa atual via seletor nativo (chip no
+  // composer / empty state). Limpa com path vazio.
+  const setConvCwd = useCallback((cwd: string | undefined) => {
+    const id = convManager.activeConvId
+    if (!id) return
+    convManager.setConversations(prev => prev.map(c => c.id === id ? { ...c, cwd: cwd || undefined } : c))
+  }, [convManager])
+  const pickWorkingFolder = useCallback(async () => {
+    try {
+      const r = await window.electron.openFolderDialog?.()
+      if (r?.path) setConvCwd(r.path)
+    } catch { /* cancelado */ }
+  }, [setConvCwd])
   // useConversationFork has its own local Message shape that omits id/timestamp;
   // our app's Message is stricter. The fork logic only reads role/content/
   // arbitrary fields via spread, so the mismatch is cosmetic — cast away.
@@ -550,7 +572,7 @@ export default function App() {
     setConversations: convManager.setConversations,
     selectedModel,
     modalKeyPool,
-    projectCwd: activeProjectCwd,
+    projectCwd: activeCwd,
     skills,
     callMcpTool: mcp.callMcpTool,
     backgroundTasks,
@@ -1863,6 +1885,16 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+                {/* Apontar pasta de trabalho (v2.84.0, estilo Claude Code) —
+                    onde os comandos rodam. Mostra a pasta apontada ou convida a
+                    escolher. */}
+                <button className="continue-from-btn" onClick={pickWorkingFolder}
+                  title={settings.language === 'en' ? 'Pick the working folder for this chat (cwd for commands & file ops)' : 'Escolha a pasta de trabalho deste chat (cwd dos comandos e ops de arquivo)'}>
+                  <Folder size={14} />
+                  {activeCwd
+                    ? <span>{settings.language === 'en' ? 'Working folder' : 'Pasta de trabalho'}: <strong>{activeCwd}</strong></span>
+                    : (settings.language === 'en' ? 'Set a working folder' : 'Apontar uma pasta de trabalho')}
+                </button>
                 {activeConv?.importedFromTitle ? (
                   <div className="imported-context-chip" title={settings.language === 'en' ? 'This chat continues from another conversation' : 'Esta conversa continua a partir de outra'}>
                     <MessageSquare size={13} />
@@ -2087,6 +2119,26 @@ export default function App() {
                   pulsante — então o status-pill "Bypass Mode" dedicado
                   foi removido para evitar redundância. */}
               <div className="input-status-bar">
+                {/* Pasta de trabalho da conversa (v2.84.0, estilo Claude Code):
+                    onde execute_command/run_command_background e ops de arquivo
+                    rodam por padrão. Clique → seletor nativo; × limpa. */}
+                <button
+                  className={`status-pill folder-pill${activeCwd ? ' set' : ''}`}
+                  onClick={pickWorkingFolder}
+                  title={activeCwd
+                    ? `Pasta de trabalho: ${activeCwd}\n(clique para trocar)`
+                    : (settings.language === 'en' ? 'Set the working folder (cwd for commands)' : 'Apontar a pasta de trabalho (cwd dos comandos)')}
+                >
+                  <Folder size={9} />
+                  {activeCwd ? (activeCwd.split(/[\\/]/).filter(Boolean).pop() || activeCwd) : (settings.language === 'en' ? 'Folder' : 'Pasta')}
+                </button>
+                {activeConv?.cwd && (
+                  <button
+                    className="status-pill folder-clear"
+                    onClick={() => setConvCwd(undefined)}
+                    title={settings.language === 'en' ? 'Clear working folder' : 'Limpar pasta de trabalho'}
+                  ><X size={9} /></button>
+                )}
                 <PermissionModeButton
                   value={settings.permissionLevel || 'ask'}
                   onChange={(level) => setSettings(s => ({ ...s, permissionLevel: level }))}

@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('electron', {
   // Dialogs
   saveDialog: (opts) => ipcRenderer.invoke('save-dialog', opts),
   openFileDialog: (opts) => ipcRenderer.invoke('open-file-dialog', opts),
+  openFolderDialog: () => ipcRenderer.invoke('open-folder-dialog'),
 
   // Dropped files
   readDroppedFile: (path) => ipcRenderer.invoke('read-dropped-file', path),
