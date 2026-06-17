@@ -104,6 +104,31 @@ export const BUILTIN_SKILLS: Skill[] = [
     isBuiltIn: true,
     createdAt: 0,
   },
+  {
+    id: 'builtin-last30days',
+    name: 'last30days',
+    description: 'O que está sendo dito sobre um tópico nos ÚLTIMOS 30 DIAS — multi-fonte, em paralelo (subagentes), rankeado por engajamento real e frescor, com citações.',
+    instructions: `Skill "last30days" — radar do que está REALMENTE sendo falado sobre um tópico nos últimos ~30 dias, varrendo várias fontes em paralelo e rankeando por engajamento de pessoas (não por curadoria/SEO). Adaptado de github.com/mvanhorn/last30days-skill às ferramentas deste app.
+
+1. RESOLVER O ALVO antes de buscar. Identifique ONDE o tópico vive: subreddits, contas no X/Twitter, canais no YouTube, repositórios e issues no GitHub, Hacker News, comunidades. Ex.: "OpenClaude" → r/<comunidade>, @<handle>, <org>/<repo>. Uma busca rápida (web_search "<tópico> reddit", "<tópico> github", "<tópico> hacker news") ajuda a mapear os handles certos.
+
+2. FAN-OUT EM PARALELO COM SUBAGENTES. Use delegate_subtasks para disparar VÁRIOS workers ao mesmo tempo, cada um cobrindo UMA fonte/ângulo com foco em recência. Ex.: um worker p/ Reddit+HN, um p/ GitHub (releases/issues/PRs recentes), um p/ notícias/web, um p/ X/YouTube. Cada worker usa web_search/fetch_url com termos específicos + a DATA DE HOJE e devolve os achados COM as URLs e os sinais de engajamento que encontrar (upvotes, estrelas, likes, nº de comentários, visualizações). Assim os SUBAGENTES também executam a skill — eles fazem a coleta paralela e você sintetiza.
+
+3. PRIORIZAR FRESCOR (últimos ~30 dias). Cheque a DATA de cada item e descarte o que for velho. Seu conhecimento de treino está desatualizado — confie no que foi publicado recentemente e verificado na web hoje, não na memória.
+
+4. RANKEAR POR PESSOAS, NÃO POR SEO. Ordene os achados por engajamento real (upvotes do Reddit, estrelas/issues do GitHub, likes/views) + relevância + frescor. A ordem do buscador não é prova de importância.
+
+5. MESCLAR DUPLICATAS. A mesma história aparecendo em várias fontes = UM cluster (não repita). Agrupe por entidade/assunto e cite as várias fontes juntas.
+
+6. SINTETIZAR COM CITAÇÕES. Entregue um brief enxuto: "o que mudou nos últimos 30 dias", os pontos-chave ordenados por relevância, e uma seção "Melhores Takes" (citações/momentos marcantes com o autor). Cada afirmação não-trivial ligada à URL REAL consultada, em 'Fontes:'. Nunca invente URL, número, data ou citação; separe fato citado de inferência sua.
+
+7. OPCIONAL. Se o usuário pedir, exporte como HTML autocontido (write_file) ou um resumo ELI5/comparativo. Guarde achados duráveis com remember_fresh_fact (TTL curto — isto decai rápido) e o estado com update_working_memory.`,
+    triggers: ['last30days', 'últimos 30 dias', 'ultimos 30 dias', '30 dias', 'o que estão falando', 'o que falam sobre', 'repercussão', 'tendências', 'tendencias', 'buzz', 'novidades sobre', 'o que rolou'],
+    enabled: true,
+    pinned: false,
+    isBuiltIn: true,
+    createdAt: 0,
+  },
 ]
 
 /** Lookup por nome (case-insensitive) ou id. Null se não achar. */
