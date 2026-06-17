@@ -558,6 +558,7 @@ export default function App() {
     subagentLimiter,
     personas: personaList,
     onSetPersona: (p) => { setActivePersona(p as any); setActivePersonaId((p as any)?.id ?? null) },
+    getConversations: () => convManager.conversationsRef.current,
   })
 
   // Matching semântico de skills (Fase 5, v2.56.0) — opt-in, best-effort (Ollama).

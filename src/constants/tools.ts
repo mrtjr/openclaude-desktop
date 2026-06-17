@@ -176,6 +176,22 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'search_conversations',
+      // Recall cross-sessão (ideia do FTS5 do Hermes, v2.82.2).
+      description: 'Search your PAST conversations (other chat sessions) by keyword — long-term recall across sessions. Use when the user refers to something discussed "before/last time/in another chat", or when you need a decision/command/finding from an earlier session. Returns matching snippets grouped by conversation, with how long ago. The CURRENT conversation is excluded (its content is already in your context). Read-only.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Keywords to look for across past conversations' },
+          max: { type: 'number', description: 'Max snippets to return (default 8)' }
+        },
+        required: ['query']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'glob_files',
       // Copiado do Glob do Claude Code (v2.82.1): achar arquivos por padrão.
       description: 'Find files by NAME PATTERN (glob) under a directory — e.g. "**/*.ts", "src/**/*.test.tsx", "*.{json,yaml}". Use when you know the name/extension pattern but not the exact path (faster than list_directory or project_tree for locating files). "**/" matches any nesting; "*.ts" matches only the top level. Defaults to the active project folder. Read-only; ignores node_modules/.git/dist and hidden files; depth-limited.',
@@ -662,7 +678,8 @@ export const SAFE_TOOLS = new Set([
   'browser_get_links', 'browser_get_forms', 'browser_screenshot', 'browser_wait',
   'update_working_memory', 'plan_tasks', 'update_task_status', 'undo_last_write',
   'remember_fact', 'remember_fresh_fact', 'load_skill', 'rag_search',
-  'capture_screen', 'analyze_image', 'compare_models', 'set_persona', 'project_tree', 'glob_files'
+  'capture_screen', 'analyze_image', 'compare_models', 'set_persona', 'project_tree', 'glob_files',
+  'search_conversations'
 ])
 
 export const DANGEROUS_TOOLS = new Set([

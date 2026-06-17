@@ -34,6 +34,7 @@ import { findWorkflow, topoOrder, formatWorkflowRun, type WfRunEntry } from '../
 import { findPersona, isClearPersona, formatSetPersonaResult, type PersonaLike } from '../utils/personas'
 import { formatProjectTree } from '../utils/projectTree'
 import { formatGlobResults } from '../utils/glob'
+import { searchConversations, formatConversationMatches } from '../utils/searchConversations'
 
 interface UseToolExecutionOptions {
   settings: AppSettings
@@ -60,15 +61,20 @@ interface UseToolExecutionOptions {
    *  (fusão do PersonaEngine, v2.77.0). */
   personas?: PersonaLike[]
   onSetPersona?: (persona: PersonaLike | null) => void
+  /** Lê TODAS as conversas (cross-sessão) para a ferramenta search_conversations
+   *  (recall, ideia do Hermes — v2.82.2). Vem do conversationsRef do App. */
+  getConversations?: () => Conversation[]
 }
 
-export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool, backgroundTasks, subagentActivity, subagentLimiter, personas, onSetPersona }: UseToolExecutionOptions) {
+export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool, backgroundTasks, subagentActivity, subagentLimiter, personas, onSetPersona, getConversations }: UseToolExecutionOptions) {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
   const scoutSeqRef = useRef(0) // ids únicos + rodízio de modelo do scout
   const personasRef = useRef(personas)
   personasRef.current = personas
   const onSetPersonaRef = useRef(onSetPersona)
   onSetPersonaRef.current = onSetPersona
+  const getConversationsRef = useRef(getConversations)
+  getConversationsRef.current = getConversations
 
   // Use refs to avoid stale closures
   const activeConvIdRef = useRef(activeConvId)
@@ -365,6 +371,16 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         if (!dir) return 'glob_files: informe "path" (ou abra um projeto para usar a pasta ativa).'
         const res = await window.electron.workspaceTree(dir)
         return formatGlobResults(res, pattern, dir)
+      }
+      if (name === 'search_conversations') {
+        // Recall cross-sessão (ideia do FTS5 do Hermes, v2.82.2): scan linear nas
+        // conversas em memória, excluindo a ativa. Ver utils/searchConversations.ts.
+        const query = String(args.query ?? '').trim()
+        if (!query) return 'search_conversations: faltou o parâmetro "query".'
+        const all = getConversationsRef.current?.() || []
+        const max = Math.min(Math.max(Number(args.max) || 8, 1), 20)
+        const matches = searchConversations(all as any, query, { excludeId: convId || undefined, max })
+        return formatConversationMatches(matches, query, new Date())
       }
       if (name === 'list_directory') {
         const result = await window.electron.listDirectory(args.path)
