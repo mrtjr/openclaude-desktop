@@ -176,6 +176,22 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'glob_files',
+      // Copiado do Glob do Claude Code (v2.82.1): achar arquivos por padrão.
+      description: 'Find files by NAME PATTERN (glob) under a directory — e.g. "**/*.ts", "src/**/*.test.tsx", "*.{json,yaml}". Use when you know the name/extension pattern but not the exact path (faster than list_directory or project_tree for locating files). "**/" matches any nesting; "*.ts" matches only the top level. Defaults to the active project folder. Read-only; ignores node_modules/.git/dist and hidden files; depth-limited.',
+      parameters: {
+        type: 'object',
+        properties: {
+          pattern: { type: 'string', description: 'Glob pattern, e.g. "**/*.ts" or "src/**/*.{ts,tsx}"' },
+          path: { type: 'string', description: 'Absolute directory to search under. Defaults to the active project folder.' }
+        },
+        required: ['pattern']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'list_directory',
       description: 'List files and folders in a directory',
       parameters: {
@@ -646,7 +662,7 @@ export const SAFE_TOOLS = new Set([
   'browser_get_links', 'browser_get_forms', 'browser_screenshot', 'browser_wait',
   'update_working_memory', 'plan_tasks', 'update_task_status', 'undo_last_write',
   'remember_fact', 'remember_fresh_fact', 'load_skill', 'rag_search',
-  'capture_screen', 'analyze_image', 'compare_models', 'set_persona', 'project_tree'
+  'capture_screen', 'analyze_image', 'compare_models', 'set_persona', 'project_tree', 'glob_files'
 ])
 
 export const DANGEROUS_TOOLS = new Set([

@@ -33,6 +33,7 @@ import { parseCompareSpecs, providerApiKey, extractChatText, formatComparison, t
 import { findWorkflow, topoOrder, formatWorkflowRun, type WfRunEntry } from '../utils/workflows'
 import { findPersona, isClearPersona, formatSetPersonaResult, type PersonaLike } from '../utils/personas'
 import { formatProjectTree } from '../utils/projectTree'
+import { formatGlobResults } from '../utils/glob'
 
 interface UseToolExecutionOptions {
   settings: AppSettings
@@ -354,6 +355,16 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         if (!dir) return 'project_tree: informe "path" (ou abra um projeto para usar a pasta ativa).'
         const res = await window.electron.workspaceTree(dir)
         return formatProjectTree(res, dir)
+      }
+      if (name === 'glob_files') {
+        // Copiado do Glob do Claude Code (v2.82.1): acha arquivos por padrão de
+        // nome. Reusa o workspace-tree e casa caminhos relativos. Ver utils/glob.ts.
+        const pattern = String(args.pattern ?? '').trim()
+        if (!pattern) return 'glob_files: faltou o parâmetro "pattern".'
+        const dir = resolveExecCwd(args.path, projectCwdRef.current)
+        if (!dir) return 'glob_files: informe "path" (ou abra um projeto para usar a pasta ativa).'
+        const res = await window.electron.workspaceTree(dir)
+        return formatGlobResults(res, pattern, dir)
       }
       if (name === 'list_directory') {
         const result = await window.electron.listDirectory(args.path)
