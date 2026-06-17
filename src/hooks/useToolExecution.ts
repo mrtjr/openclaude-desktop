@@ -28,6 +28,7 @@ import type { Semaphore } from '../utils/semaphore'
 import { scoutSystemPrompt } from '../utils/scout'
 import { compressOutput } from '../utils/outputCompression'
 import { formatRagResults, DEFAULT_RAG_EMBED_MODEL } from '../utils/rag'
+import { resolveVisionTarget, formatVisionResult } from '../utils/vision'
 
 interface UseToolExecutionOptions {
   settings: AppSettings
@@ -180,6 +181,35 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         const search = await window.electron.ragSearch({ queryEmbedding: emb.embedding, topK })
         if (search.error) return `Erro na busca RAG: ${search.error}`
         return formatRagResults(search.results || [], query)
+      }
+      if (name === 'capture_screen') {
+        // Fusão do VisionMode (v2.74.0): captura o desktop e analisa num modelo
+        // de visão. Leitura (não muda nada). Ver utils/vision.ts.
+        const target = resolveVisionTarget(settings)
+        if (!target) return `O provider de visão atual ("${settings.provider}") não suporta análise de imagem. Configure ollama (llava), openai, gemini, anthropic, openrouter ou modal.`
+        const prompt = String(args.prompt ?? '').trim() || 'Descreva o que está visível na tela, de forma objetiva.'
+        const shot = await window.electron.captureScreen()
+        if (shot.error || !shot.base64) return `Não consegui capturar a tela: ${shot.error || 'sem imagem'}.`
+        const res = await window.electron.visionChat({
+          provider: target.provider, apiKey: target.apiKey, model: target.model,
+          prompt, imageBase64: shot.base64, modalHostname: settings.modalHostname,
+        })
+        return formatVisionResult(res, 'a tela')
+      }
+      if (name === 'analyze_image') {
+        const path = String(args.path ?? '').trim()
+        if (!path) return 'analyze_image: faltou o parâmetro "path".'
+        const target = resolveVisionTarget(settings)
+        if (!target) return `O provider de visão atual ("${settings.provider}") não suporta análise de imagem. Configure ollama (llava), openai, gemini, anthropic, openrouter ou modal.`
+        const doc: any = await window.electron.readDocument(path)
+        if (doc.error) return `Não consegui ler a imagem "${path}": ${doc.error}.`
+        if (!doc.isImage || !doc.base64) return `O arquivo "${path}" não é uma imagem suportada (png/jpg/jpeg/gif/webp/bmp).`
+        const prompt = String(args.prompt ?? '').trim() || 'Descreva o conteúdo desta imagem de forma objetiva.'
+        const res = await window.electron.visionChat({
+          provider: target.provider, apiKey: target.apiKey, model: target.model,
+          prompt, imageBase64: doc.base64, modalHostname: settings.modalHostname,
+        })
+        return formatVisionResult(res, `a imagem ${doc.name || path}`)
       }
       if (name === 'fetch_url') {
         const result = await window.electron.fetchUrl(args.url)

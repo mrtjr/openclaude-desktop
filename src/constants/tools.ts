@@ -506,6 +506,36 @@ export const TOOLS = [
         required: ['query']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'capture_screen',
+      // Fusão do VisionMode no chat (v2.74.0): a IA "vê" a tela do usuário.
+      description: 'Take a screenshot of the user\'s DESKTOP screen and analyze it with a vision model. Use this whenever the user asks about what is on their screen, an error/dialog they are seeing, a chart/graph, a UI, or "look at this / what do you see / what\'s on my screen". Returns a text description — you do not get the pixels, so ask a focused question via "prompt". Reads the screen only (no changes).',
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: { type: 'string', description: 'What to look for or the question about the screen (e.g. "what error is shown?", "describe the chart"). Defaults to a general description.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'analyze_image',
+      // Fusão do VisionMode no chat (v2.74.0): analisa uma imagem em disco.
+      description: 'Analyze an IMAGE FILE on disk (png/jpg/jpeg/gif/webp/bmp) with a vision model. Use when the user points to an image by path, or after you find one via list_directory/search_files and need to understand its contents. Returns a text description. Reads the file only.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Absolute path to the image file' },
+          prompt: { type: 'string', description: 'What to look for or the question about the image. Defaults to a general description.' }
+        },
+        required: ['path']
+      }
+    }
   }
 ]
 
@@ -520,7 +550,8 @@ export const SAFE_TOOLS = new Set([
   'read_file', 'search_files', 'list_directory', 'web_search', 'fetch_url', 'browser_get_text',
   'browser_get_links', 'browser_get_forms', 'browser_screenshot', 'browser_wait',
   'update_working_memory', 'plan_tasks', 'update_task_status', 'undo_last_write',
-  'remember_fact', 'remember_fresh_fact', 'load_skill', 'rag_search'
+  'remember_fact', 'remember_fresh_fact', 'load_skill', 'rag_search',
+  'capture_screen', 'analyze_image'
 ])
 
 export const DANGEROUS_TOOLS = new Set([

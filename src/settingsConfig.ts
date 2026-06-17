@@ -144,6 +144,11 @@ export interface AppSettings {
    *  vetores ficam em espaços diferentes e o score é lixo. Ausente → o default
    *  do RAGPanel ('mxbai-embed-large', ver DEFAULT_RAG_EMBED_MODEL). */
   ragEmbeddingModel?: string
+  /** v2.74.0 — modelo de VISÃO usado pelas ferramentas capture_screen/
+   *  analyze_image quando o provider é Ollama (o modelo de chat local costuma
+   *  ser só-texto). Ausente → 'llava' (ver DEFAULT_VISION_OLLAMA_MODEL). Na
+   *  nuvem usa-se o modelo configurado do provider (gpt-4o/gemini/claude…). */
+  visionModel?: string
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
