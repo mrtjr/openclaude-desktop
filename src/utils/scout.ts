@@ -130,10 +130,15 @@ export class ScoutController {
     this.abort = ac
     runScout(focus, ac.signal).then(
       (text) => {
+        // Run abortado = foi SUPERSEDIDO por um launch novo (ou cancelado): o
+        // estado (inFlight/abort) já pertence ao run atual; não tocar nele,
+        // senão a resolução tardia deste run zerava o inFlight do run novo —
+        // quebrava "um scout por vez" e relançava/abortava à toa.
+        if (ac.signal.aborted) return
         this.inFlight = false
-        if (!ac.signal.aborted && text && text.trim()) this.result = { topic: focus, text }
+        if (text && text.trim()) this.result = { topic: focus, text }
       },
-      () => { this.inFlight = false },
+      () => { if (!ac.signal.aborted) this.inFlight = false },
     )
   }
 

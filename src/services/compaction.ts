@@ -149,14 +149,22 @@ export async function runCompaction(
       if (res?.error) return { summary: '', error: String(res.error) }
       return { summary: res?.choices?.[0]?.message?.content || '', error: null }
     }
-    // Ollama: keep the dedicated local handler (it owns the localhost call).
-    const res = await window.electron.compactContext({
-      messages: messages as any[],
+    // Ollama: roda pelo IPC ollama-chat local (localhost:11434, sem auth) com as
+    // MESMAS mensagens estruturadas dos demais providers. Antes o Ollama tinha
+    // um handler dedicado com um prompt plano antigo que (a) descartava os
+    // resultados de ferramentas (placeholder "(tool call)"), (b) ignorava as
+    // instruções do `/compact`, e (c) produzia texto não-seccionado que o
+    // mergeSummaryStructured fundia mal — ficou para trás no resumo estruturado
+    // (v2.59.0). Como Ollama é o provider padrão do app, isso degradava o caso
+    // mais comum; unificado aqui.
+    const res = await window.electron.ollamaChat({
       model: cfg.model,
-      language,
-      provider: cfg.provider,
+      messages: buildCompactionMessages(messages, language, instructions),
+      temperature: 0.1,
+      max_tokens: 800,
     })
-    return { summary: res?.summary || '', error: res?.error || null }
+    if (res?.error) return { summary: '', error: String(res.error) }
+    return { summary: res?.choices?.[0]?.message?.content || '', error: null }
   } catch (e: any) {
     return { summary: '', error: e?.message || String(e) }
   }

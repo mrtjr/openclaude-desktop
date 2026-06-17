@@ -95,6 +95,24 @@ describe('ScoutController', () => {
     expect(started.length).toBe(2)
   })
 
+  it('resolução tardia de um run supersedido não zera o busy do run novo', async () => {
+    const c = new ScoutController()
+    c.reset(true)
+    let resolveA: ((v: string) => void) | null = null
+    const controllable: RunScout = (t) =>
+      t.includes('react')
+        ? new Promise<string>((res) => { resolveA = res }) // A: resolvível à mão
+        : new Promise<string>(() => {}) // B: nunca resolve
+    c.step('versão do react hooks', controllable, () => true) // scout A
+    expect(c.busy).toBe(true)
+    c.step('preço do bitcoin agora', controllable, () => true) // tema novo → B (aborta A)
+    expect(c.busy).toBe(true)
+    resolveA!('texto tardio do A') // A resolve DEPOIS de ser supersedido
+    await flush()
+    expect(c.busy).toBe(true) // B ainda roda — não foi zerado pela resolução tardia de A
+    expect(c.takeResult()).toBeNull() // o resultado de A (abortado) é descartado
+  })
+
   it('respeita o teto por turno', () => {
     const c = new ScoutController()
     c.reset(true)

@@ -5,7 +5,6 @@ declare const __APP_VERSION__: string
 
 interface Window {
   electron: {
-    compactContext: (params: { messages: any[]; model: string; language: string; provider?: string }) => Promise<{ summary: string; error: string | null; skipped?: boolean }>
     ollamaChat: (params: any) => Promise<any>
     ollamaChatStream: (params: any) => Promise<any>
     onStreamChunk: (callback: (chunk: any) => void) => () => void

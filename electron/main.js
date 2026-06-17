@@ -203,58 +203,13 @@ function createWindow() {
   ipcMain.handle('window-is-maximized', () => win.isMaximized())
 }
 
-// ─── IPC: Context Compaction (summarize old messages via model) ──────
-// OLLAMA-ONLY summarizer (localhost:11434). Since v2.12.53 cloud providers
-// are compacted in the RENDERER via services/compaction.ts → provider-chat
-// (this handler used to silently skip them, which kept "Memória / resumo"
-// at 0 forever for cloud users). The guard below remains as a safety net
-// for any stale caller.
-ipcMain.handle('compact-context', async (event, { messages, model, language, provider }) => {
-  if (provider && provider !== 'ollama') {
-    return { summary: '', error: null, skipped: true }
-  }
-  return new Promise((resolve) => {
-    const compactPrompt = language === 'pt'
-      ? `Resuma a conversa abaixo em um parágrafo compacto preservando: (1) fatos-chave mencionados, (2) decisões tomadas, (3) arquivos/caminhos referenciados, (4) estado atual do trabalho. Seja denso e factual, sem floreios. Máximo 300 palavras.`
-      : `Summarize the conversation below in one compact paragraph preserving: (1) key facts mentioned, (2) decisions made, (3) files/paths referenced, (4) current state of work. Be dense and factual, no fluff. Maximum 300 words.`
-
-    const compactMessages = [
-      { role: 'system', content: compactPrompt },
-      { role: 'user', content: messages.map(m => `[${m.role}]: ${m.content?.substring(0, 500) || '(tool call)'}`).join('\n') }
-    ]
-
-    const body = JSON.stringify({
-      model,
-      messages: compactMessages,
-      stream: false,
-      options: { temperature: 0.1 }
-    })
-
-    const options = {
-      hostname: 'localhost',
-      port: 11434,
-      path: '/v1/chat/completions',
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
-    }
-
-    const req = http.request(options, (res) => {
-      let data = ''
-      res.on('data', chunk => data += chunk)
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(data)
-          const summary = parsed.choices?.[0]?.message?.content || ''
-          resolve({ summary, error: null })
-        } catch (e) { resolve({ summary: '', error: e.message }) }
-      })
-    })
-    req.on('error', (e) => resolve({ summary: '', error: e.message }))
-    req.setTimeout(30000, () => { req.destroy(); resolve({ summary: '', error: 'Compaction timeout' }) })
-    req.write(body)
-    req.end()
-  })
-})
+// ─── IPC: Context Compaction ─────────────────────────────────────────
+// Toda a compactação (incl. Ollama) agora roda no RENDERER via
+// services/compaction.ts, que monta o resumo ESTRUTURADO (seções + tools +
+// instruções do /compact) e roteia pelo IPC do provider real (provider-chat
+// p/ nuvem, ollama-chat p/ local). O antigo handler 'compact-context' dedicado
+// ao Ollama usava um prompt plano que descartava tools/instruções e ficou para
+// trás no resumo estruturado (v2.59.0) — removido para não divergir.
 
 // ─── IPC: Ollama chat (non-streaming) ────────────────────────────────
 ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperature, max_tokens, numCtx, reasoningEffort, timeoutMs }) => {
@@ -294,6 +249,7 @@ ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperatur
 
     const req = http.request(options, (res) => {
       let data = ''
+      res.setEncoding('utf8') // decode UTF-8 com estado entre chunks (evita ç/ã/é → U+FFFD na fronteira de pacote)
       res.on('data', chunk => data += chunk)
       res.on('end', () => {
         activeOllamaStream = null
@@ -700,6 +656,7 @@ ipcMain.handle('list-models', async () => {
   return new Promise((resolve) => {
     const req = http.request({ hostname: 'localhost', port: 11434, path: '/api/tags', method: 'GET' }, (res) => {
       let data = ''
+      res.setEncoding('utf8') // decode UTF-8 com estado entre chunks (evita ç/ã/é → U+FFFD na fronteira de pacote)
       res.on('data', chunk => data += chunk)
       res.on('end', () => {
         try { resolve(JSON.parse(data)) }
@@ -790,6 +747,7 @@ ipcMain.handle('web-search', async (event, query) => {
         res.resume()
         const r2req = https.get(res.headers.location, { headers: options.headers }, (r2) => {
           let rd = ''
+          r2.setEncoding('utf8')
           r2.on('data', c => rd += c)
           r2.on('end', () => parseAndResolve(rd))
         })
@@ -797,6 +755,7 @@ ipcMain.handle('web-search', async (event, query) => {
         r2req.setTimeout(WEB_SEARCH_TIMEOUT_MS, () => { r2req.destroy(); resolve({ result: null, error: 'web search timeout' }) })
         return
       }
+      res.setEncoding('utf8') // UTF-8 estável entre chunks (HTML pt-BR do DuckDuckGo)
       res.on('data', chunk => data += chunk)
       res.on('end', () => parseAndResolve(data))
     })
@@ -836,6 +795,7 @@ ipcMain.handle('web-search', async (event, query) => {
         // Fallback to instant answer API
         const fbReq = https.get(`https://api.duckduckgo.com/?q=${encodedQuery}&format=json&no_html=1`, (res2) => {
           let d = ''
+          res2.setEncoding('utf8')
           res2.on('data', c => d += c)
           res2.on('end', () => {
             try {
@@ -906,16 +866,23 @@ ipcMain.handle('fetch-url', async (event, url) => {
           res.resume()
           return finish({ error: `Unsupported content-type "${ctype.split(';')[0].trim()}" — use browser_navigate or open_file_or_url`, url: u })
         }
-        let data = ''
+        // Acumula BUFFERS e decodifica UTF-8 de uma vez só no fim. Fazer
+        // c.toString('utf8') por chunk corrompe um caractere multibyte (ç/ã/é…)
+        // que caia na fronteira de dois pacotes TCP (vira U+FFFD) — o mesmo
+        // defeito que os streams de chat corrigem via setEncoding('utf8'). Crítico
+        // aqui porque o conteúdo costuma ser português. bytes usa c.length (que
+        // num Buffer é o nº de BYTES), mantendo o teto MAX_BYTES exato.
+        const chunks = []
         let bytes = 0
         let truncatedBytes = false
+        const decode = () => Buffer.concat(chunks).toString('utf8')
         res.on('data', (c) => {
           bytes += c.length
           if (bytes > MAX_BYTES) { truncatedBytes = true; try { req.destroy() } catch { /* ignore */ } return }
-          data += c.toString('utf8')
+          chunks.push(c)
         })
-        res.on('end', () => deliver(u, data, truncatedBytes))
-        res.on('aborted', () => deliver(u, data, true))
+        res.on('end', () => deliver(u, decode(), truncatedBytes))
+        res.on('aborted', () => deliver(u, decode(), true))
       })
       req.on('error', (e) => finish({ error: e.message }))
       req.setTimeout(FETCH_TIMEOUT_MS, () => { try { req.destroy() } catch { /* ignore */ } finish({ error: 'fetch timeout' }) })
@@ -1136,6 +1103,7 @@ ipcMain.handle('check-update', async () => {
     const https = require('https')
     const req = https.request(options, (res) => {
       let data = ''
+      res.setEncoding('utf8') // decode UTF-8 com estado entre chunks (evita ç/ã/é → U+FFFD na fronteira de pacote)
       res.on('data', chunk => data += chunk)
       res.on('end', () => {
         try {
@@ -1336,6 +1304,7 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
 
     const req = transport.request(reqOptions, (res) => {
       let data = ''
+      res.setEncoding('utf8') // decode UTF-8 com estado entre chunks (evita ç/ã/é → U+FFFD na fronteira de pacote)
       res.on('data', chunk => data += chunk)
       res.on('end', () => {
         try {
@@ -1406,6 +1375,13 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
      // Without this, cost tracking has to guess via heuristic. We only send it
      // for providers that understand it (OpenAI, OpenRouter, Modal, custom).
     const openaiStreamOpts = { include_usage: true }
+    // Esses providers emitem um chunk FINAL com `usage` DEPOIS do chunk de
+    // finish_reason (ordem do protocolo OpenAI/include_usage). Por isso NÃO
+    // podemos sinalizar `done` ao ver finish_reason — o renderer faz cleanup()
+    // no `done` e descartaria o chunk de usage que vem logo atrás (o custo real
+    // do turno se perdia e caía no fallback heurístico). Para esses, encerramos
+    // só no `[DONE]`/fim de resposta, garantindo a entrega do usage antes.
+    const expectsTrailingUsage = provider === 'openai' || provider === 'openrouter' || provider === 'modal'
 
     if (provider === 'openai') {
       hostname = 'api.openai.com'
@@ -1594,7 +1570,9 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
               // that never reach JSON.parse, so every parsed chunk is content.
               if (stallWatchdog) stallWatchdog.touch()
               event.sender.send('ollama-stream-chunk', parsed)
-              if (parsed.choices?.[0]?.finish_reason) sendDone()
+              // Só encerra no finish_reason quando NÃO há usage atrasado a
+              // entregar; senão espera o [DONE]/fim (ver expectsTrailingUsage).
+              if (parsed.choices?.[0]?.finish_reason && !expectsTrailingUsage) sendDone()
             }
           } catch (e) { console.error('[provider-stream] SSE parse error:', e.message) }
         }
@@ -1666,6 +1644,7 @@ ipcMain.handle('list-provider-models', async (event, { provider, apiKey, modalHo
 
     const req = transport.request(options, (res) => {
       let data = ''
+      res.setEncoding('utf8') // decode UTF-8 com estado entre chunks (evita ç/ã/é → U+FFFD na fronteira de pacote)
       res.on('data', chunk => data += chunk)
       res.on('end', () => {
         try {
@@ -2322,6 +2301,7 @@ ipcMain.handle('parallel-chat', async (event, { tasks, model, temperature, max_t
 
       const req = http.request(options, (res) => {
         let data = ''
+        res.setEncoding('utf8') // decode UTF-8 com estado entre chunks (evita ç/ã/é → U+FFFD)
         res.on('data', chunk => data += chunk)
         res.on('end', () => {
           try {
@@ -2394,6 +2374,7 @@ ipcMain.handle('provider-parallel-chat', async (event, { tasks, provider, model,
       const client = (provider === 'modal') ? https : http
       const req = client.request(options, (res) => {
         let data = ''
+        res.setEncoding('utf8') // decode UTF-8 com estado entre chunks (evita ç/ã/é → U+FFFD)
         res.on('data', chunk => data += chunk)
         res.on('end', () => {
           if (res.statusCode && res.statusCode >= 400) {
@@ -2581,6 +2562,7 @@ async function callProviderOnce({ provider, apiKey, model, messages, modalHostna
       }
       const req = http.request(opts, (res) => {
         let data = ''
+        res.setEncoding('utf8') // decode UTF-8 com estado entre chunks (evita ç/ã/é → U+FFFD)
         res.on('data', chunk => data += chunk)
         res.on('end', () => {
           try { resolve(JSON.parse(data).choices?.[0]?.message?.content || '') }
@@ -2633,6 +2615,7 @@ async function callProviderOnce({ provider, apiKey, model, messages, modalHostna
     const reqOpts = { hostname, path: apiPath, method: 'POST', headers: { ...headers, 'Content-Length': Buffer.byteLength(body) } }
     const req = https.request(reqOpts, (res) => {
       let data = ''
+      res.setEncoding('utf8') // decode UTF-8 com estado entre chunks (evita ç/ã/é → U+FFFD na fronteira de pacote)
       res.on('data', chunk => data += chunk)
       res.on('end', () => {
         try {
@@ -2886,6 +2869,7 @@ ipcMain.handle('rag-embed', async (event, { model, text }) => {
     }
     const req = http.request(opts, (res) => {
       let data = ''
+      res.setEncoding('utf8') // decode UTF-8 com estado entre chunks (evita ç/ã/é → U+FFFD)
       res.on('data', c => data += c)
       res.on('end', () => {
         try {
@@ -2974,6 +2958,7 @@ ipcMain.handle('vision-chat', async (event, { provider, apiKey, model, prompt, i
       }
       const req = http.request(opts, (res) => {
         let data = ''
+        res.setEncoding('utf8') // decode UTF-8 com estado entre chunks (evita ç/ã/é → U+FFFD)
         res.on('data', c => data += c)
         res.on('end', () => {
           try { resolve({ response: JSON.parse(data).message?.content || '', error: null }) }
@@ -3044,6 +3029,7 @@ ipcMain.handle('vision-chat', async (event, { provider, apiKey, model, prompt, i
     const reqOpts = { hostname, path: apiPath, method: 'POST', headers: { ...headers, 'Content-Length': Buffer.byteLength(body) } }
     const req = https.request(reqOpts, (res) => {
       let data = ''
+      res.setEncoding('utf8') // decode UTF-8 com estado entre chunks (evita ç/ã/é → U+FFFD)
       res.on('data', c => data += c)
       res.on('end', () => {
         try {

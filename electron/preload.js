@@ -2,7 +2,6 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 contextBridge.exposeInMainWorld('electron', {
   // Ollama
-  compactContext: (params) => ipcRenderer.invoke('compact-context', params),
   ollamaChat: (params) => ipcRenderer.invoke('ollama-chat', params),
   ollamaChatStream: (params) => ipcRenderer.invoke('ollama-chat-stream', params),
   onStreamChunk: (callback) => {

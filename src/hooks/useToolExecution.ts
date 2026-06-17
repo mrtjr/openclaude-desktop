@@ -103,7 +103,10 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
       }
       if (name === 'write_file') {
         const content = String(args.content ?? '')
-        const result = await window.electron.writeFile({ filePath: args.path, content: args.content })
+        // Passa o `content` NORMALIZADO (não o cru): se o modelo manda content
+        // ausente/não-string, escreve string vazia em vez de o writeFileSync do
+        // main lançar ERR_INVALID_ARG_TYPE — e mantém o byte-count coerente.
+        const result = await window.electron.writeFile({ filePath: args.path, content })
         // Anti-padrão medido pelos Dev Insights: reescrita total de arquivo
         // existente (era para ser edit_file). O finding 'prefer-edit-file'
         // agrega estes eventos.

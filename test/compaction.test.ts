@@ -148,15 +148,31 @@ describe('runCompaction (provider routing)', () => {
     expect(res.error).toBe('HTTP 500')
   })
 
-  it('keeps Ollama on the dedicated local handler', async () => {
-    const compactContext = vi.fn().mockResolvedValue({ summary: 'resumo local', error: null })
-    ;(window as any).electron.compactContext = compactContext
+  it('routes Ollama through ollama-chat with the SAME structured prompt (tools + instructions, não o handler plano antigo)', async () => {
+    const ollamaChat = vi.fn().mockResolvedValue({ choices: [{ message: { content: 'resumo local' } }] })
+    ;(window as any).electron.ollamaChat = ollamaChat
+    const res = await runCompaction(
+      { provider: 'ollama', model: 'llama3', isNotOllama: false },
+      [{ role: 'user', content: 'oi' }], 'pt', 'foque nos arquivos',
+    )
+    expect(res).toEqual({ summary: 'resumo local', error: null })
+    expect(ollamaChat).toHaveBeenCalledTimes(1)
+    const params = ollamaChat.mock.calls[0][0]
+    expect(params.model).toBe('llama3')
+    expect(params.temperature).toBe(0.1)
+    // mensagens estruturadas (system com seções + instrução do /compact)
+    expect(params.messages[0].role).toBe('system')
+    expect(params.messages[0].content).toContain('foque nos arquivos')
+  })
+
+  it('surfaces Ollama errors without throwing', async () => {
+    ;(window as any).electron.ollamaChat = vi.fn().mockResolvedValue({ error: 'ollama down' })
     const res = await runCompaction(
       { provider: 'ollama', model: 'llama3', isNotOllama: false },
       [{ role: 'user', content: 'oi' }], 'pt',
     )
-    expect(res.summary).toBe('resumo local')
-    expect(compactContext).toHaveBeenCalledTimes(1)
+    expect(res.summary).toBe('')
+    expect(res.error).toBe('ollama down')
   })
 
   it('never throws even when the bridge rejects', async () => {
