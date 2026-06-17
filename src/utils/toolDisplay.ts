@@ -19,6 +19,12 @@ export function toolCallSummary(
   max = 60,
 ): string {
   const a = args || {}
+  // delegate_subtasks não tem arg primário de string — mostra a contagem de
+  // subagentes para o indicador ao vivo não ficar genérico (v2.65.1).
+  if (name === 'delegate_subtasks' && Array.isArray(a.subtasks)) {
+    const n = a.subtasks.length
+    return `${n} subagente${n === 1 ? '' : 's'} pesquisando…`
+  }
   let value = ''
   for (const key of PRIMARY_ARG_KEYS) {
     const v = a[key]

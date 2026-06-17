@@ -23,6 +23,11 @@ describe('toolCallSummary', () => {
     expect(out.endsWith('…')).toBe(true)
   })
 
+  it('mostra a contagem de subagentes para delegate_subtasks', () => {
+    expect(toolCallSummary('delegate_subtasks', { subtasks: [{ prompt: 'a' }, { prompt: 'b' }] })).toBe('2 subagentes pesquisando…')
+    expect(toolCallSummary('delegate_subtasks', { subtasks: [{ prompt: 'a' }] })).toBe('1 subagente pesquisando…')
+  })
+
   it('returns empty string when there is nothing presentable', () => {
     expect(toolCallSummary('plan_tasks', {})).toBe('')
     expect(toolCallSummary('x', null)).toBe('')

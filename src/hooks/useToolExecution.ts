@@ -363,6 +363,9 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
               temperature: settings.temperature,
               max_tokens: settings.maxTokens,
               numCtx: settings.ollamaNumCtx,
+              // Limite por-passo (v2.65.1): um worker travado vira erro em vez de
+              // congelar o lote/turno. O modelo cold-loading ainda cabe em 2 min.
+              timeoutMs: 120000,
             })
             return normalizeWorkerChat(r)
           } catch (e: any) { return { content: '', toolCalls: [], error: e?.message || 'ollama error' } }

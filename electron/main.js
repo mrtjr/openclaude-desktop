@@ -257,7 +257,7 @@ ipcMain.handle('compact-context', async (event, { messages, model, language, pro
 })
 
 // ─── IPC: Ollama chat (non-streaming) ────────────────────────────────
-ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperature, max_tokens, numCtx, reasoningEffort }) => {
+ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperature, max_tokens, numCtx, reasoningEffort, timeoutMs }) => {
   return new Promise((resolve, reject) => {
     const bodyObj = {
       model,
@@ -281,6 +281,15 @@ ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperatur
       }
     }
 
+    // Timeout ABSOLUTO (v2.65.1): sem isto, se o Ollama aceita a conexão mas
+    // trava (modelo carregando, geração presa), a Promise NUNCA resolve nem
+    // rejeita — congelava o turno inteiro (e os subagentes, que rodam aqui).
+    // Os workers passam um limite por-passo; o chat principal usa o default.
+    let settled = false
+    let timer = null
+    const TIMEOUT = timeoutMs || 300000
+    const finish = (fn, v) => { if (settled) return; settled = true; if (timer) clearTimeout(timer); fn(v) }
+
     const req = http.request(options, (res) => {
       let data = ''
       res.on('data', chunk => data += chunk)
@@ -289,15 +298,20 @@ ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperatur
         try {
           const parsed = JSON.parse(data)
           if (res.statusCode && res.statusCode >= 400) {
-            resolve({ error: parsed.error || `Ollama HTTP ${res.statusCode}` })
+            finish(resolve, { error: parsed.error || `Ollama HTTP ${res.statusCode}` })
           } else {
-            resolve(parsed)
+            finish(resolve, parsed)
           }
         }
-        catch (e) { resolve({ error: `Ollama response parse error: ${e.message}` }) }
+        catch (e) { finish(resolve, { error: `Ollama response parse error: ${e.message}` }) }
       })
     })
-    req.on('error', (err) => { activeOllamaStream = null; reject(err) })
+    req.on('error', (err) => { activeOllamaStream = null; finish(reject, err) })
+    timer = setTimeout(() => {
+      try { req.destroy() } catch { /* já fechado */ }
+      activeOllamaStream = null
+      finish(resolve, { error: `Ollama timeout após ${Math.round(TIMEOUT / 1000)}s — o modelo "${model}" pode estar carregando ou travado (rode "ollama run ${model}" uma vez para pré-carregar).` })
+    }, TIMEOUT)
     activeOllamaStream = req
     req.write(body)
     req.end()
