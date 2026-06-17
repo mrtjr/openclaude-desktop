@@ -38,6 +38,46 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'run_command_background',
+      // Paridade com Bash run_in_background do Claude Code (v2.83.0).
+      description: 'Start a PowerShell command in the BACKGROUND and return immediately with a handle, instead of waiting for it like execute_command. Use for long-running processes you want to keep working alongside: dev servers, watchers, long backtests/builds. Poll its output with get_command_output and stop it with kill_background_command. For a normal command whose result you need now, use execute_command.',
+      parameters: {
+        type: 'object',
+        properties: {
+          command: { type: 'string', description: 'The PowerShell command to run in the background' },
+          cwd: { type: 'string', description: 'Optional working directory. Defaults to the active project folder.' }
+        },
+        required: ['command']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_command_output',
+      description: 'Get the NEW output (since your last check) and status of a background command started with run_command_background. Returns incremental stdout/stderr, whether it is still running, and the exit code once it finishes. Poll this periodically while doing other work.',
+      parameters: {
+        type: 'object',
+        properties: { id: { type: 'string', description: 'The background command id (e.g. "bg1")' } },
+        required: ['id']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'kill_background_command',
+      description: 'Stop a background command (started with run_command_background) and its whole process tree. Use when you no longer need a server/watcher running, or to stop a runaway process.',
+      parameters: {
+        type: 'object',
+        properties: { id: { type: 'string', description: 'The background command id to kill' } },
+        required: ['id']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'read_file',
       description: 'Read the contents of a file. For LARGE files, pass offset + limit to read a specific line range (the result tells you the total line count and how to continue) instead of getting a blindly-truncated middle.',
       parameters: {
@@ -679,11 +719,11 @@ export const SAFE_TOOLS = new Set([
   'update_working_memory', 'plan_tasks', 'update_task_status', 'undo_last_write',
   'remember_fact', 'remember_fresh_fact', 'load_skill', 'rag_search',
   'capture_screen', 'analyze_image', 'compare_models', 'set_persona', 'project_tree', 'glob_files',
-  'search_conversations'
+  'search_conversations', 'get_command_output', 'kill_background_command'
 ])
 
 export const DANGEROUS_TOOLS = new Set([
-  'execute_command', 'write_file', 'edit_file', 'open_file_or_url', 'git_command',
+  'execute_command', 'run_command_background', 'write_file', 'edit_file', 'open_file_or_url', 'git_command',
   'computer_open_app', 'computer_type_text', 'computer_press_keys',
   // ORION no chat (v2.78.0): clique/scroll no desktop real — gateados pela
   // permissão como os demais computer_* (bypass libera p/ power users).

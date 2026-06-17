@@ -35,6 +35,7 @@ import { findPersona, isClearPersona, formatSetPersonaResult, type PersonaLike }
 import { formatProjectTree } from '../utils/projectTree'
 import { formatGlobResults } from '../utils/glob'
 import { searchConversations, formatConversationMatches } from '../utils/searchConversations'
+import { formatBackgroundStart, formatCommandOutput } from '../utils/backgroundCommands'
 
 interface UseToolExecutionOptions {
   settings: AppSettings
@@ -116,6 +117,25 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         const timeoutMs = resolveExecTimeoutMs(args.timeout_s)
         const result = await window.electron.execCommand({ command: args.command, cwd, timeoutMs })
         return formatExecResult(result)
+      }
+      if (name === 'run_command_background') {
+        // Paridade com Bash run_in_background (v2.83.0): dispara e devolve um
+        // handle; a IA segue trabalhando e consulta com get_command_output.
+        const cwd = resolveExecCwd(args.cwd, projectCwdRef.current)
+        const res = await window.electron.startBackgroundCommand({ command: String(args.command ?? ''), cwd })
+        return formatBackgroundStart(res, String(args.command ?? ''))
+      }
+      if (name === 'get_command_output') {
+        const id = String(args.id ?? '').trim()
+        if (!id) return 'get_command_output: faltou o parâmetro "id".'
+        const res = await window.electron.commandOutput({ id })
+        return formatCommandOutput(res, id)
+      }
+      if (name === 'kill_background_command') {
+        const id = String(args.id ?? '').trim()
+        if (!id) return 'kill_background_command: faltou o parâmetro "id".'
+        const res = await window.electron.killBackgroundCommand({ id })
+        return res?.found ? `Comando em background "${id}" interrompido.` : `Nenhum comando em background com id "${id}".`
       }
       if (name === 'read_file') {
         const result = await window.electron.readFile(args.path)

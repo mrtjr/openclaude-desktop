@@ -10,6 +10,9 @@ interface Window {
     onStreamChunk: (callback: (chunk: any) => void) => () => void
     execCommand: (cmd: string | { command: string; cwd?: string; timeoutMs?: number; env?: Record<string, string> }) => Promise<{ stdout: string; stderr: string; exitCode?: number; timedOut?: boolean; killedByUser?: boolean; timeoutMs?: number; error: string | null }>
     killCommands: () => Promise<{ killed: number }>
+    startBackgroundCommand: (params: { command: string; cwd?: string }) => Promise<{ id?: string; pid?: number; error?: string | null }>
+    commandOutput: (params: { id: string }) => Promise<{ found?: boolean; running?: boolean; exitCode?: number | null; killedByUser?: boolean; stdout?: string; stderr?: string; elapsedMs?: number }>
+    killBackgroundCommand: (params: { id: string }) => Promise<{ found?: boolean; killed?: boolean }>
     gitCommand: (params: { command: string; cwd: string }) => Promise<{ stdout: string; stderr: string; error: string | null }>
     readFile: (path: string) => Promise<{ content: string | null; error: string | null }>
     getPathForFile?: (file: File) => string
