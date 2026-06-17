@@ -27,6 +27,7 @@ import type { SubagentActivityStore } from '../utils/subagentActivity'
 import type { Semaphore } from '../utils/semaphore'
 import { scoutSystemPrompt } from '../utils/scout'
 import { compressOutput } from '../utils/outputCompression'
+import { formatRagResults, DEFAULT_RAG_EMBED_MODEL } from '../utils/rag'
 
 interface UseToolExecutionOptions {
   settings: AppSettings
@@ -163,6 +164,22 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
       if (name === 'web_search') {
         const result = await window.electron.webSearch(args.query)
         return result.result || result.error || 'Sem resultados'
+      }
+      if (name === 'rag_search') {
+        // Busca semântica na base LOCAL indexada (fusão do RAGPanel, v2.73.0):
+        // gera o embedding da query (Ollama, MESMO modelo do índice) → cosseno
+        // topK no main → formata trechos+fontes p/ o modelo citar. Read-only.
+        const query = String(args.query ?? '').trim()
+        if (!query) return 'rag_search: faltou o parâmetro "query".'
+        const topK = Math.min(Math.max(Number(args.top_k) || 5, 1), 12)
+        const model = settings.ragEmbeddingModel || DEFAULT_RAG_EMBED_MODEL
+        const emb = await window.electron.ragEmbed({ model, text: query })
+        if (emb.error || !emb.embedding?.length) {
+          return `Não consegui consultar a base de conhecimento: falha ao gerar embedding com o modelo "${model}" via Ollama${emb.error ? ` (${emb.error})` : ''}. Confirme que o Ollama está rodando e o modelo de embedding está instalado (ollama pull ${model}).`
+        }
+        const search = await window.electron.ragSearch({ queryEmbedding: emb.embedding, topK })
+        if (search.error) return `Erro na busca RAG: ${search.error}`
+        return formatRagResults(search.results || [], query)
       }
       if (name === 'fetch_url') {
         const result = await window.electron.fetchUrl(args.url)

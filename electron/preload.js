@@ -199,6 +199,7 @@ contextBridge.exposeInMainWorld('electron', {
   ragIndexLoad: () => ipcRenderer.invoke('rag-index-load'),
   ragIndexSave: (chunks) => ipcRenderer.invoke('rag-index-save', chunks),
   ragSearch: (params) => ipcRenderer.invoke('rag-search', params),
+  ragStats: () => ipcRenderer.invoke('rag-stats'),
   ragClear: () => ipcRenderer.invoke('rag-clear'),
 
   // ORION: Computer Control

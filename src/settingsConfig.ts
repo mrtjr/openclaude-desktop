@@ -139,6 +139,11 @@ export interface AppSettings {
    *  tokens. Conservador (só repetição óbvia). Default on. Ver
    *  outputCompression.ts. */
   compressToolOutputs?: boolean
+  /** v2.73.0 — modelo de embedding usado pela ferramenta rag_search do chat
+   *  (fusão do RAGPanel). DEVE ser o mesmo com que o índice foi gerado, senão os
+   *  vetores ficam em espaços diferentes e o score é lixo. Ausente → o default
+   *  do RAGPanel ('mxbai-embed-large', ver DEFAULT_RAG_EMBED_MODEL). */
+  ragEmbeddingModel?: string
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {

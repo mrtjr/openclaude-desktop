@@ -124,7 +124,8 @@ interface Window {
     ragEmbed: (params: { model: string; text: string }) => Promise<{ embedding: number[]; error: string | null }>
     ragIndexLoad: () => Promise<{ chunks: any[] }>
     ragIndexSave: (chunks: any[]) => Promise<{ error: string | null }>
-    ragSearch: (params: { queryEmbedding: number[]; topK: number }) => Promise<{ results: { text: string; score: number; source: string }[] }>
+    ragSearch: (params: { queryEmbedding: number[]; topK: number }) => Promise<{ results: { text: string; score: number; source: string }[]; error?: string }>
+    ragStats: () => Promise<{ count: number; sources: string[]; error?: string }>
     ragClear: () => Promise<{ error: string | null }>
     // ORION
     orionCapture: () => Promise<{ base64: string | null; error: string | null }>

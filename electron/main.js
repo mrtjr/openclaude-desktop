@@ -2925,6 +2925,20 @@ ipcMain.handle('rag-clear', async () => {
   catch (e) { return { error: e.message } }
 })
 
+// Estatísticas LEVES do índice (contagem + fontes únicas, SEM os embeddings) —
+// usado pelo chat (App→useChat) para saber se há base e montar a regra de
+// roteamento do rag_search no system prompt (fusão do RAGPanel, v2.73.0). Não
+// devolve vetores: barato o suficiente para ler ao abrir e ao fechar o painel.
+ipcMain.handle('rag-stats', async () => {
+  try {
+    if (!fs.existsSync(RAG_INDEX_PATH)) return { count: 0, sources: [] }
+    const chunks = JSON.parse(fs.readFileSync(RAG_INDEX_PATH, 'utf-8'))
+    if (!Array.isArray(chunks) || !chunks.length) return { count: 0, sources: [] }
+    const sources = [...new Set(chunks.map(c => c && c.source).filter(Boolean))]
+    return { count: chunks.length, sources }
+  } catch (e) { return { count: 0, sources: [], error: e.message } }
+})
+
 // ─── Vision Mode: Screen Capture ─────────────────────────────────────────────
 ipcMain.handle('capture-screen', async () => {
   try {

@@ -18,6 +18,7 @@ import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../uti
 import { applyPlanToolCalls, planIsIncomplete, type LocalTask } from '../utils/planTracker'
 import { resolveAdaptiveEffort } from '../utils/adaptiveEffort'
 import { detectFreshness, buildDateLine, FRESHNESS_RULE, buildFreshnessNudge } from '../utils/freshness'
+import { buildRagRouterHint, type RagStats } from '../utils/rag'
 import { toolCallSummary } from '../utils/toolDisplay'
 import { nextStreamPhase, classifyDelta, createPhaseProfiler, type StreamPhase } from '../utils/streamPhase'
 import { runCompaction, mergeSummary, planEmergencyCompaction } from '../services/compaction'
@@ -63,6 +64,10 @@ interface UseChatOptions {
   /** Matching semântico de skills (Fase 5, v2.56.0): dado o texto, devolve skills
    *  similares por significado (embeddings). Opt-in; ausente = só keyword. */
   semanticMatch?: (text: string) => Promise<Skill[]>
+  /** Estatísticas da base RAG (contagem + fontes) — quando há índice, injeta a
+   *  regra de roteamento do rag_search no system prompt (fusão do RAGPanel,
+   *  v2.73.0). Ausente/zero = nenhuma menção (a IA não usa a tool à toa). */
+  ragStats?: RagStats
 }
 
 export function useChat({
@@ -86,6 +91,7 @@ export function useChat({
   skills,
   extraTools,
   semanticMatch,
+  ragStats,
 }: UseChatOptions) {
   // Use refs for callback props to avoid stale closures in useCallback
   const skillsRef = useRef(skills)
@@ -94,6 +100,8 @@ export function useChat({
   extraToolsRef.current = extraTools
   const semanticMatchRef = useRef(semanticMatch)
   semanticMatchRef.current = semanticMatch
+  const ragStatsRef = useRef(ragStats)
+  ragStatsRef.current = ragStats
   const onProviderSuccessRef = useRef(onProviderSuccess)
   onProviderSuccessRef.current = onProviderSuccess
   const onProviderErrorRef = useRef(onProviderError)
@@ -355,6 +363,13 @@ export function useChat({
         const full = [pinnedBlock, autoBlock].filter(Boolean).join('\n\n')
         if (full) systemPrompt += `\n\n${full}`
       }
+
+      // RAG (fusão do RAGPanel, v2.73.0): quando há índice local, injeta a regra
+      // de quando acionar a ferramenta rag_search (responder a partir dos
+      // documentos do usuário). Vazio quando não há índice → a IA não a usa à
+      // toa. Mesmo padrão do manifesto de skills. Ver utils/rag.ts.
+      const ragHint = buildRagRouterHint(ragStatsRef.current, lang)
+      if (ragHint) systemPrompt += `\n\n${ragHint}`
 
       // Tool deferral (v2.12.6; auto-decided since v2.12.11): move
       // rarely-used tools out of the request schema list into a compact

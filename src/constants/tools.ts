@@ -488,6 +488,24 @@ export const TOOLS = [
         required: ['subtasks']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'rag_search',
+      // Fusão do RAGPanel no chat (v2.73.0): busca semântica na base de
+      // conhecimento LOCAL que o usuário indexou. Só aparece como útil quando
+      // existe índice — o system prompt avisa (buildRagRouterHint). Read-only.
+      description: 'Search the user\'s LOCAL knowledge base — the documents/notes they indexed in the RAG panel — by semantic similarity. Use this when the question can be answered from the user\'s OWN documents, or when they refer to "my docs/files/notes/the document". You are told in the system prompt when an index exists and what sources it has; do NOT call this when there is no knowledge base. Returns the most relevant chunks with their source; cite the source when you use one.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'What to look up in the knowledge base (a natural-language question or keywords)' },
+          top_k: { type: 'number', description: 'Optional number of chunks to return (default 5, max 12)' }
+        },
+        required: ['query']
+      }
+    }
   }
 ]
 
@@ -502,7 +520,7 @@ export const SAFE_TOOLS = new Set([
   'read_file', 'search_files', 'list_directory', 'web_search', 'fetch_url', 'browser_get_text',
   'browser_get_links', 'browser_get_forms', 'browser_screenshot', 'browser_wait',
   'update_working_memory', 'plan_tasks', 'update_task_status', 'undo_last_write',
-  'remember_fact', 'remember_fresh_fact', 'load_skill'
+  'remember_fact', 'remember_fresh_fact', 'load_skill', 'rag_search'
 ])
 
 export const DANGEROUS_TOOLS = new Set([

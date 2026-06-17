@@ -195,6 +195,17 @@ export default function App() {
   const [showConvPicker, setShowConvPicker] = useState(false)
   const [importingCtx, setImportingCtx] = useState(false)
   const [ragEnabled, setRagEnabled] = useState(false)
+  // Estatísticas LEVES da base RAG (contagem + fontes, sem embeddings) — quando
+  // há índice, o useChat injeta a regra de acionamento do rag_search no system
+  // prompt (fusão do RAGPanel no chat, v2.73.0). Recarregado ao montar e ao
+  // fechar o painel (único lugar onde o índice muda).
+  const [ragStats, setRagStats] = useState<{ count: number; sources: string[] }>({ count: 0, sources: [] })
+  const refreshRagStats = useCallback(() => {
+    window.electron.ragStats?.()
+      .then((s) => setRagStats({ count: s?.count || 0, sources: s?.sources || [] }))
+      .catch(() => { /* base ausente / Ollama offline — segue sem RAG */ })
+  }, [])
+  useEffect(() => { refreshRagStats() }, [refreshRagStats])
   const [showFeatureMenu, setShowFeatureMenu] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
   const [showProfiles, setShowProfiles] = useState(false)
@@ -562,6 +573,7 @@ export default function App() {
     skills,
     extraTools: mcp.mcpTools,
     semanticMatch: semantic.matchSemantic,
+    ragStats,
   })
 
   const activeConv = convManager.activeConv
@@ -1448,7 +1460,7 @@ export default function App() {
           <VisionMode settings={settings} ollamaModels={models} onClose={() => setShowVision(false)}
             onInsertToChat={(text) => { setInput(prev => (prev ? prev + '\n\n' : '') + text); setShowVision(false) }} />
         )}
-        {showRAG && <RAGPanel settings={settings} ollamaModels={models} onClose={() => setShowRAG(false)} ragEnabled={ragEnabled} onToggleRAG={setRagEnabled} />}
+        {showRAG && <RAGPanel settings={settings} ollamaModels={models} onClose={() => { setShowRAG(false); refreshRagStats() }} ragEnabled={ragEnabled} onToggleRAG={setRagEnabled} />}
         {showWorkflow && (
           <WorkflowBuilder settings={settings} onClose={() => setShowWorkflow(false)}
             onInsertToChat={(text) => { setInput(prev => (prev ? prev + '\n\n' : '') + text); setShowWorkflow(false) }} />
