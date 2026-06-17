@@ -1276,9 +1276,14 @@ export default function App() {
       setInput('')
       return
     }
-    sendMessageRef.current(payload.trim())
+    // Cria a conversa SÓ agora (lazy) se não houver nenhuma ativa — ex.: logo
+    // após excluir a última. Passa o id explícito (o estado/ref ainda não
+    // refletiu o newConversation neste tick; o sendMessage usa o override).
+    let cid = convManager.activeConvId
+    if (!cid) cid = convManager.newConversation()
+    sendMessageRef.current(payload.trim(), cid)
     setInput('')
-  }, [input, slash, slashIdx, executeSlash, isActiveConvLoading, convManager.activeConvId])
+  }, [input, slash, slashIdx, executeSlash, isActiveConvLoading, convManager.activeConvId, convManager.newConversation])
 
   // Fire the queued message once ITS conversation goes idle (switching to
   // another conversation keeps it parked until the user returns).

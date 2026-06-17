@@ -14,6 +14,11 @@ export function useConversations() {
 
   const conversationsRef = useRef(conversations)
   conversationsRef.current = conversations
+  // True após o carregamento inicial do disco. Antes disso NÃO salvamos (o
+  // estado [] inicial sobrescreveria os dados reais). Depois, salvamos MESMO
+  // vazio — senão excluir a última conversa não persistia (ela reaparecia no
+  // reload). v2.85.1.
+  const hasLoadedRef = useRef(false)
 
   const activeConv = conversations.find(c => c.id === activeConvId)
 
@@ -53,13 +58,16 @@ export function useConversations() {
       newConversation()
     }).finally(() => {
       setLoadingConversations(false)
+      hasLoadedRef.current = true // a partir daqui, salvar mesmo vazio
     })
   }, [])
 
   // ─── Save conversations with debounce (1s) ─────────────────────
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
-    if (conversations.length > 0) {
+    // Salva quando já carregou (inclusive a lista VAZIA, p/ persistir a exclusão
+    // da última conversa). Antes do load, não salva (não sobrescreve o disco).
+    if (hasLoadedRef.current) {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
       saveTimerRef.current = setTimeout(() => {
         window.electron.saveConversations(conversations).catch(e => console.warn('[conversations] save error:', e))
@@ -82,7 +90,7 @@ export function useConversations() {
         saveTimerRef.current = null
       }
       const convs = conversationsRef.current
-      if (convs.length > 0) {
+      if (hasLoadedRef.current) {
         window.electron.saveConversations(convs).catch(() => { /* unloading */ })
       }
     }
@@ -129,19 +137,10 @@ export function useConversations() {
     setConversations(prev => {
       const remaining = prev.filter(c => c.id !== id)
       if (id === activeConvId) {
-        if (remaining.length > 0) {
-          setActiveConvId(remaining[0].id)
-        } else {
-          // Will trigger newConversation via effect or caller
-          const conv: Conversation = {
-            id: generateId(),
-            title: 'Nova conversa',
-            messages: [],
-            createdAt: new Date()
-          }
-          setActiveConvId(conv.id)
-          return [conv]
-        }
+        // Excluir a ÚLTIMA conversa NÃO abre uma nova (comportamento pedido):
+        // fica em estado vazio (tela "Como posso ajudar?"); uma conversa só é
+        // criada quando o usuário começa a digitar/enviar ou clica em + Nova.
+        setActiveConvId(remaining.length > 0 ? remaining[0].id : null)
       }
       return remaining
     })
