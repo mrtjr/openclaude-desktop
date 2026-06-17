@@ -3,6 +3,7 @@ import type { Message, ToolResult, Conversation, AppSettings } from '../types'
 import { TOOLS, IDLE_STEP_THRESHOLD } from '../constants/tools'
 import { applySubagentModels } from '../utils/researchWorker'
 import type { BackgroundSubagentRegistry, BgEntry } from '../utils/backgroundSubagents'
+import { inferScoutFocus, type ScoutController, type RunScout } from '../utils/scout'
 import type { SubagentActivityStore } from '../utils/subagentActivity'
 import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIMING, LANGUAGE_REMINDER } from '../constants/prompts'
 import { partitionTools, renderDeferredManifest, decideDeferral } from '../services/toolDeferral'
@@ -44,6 +45,12 @@ interface UseChatOptions {
   backgroundTasks?: BackgroundSubagentRegistry
   /** Atividade ao vivo dos subagentes (v2.66.0) — zerada a cada turno. */
   subagentActivity?: SubagentActivityStore
+  /** Scout proativo (v2.69.0): controller dirigido pelo loop a cada passo. */
+  scoutController?: ScoutController
+  /** Primitiva que executa um scout sobre um tema (de useToolExecution). */
+  runScout?: RunScout
+  /** Há vaga ociosa no semáforo p/ o scout não competir com delegações. */
+  canScout?: () => boolean
   speakText: (text: string) => void
   showToast: (message: string) => void
   onProviderSuccess?: () => void
@@ -68,6 +75,9 @@ export function useChat({
   executeTool,
   backgroundTasks,
   subagentActivity,
+  scoutController,
+  runScout,
+  canScout,
   speakText,
   showToast,
   onProviderSuccess,
@@ -144,6 +154,7 @@ export function useChat({
     stopRequestedRef.current = true
     sendingRef.current = false
     backgroundTasks?.clear() // abandona subagentes em background pendentes
+    scoutController?.clear() // aborta a pesquisa proativa em voo
     setIsLoading(false)
     setIsStreaming(false)
     setStreamingText(''); setStreamingPhase(null)
@@ -159,7 +170,7 @@ export function useChat({
     // (up to 600s) after the user pressed Stop, the loop frozen on its await.
     window.electron.killCommands?.().catch((e: any) => console.warn('[useChat] kill commands error:', e))
     showToast('Agente interrompido pelo usuário.')
-  }, [showToast, backgroundTasks])
+  }, [showToast, backgroundTasks, scoutController])
 
   const sendMessage = useCallback(async (inputText: string, overrideConvId?: string) => {
     // Prefer an explicit conversation id when provided (e.g. scheduled
@@ -203,6 +214,7 @@ export function useChat({
     stopRequestedRef.current = false
     backgroundTasks?.clear() // novo turno começa sem lotes de turnos anteriores
     subagentActivity?.clear() // painel de atividade zera a cada turno
+    scoutController?.reset(!!settings.scoutEnabled && isAgentMode) // scout proativo (opt-in, só agêntico)
 
     // ─── Aprendizado de preferências (Fase 2, v2.53.0) ───────────────
     // Captura preferências EXPLÍCITAS desta mensagem e, após reforço (≥2
@@ -508,6 +520,7 @@ export function useChat({
 
       let continueLoop = true
       let allMessages: any[] = [...systemMessages, ...memoryMessages, ...primingMessages, ...trimmedHistory]
+      const scoutBaseLen = allMessages.length // p/ inferir a atividade SÓ deste turno (não do histórico)
       // Fixed prefix length (system + memory + priming) — used by the
       // emergency context-compaction below, which only ever rewrites the
       // message region AFTER this prefix.
@@ -666,6 +679,35 @@ export function useChat({
         // Subagentes em background que já terminaram entram no contexto deste
         // passo, então o modelo pode usá-los enquanto segue trabalhando.
         if (backgroundTasks) injectBg(backgroundTasks.takeCompleted())
+
+        // Scout proativo (v2.69.0): injeta o achado pronto (dados de hoje +
+        // caminhos alternativos) e re-orienta a pesquisa pelo que a IA está
+        // fazendo AGORA — infere o foco do objetivo do turno + a última ação.
+        if (scoutController?.enabled && runScout) {
+          const sr = scoutController.takeResult()
+          if (sr) {
+            allMessages.push({
+              role: 'system',
+              content: (lang === 'en'
+                ? `[PROACTIVE RESEARCH — current info (today) / alternative paths for: ${sr.topic}]\n`
+                : `[PESQUISA PROATIVA — info de hoje / caminhos alternativos para: ${sr.topic}]\n`) + sr.text,
+            })
+          }
+          // Atividade SÓ deste turno (a partir de scoutBaseLen) → não confunde
+          // com a resposta de um turno anterior do histórico.
+          let activity = ''
+          for (let i = allMessages.length - 1; i >= scoutBaseLen; i--) {
+            const m = allMessages[i]
+            if (m.role !== 'assistant') continue
+            activity = String(m.content || '').slice(0, 160)
+            if (!activity && Array.isArray(m.tool_calls) && m.tool_calls[0]) {
+              const tc = m.tool_calls[0]
+              try { activity = toolCallSummary(tc.function?.name, JSON.parse(tc.function?.arguments || '{}')) } catch { activity = tc.function?.name || '' }
+            }
+            break
+          }
+          scoutController.step(inferScoutFocus(String(inputText || ''), activity), runScout, canScout || (() => true))
+        }
         steps++
         bumpInsightStep()
         sessionTracker.agentSteps = steps
@@ -977,6 +1019,10 @@ export function useChat({
           } catch (e) { console.warn('[useChat] usage report error:', e) }
 
           if (toolCallsData.length > 0 && toolCallsData[0]?.function?.name) {
+            // Delegação explícita assume o recurso: pausa o scout antes (libera
+            // a vaga) e retoma depois (v2.69.0).
+            const delegatingS = toolCallsData.some(tc => tc?.function?.name === 'delegate_subtasks')
+            if (delegatingS) scoutController?.pause()
             const { message: thinkingMsg, shouldContinue } = await processToolCalls(
               convId, accumulated, toolCallsData.map(tc => ({
                 id: tc.id,
@@ -984,6 +1030,7 @@ export function useChat({
               })),
               recentToolCalls, activeMemory, idleSteps, sessionTracker
             )
+            if (delegatingS) scoutController?.resume()
             // Pick up any working-memory update so subsequent agent loops
             // see the new state. Earlier versions tried to parse
             // `wmResult.result` as JSON, but that field is a constant
@@ -1168,10 +1215,13 @@ export function useChat({
             }))
 
             const toolStartTime = Date.now()
+            const delegatingNS = normalizedTCs.some((tc: any) => tc?.function?.name === 'delegate_subtasks')
+            if (delegatingNS) scoutController?.pause()
             const { message: thinkingMsg, shouldContinue } = await processToolCalls(
               convId, assistantMsg.content || '', normalizedTCs,
               recentToolCalls, activeMemory, idleSteps, sessionTracker
             )
+            if (delegatingNS) scoutController?.resume()
             // Tempo de execução local deste passo → vira o prevToolMs do próximo
             // stream_profile (mede o gap que pode esfriar o container Modal).
             prevStepToolMs = Date.now() - toolStartTime
@@ -1255,6 +1305,7 @@ export function useChat({
       ))
     } finally {
       sendingRef.current = false
+      scoutController?.clear() // fim do turno: aborta qualquer pesquisa proativa em voo
       setIsLoading(false)
       setIsStreaming(false)
       setStreamingText(''); setStreamingPhase(null)
@@ -1322,7 +1373,7 @@ export function useChat({
       // the ENTIRE conversation on every turn, causing exponential
       // double-counting and inflated costs in the dashboard.
     }
-  }, [isLoading, providerConfig, settings, isAgentMode, conversationsRef, setConversations, executeTool, backgroundTasks, subagentActivity, speakText, showToast])
+  }, [isLoading, providerConfig, settings, isAgentMode, conversationsRef, setConversations, executeTool, backgroundTasks, subagentActivity, scoutController, runScout, canScout, speakText, showToast])
 
   // Helper: process tool calls (shared between streaming and non-streaming)
   async function processToolCalls(

@@ -128,6 +128,12 @@ export interface AppSettings {
    *  carregados de uma vez. Default 2. A IA principal não delega mais enquanto o
    *  limite estiver ocupado (controle de admissão). Ver semaphore.ts. */
   subagentConcurrency?: number
+  /** v2.69.0 — SCOUT proativo (opt-in, default off): em turnos agênticos com
+   *  subagentes ociosos, um worker pesquisa por conta própria dados ATUAIS (data
+   *  de hoje) + caminhos alternativos sobre o que a IA principal está fazendo, e
+   *  injeta no contexto dela. Pausa em delegações explícitas; reinicia quando o
+   *  tema muda. Só roda em vaga ociosa do semáforo. Ver scout.ts. */
+  scoutEnabled?: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -173,6 +179,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   subagentsBackground: false,
   subagentTimeoutSec: 600,
   subagentConcurrency: 2,
+  scoutEnabled: false,
 }
 
 export function loadSettings(): AppSettings {

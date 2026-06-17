@@ -25,6 +25,7 @@ import type { ModalKeyPool } from './useModalKeyPool'
 import type { BackgroundSubagentRegistry } from '../utils/backgroundSubagents'
 import type { SubagentActivityStore } from '../utils/subagentActivity'
 import type { Semaphore } from '../utils/semaphore'
+import { scoutSystemPrompt } from '../utils/scout'
 
 interface UseToolExecutionOptions {
   settings: AppSettings
@@ -51,6 +52,7 @@ interface UseToolExecutionOptions {
 
 export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool, backgroundTasks, subagentActivity, subagentLimiter }: UseToolExecutionOptions) {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
+  const scoutSeqRef = useRef(0) // ids únicos + rodízio de modelo do scout
 
   // Use refs to avoid stale closures
   const activeConvIdRef = useRef(activeConvId)
@@ -583,5 +585,58 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
     return truncateToolOutput(out)
   }, [settings, executeToolRaw, requestApproval])
 
-  return { pendingApproval, setPendingApproval, executeTool, executeToolRaw }
+  // ── Scout proativo (v2.69.0): roda UM worker de pesquisa sobre `topic`,
+  // focado em dados ATUAIS (hoje) + caminhos alternativos. Só pega vaga OCIOSA
+  // do semáforo (tryAcquire → nunca bloqueia delegações); abortável via signal
+  // (pausa quando a IA delega). Reporta ao painel. Ver scout.ts / useChat.
+  const runScout = useCallback(async (topic: string, signal: AbortSignal): Promise<string | null> => {
+    if (signal.aborted) return null
+    if (!subagentLimiter || !subagentLimiter.tryAcquire()) return null // sem vaga ociosa agora
+    const lang = settings.language || 'pt'
+    const today = new Date().toISOString().slice(0, 10)
+    const allowedModels = (settings.subagentModels || []).map(s => String(s).trim()).filter(Boolean)
+    const model = resolveSubagentModel(undefined, scoutSeqRef.current, allowedModels, settings.subagentModel || 'llama3.2')
+    const timeoutSec = settings.subagentTimeoutSec ?? 600
+    const runId = `scout_${Date.now()}_${++scoutSeqRef.current}`
+    const workerTools = buildWorkerTools(TOOLS as any)
+    const workerExec: WorkerExec = async (n, a) =>
+      WORKER_TOOL_NAMES.has(n) ? executeToolRaw(n, a) : `[indisponível para o scout: ${n}]`
+    const chat: WorkerChat = async (messages, tools) => {
+      try {
+        const r = await window.electron.ollamaChat({
+          model, messages, tools,
+          temperature: settings.temperature, max_tokens: settings.maxTokens,
+          numCtx: settings.ollamaNumCtx, timeoutMs: timeoutSec > 0 ? timeoutSec * 1000 : 0,
+        })
+        return normalizeWorkerChat(r)
+      } catch (e: any) { return { content: '', toolCalls: [], error: e?.message || 'ollama error' } }
+    }
+    const userMsg = lang === 'en'
+      ? `What the main AI is currently doing: ${topic}\n\nResearch the MOST CURRENT info (today, ${today}) and faster alternative paths for this. Deliver only what is new/current/useful.`
+      : `O que a IA principal está fazendo agora: ${topic}\n\nPesquise a informação MAIS ATUAL (hoje, ${today}) e caminhos alternativos mais rápidos para isso. Entregue só o que for novo/atual/útil.`
+    const messages: WorkerMessage[] = [
+      { role: 'system', content: scoutSystemPrompt(lang, today) },
+      { role: 'user', content: userMsg },
+    ]
+    subagentActivity?.start(runId, `🔭 ${topic.slice(0, 70)}`, model, Date.now())
+    try {
+      const out = await runResearchWorker({
+        messages, tools: workerTools, chat, exec: workerExec,
+        finalNudge: lang === 'en' ? 'Summarize the most current, useful findings now.' : 'Resuma agora os achados mais atuais e úteis.',
+        isStopped: () => signal.aborted,
+        onProgress: (p) => subagentActivity?.progress(runId, p.step, p.toolsUsed, p.lastTool),
+      })
+      if (signal.aborted) { subagentActivity?.fail(runId, lang === 'en' ? '[paused]' : '[pausado]', Date.now()); return null }
+      if (out.error) { subagentActivity?.fail(runId, out.text, Date.now()); return null }
+      subagentActivity?.finish(runId, out.text, out.steps, out.toolsUsed, Date.now())
+      return out.text
+    } catch (e: any) {
+      subagentActivity?.fail(runId, `[erro: ${e?.message || e}]`, Date.now())
+      return null
+    } finally {
+      subagentLimiter.release()
+    }
+  }, [settings, subagentLimiter, subagentActivity, executeToolRaw])
+
+  return { pendingApproval, setPendingApproval, executeTool, executeToolRaw, runScout }
 }

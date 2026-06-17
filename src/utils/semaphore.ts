@@ -32,6 +32,13 @@ export class Semaphore {
     return new Promise<void>((resolve) => this.queue.push(resolve))
   }
 
+  /** Pega uma vaga SÓ se houver folga agora (não enfileira). Usado pelo scout
+   *  proativo, que só roda em capacidade ociosa e nunca bloqueia delegações. */
+  tryAcquire(): boolean {
+    if (this.active < this.max) { this.active++; return true }
+    return false
+  }
+
   /** Libera uma vaga e puxa o próximo da fila. */
   release(): void {
     this.active = Math.max(0, this.active - 1)

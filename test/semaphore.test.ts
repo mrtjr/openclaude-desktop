@@ -59,6 +59,17 @@ describe('Semaphore', () => {
     a.resolve(); b.resolve()
   })
 
+  it('tryAcquire pega vaga só se houver folga; não enfileira', () => {
+    const sem = new Semaphore(2)
+    expect(sem.tryAcquire()).toBe(true)
+    expect(sem.tryAcquire()).toBe(true)
+    expect(sem.tryAcquire()).toBe(false) // cheio → não pega, não enfileira
+    expect(sem.running).toBe(2)
+    expect(sem.waiting).toBe(0)
+    sem.release()
+    expect(sem.tryAcquire()).toBe(true)
+  })
+
   it('libera a vaga mesmo se fn lança', async () => {
     const sem = new Semaphore(1)
     await expect(sem.run(async () => { throw new Error('x') })).rejects.toThrow('x')

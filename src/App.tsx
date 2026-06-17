@@ -5,6 +5,7 @@ import { loadSettings, type AppSettings } from './settingsConfig'
 import { BackgroundSubagentRegistry } from './utils/backgroundSubagents'
 import { SubagentActivityStore } from './utils/subagentActivity'
 import { Semaphore } from './utils/semaphore'
+import { ScoutController } from './utils/scout'
 import { SubagentActivityPanel } from './components/SubagentActivityPanel'
 import type { Persona } from './PersonaEngine'
 // Small / hot-path components — eager
@@ -492,6 +493,9 @@ export default function App() {
   // Gate de concorrência GLOBAL dos subagentes Ollama (v2.67.0): no máximo N
   // workers ao mesmo tempo em todo o app — evita engarrafar a máquina.
   const subagentLimiter = useMemo(() => new Semaphore(2), [])
+  // Scout proativo (v2.69.0): pesquisa especulativa em ociosidade. O controller
+  // vive aqui (estável); useChat o dirige a cada passo.
+  const scoutController = useMemo(() => new ScoutController(), [])
 
   const toolExec = useToolExecution({
     settings: effectiveSettings,
@@ -523,6 +527,9 @@ export default function App() {
     executeTool: toolExec.executeTool,
     backgroundTasks,
     subagentActivity,
+    scoutController,
+    runScout: toolExec.runScout,
+    canScout: () => subagentLimiter.running < subagentLimiter.limit,
     speakText: voice.speakText,
     showToast,
     onProviderSuccess: providerHealth.reportSuccess,

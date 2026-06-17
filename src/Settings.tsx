@@ -493,6 +493,20 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                     </span>
                   </label>
 
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.85rem', cursor: 'pointer', marginTop: '12px' }}>
+                    <input
+                      type="checkbox"
+                      style={{ marginTop: 3 }}
+                      checked={local.scoutEnabled || false}
+                      onChange={(e) => setLocal(s => ({ ...s, scoutEnabled: e.target.checked }))}
+                    />
+                    <span>
+                      {local.language === 'pt'
+                        ? 'Pesquisa proativa (scout): quando a IA principal está trabalhando e os subagentes estão ociosos, um deles pesquisa sozinho dados atualizados (data de hoje) e caminhos alternativos sobre o que ela está fazendo, e entrega pra ela. Pausa quando você delega algo explícito.'
+                        : 'Proactive research (scout): when the main AI is working and subagents are idle, one researches up-to-date info (today) and alternative paths about what it is doing, and hands it over. Pauses when you delegate explicitly.'}
+                    </span>
+                  </label>
+
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', fontSize: '0.85rem', flexWrap: 'wrap' }}>
                     <span>{local.language === 'pt' ? 'Timeout por passo do subagente:' : 'Subagent per-step timeout:'}</span>
                     <input
