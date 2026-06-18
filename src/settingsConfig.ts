@@ -141,6 +141,12 @@ export interface AppSettings {
    *  hook PreToolUse barrando tudo, um MCP travado, um prompt ruim. Provider e
    *  modelo continuam (senão não dá pra conversar). Default off. */
   safeMode?: boolean
+  /** v2.91.0 — CADEIA de modelos de fallback do chat principal (porta o
+   *  fallbackModel do Claude Code). Ids de modelo do PROVEDOR ATIVO, tentados em
+   *  ordem quando o modelo atual esgota os retries de um erro recuperável
+   *  (overload/timeout/instabilidade). Vazio → sem fallback. Ver
+   *  utils/fallbackChain.ts. */
+  fallbackModels?: string[]
   /** v2.69.0 — SCOUT proativo (opt-in, default off): em turnos agênticos com
    *  subagentes ociosos, um worker pesquisa por conta própria dados ATUAIS (data
    *  de hoje) + caminhos alternativos sobre o que a IA principal está fazendo, e
@@ -209,6 +215,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   subagentConcurrency: 2,
   subagentMaxDepth: 2,
   safeMode: false,
+  fallbackModels: [],
   scoutEnabled: false,
   compressToolOutputs: true,
 }

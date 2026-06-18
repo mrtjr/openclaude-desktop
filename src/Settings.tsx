@@ -317,6 +317,26 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                 </p>
               </div>
 
+              {/* Cadeia de modelos de fallback (v2.91.0) */}
+              <div className="settings-group">
+                <label className="settings-label">
+                  <span>{local.language === 'pt' ? 'Modelos de fallback (em ordem)' : 'Fallback models (in order)'}</span>
+                </label>
+                <input
+                  type="text"
+                  className="settings-input"
+                  placeholder={local.language === 'pt' ? 'ex.: modelo-b, modelo-c (separados por vírgula)' : 'e.g. model-b, model-c (comma-separated)'}
+                  value={(local.fallbackModels || []).join(', ')}
+                  onChange={(e) => setLocal(s => ({ ...s, fallbackModels: e.target.value.split(',').map(x => x.trim()).filter(Boolean) }))}
+                  style={{ width: '100%' }}
+                />
+                <p style={{ fontSize: '0.74rem', color: 'var(--color-text-muted, #888)', margin: '4px 0 0' }}>
+                  {local.language === 'pt'
+                    ? 'Ids de modelo do PROVEDOR ATIVO, tentados em ordem quando o modelo principal esgota os retries de um erro recuperável (sobrecarga/timeout/instabilidade). Vazio = sem fallback.'
+                    : 'Model ids for the ACTIVE provider, tried in order when the main model exhausts retries on a recoverable error (overload/timeout/instability). Empty = no fallback.'}
+                </p>
+              </div>
+
               {/* Context limit */}
               <div className="settings-group">
                 <label className="settings-label">

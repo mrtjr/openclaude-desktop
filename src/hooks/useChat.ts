@@ -11,6 +11,7 @@ import { generateId, isSmallModel } from '../utils/formatting'
 import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice, extractThinking } from '../utils/sanitizers'
 import { classifyProviderError, humanizeProviderError, isColdStartTimeout } from '../utils/providerErrors'
 import { initStallState, decideStallRetry } from '../utils/stallRecovery'
+import { nextFallbackModel, isModelSwappableError } from '../utils/fallbackChain'
 import { renderSkillManifest, renderPinnedSkills, matchSkillsByText } from '../utils/skills'
 import type { Skill } from '../types/skill'
 import { resolveTurnUsage } from '../utils/usage'
@@ -280,7 +281,9 @@ export function useChat({
       })()
     }
 
-    const { provider: finalProvider, model: finalModel, apiKey: finalApiKey, isNotOllama, modalHostname, customBaseUrl } = providerConfig
+    const { provider: finalProvider, apiKey: finalApiKey, isNotOllama, modalHostname, customBaseUrl } = providerConfig
+    // `let` p/ a cadeia de fallback (v2.91.0) poder trocar o modelo ativo mid-turn.
+    let finalModel = providerConfig.model
 
     // Correlação Dev Insights: daqui até o endInsightTurn() no finally, todo
     // logInsight ganha turn/step/v automaticamente. O desfecho vai no meta
@@ -476,7 +479,7 @@ export function useChat({
       // on small ones (gpt-4 8k).
       // Limite EFETIVO: nuvem = janela do modelo; Ollama = num_ctx real
       // (a janela teórica é inviável em GPU de consumidor — ver contextEngine).
-      const modelLimit = effectiveContextLimit(finalProvider, finalModel, settings.ollamaNumCtx)
+      let modelLimit = effectiveContextLimit(finalProvider, finalModel, settings.ollamaNumCtx)
       let contextSummary = conv?.contextSummary || ''
       // Load persistent memory BEFORE the budget so its tokens are real
       // overhead, not hope that BUDGET_SAFETY_SLACK covers it (a grown facts
@@ -649,6 +652,24 @@ export function useChat({
       // 2ª categoria de erro mais comum da telemetria, hoje sem retry (v2.36.0).
       let unknownRetriesUsed = 0
       const MAX_UNKNOWN_RETRIES = 1
+      // Cadeia de modelos de fallback (v2.91.0): modelos já tentados neste turno,
+      // para nunca repetir um que já falhou ao percorrer settings.fallbackModels.
+      const triedModels = new Set<string>()
+      // Troca o modelo ativo p/ o próximo fallback (mesmo provedor) ao esgotar os
+      // retries de um erro recuperável. Recomputa o limite de contexto, zera os
+      // orçamentos de retry (o novo modelo merece os seus) e refaz o passo.
+      // Retorna true se trocou (caller deve `steps--; continue`).
+      const tryFallbackModel = (kind: string | undefined, hasPartial: boolean): boolean => {
+        if (hasPartial || stopRequestedRef.current || !isModelSwappableError(kind)) return false
+        const fb = nextFallbackModel(finalModel, settings.fallbackModels, triedModels)
+        if (!fb) return false
+        triedModels.add(finalModel)
+        finalModel = fb
+        modelLimit = effectiveContextLimit(finalProvider, finalModel, settings.ollamaNumCtx)
+        timeoutRetriesUsed = 0; transientRetriesUsed = 0; unknownRetriesUsed = 0
+        logInsight('chat', 'fallback_model', { to: fb, kind: kind || 'unknown' })
+        return true
+      }
       const isToolsUnsupportedError = (msg: string | undefined): boolean => {
         if (!msg) return false
         const m = msg.toLowerCase()
@@ -1028,6 +1049,18 @@ export function useChat({
               steps--
               continue
             }
+            // Cadeia de modelos de fallback (v2.91.0): retries deste erro
+            // esgotados — se há um fallback não tentado e nada foi transmitido,
+            // troca o modelo (mesmo provedor) e refaz o passo, em vez de matar
+            // o turno. Recupera overload/timeout do modelo principal.
+            if (tryFallbackModel(cls.kind, !!accumulated)) {
+              setIsStreaming(false)
+              setStreamingText(''); setStreamingPhase(null)
+              showToast(lang === 'en' ? `Switching to fallback model ${finalModel}…` : `Trocando para o modelo de fallback ${finalModel}…`)
+              await new Promise(r => setTimeout(r, 800))
+              steps--
+              continue
+            }
             throw err
           }
 
@@ -1220,6 +1253,14 @@ export function useChat({
               logInsight('chat', 'retry', { kind: 'unknown', attempt: unknownRetriesUsed })
               showToast(humanizeProviderError(response.error, lang) + (lang === 'en' ? ' (retrying…)' : ' (tentando de novo…)'))
               await new Promise(r => setTimeout(r, 1500))
+              steps--
+              continue
+            }
+            // Cadeia de modelos de fallback (v2.91.0) — mesmo do streaming. Não-
+            // stream é tudo-ou-nada (sem parcial), então sempre seguro trocar.
+            if (tryFallbackModel(cls.kind, false)) {
+              showToast(lang === 'en' ? `Switching to fallback model ${finalModel}…` : `Trocando para o modelo de fallback ${finalModel}…`)
+              await new Promise(r => setTimeout(r, 800))
               steps--
               continue
             }
