@@ -9,6 +9,7 @@
 export type Provider = 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'custom'
 export type Language = 'pt' | 'en'
 export type PermissionLevel = 'ask' | 'auto_edits' | 'planning' | 'ignore'
+import type { PermissionRule } from './utils/permissionRules'
 
 /** Esforço de raciocínio (v2.25.0; 'auto' em v2.50.0). Reusado pelo seletor
  *  global (Settings) e pelo override por-conversa (EffortSlider). */
@@ -147,6 +148,10 @@ export interface AppSettings {
    *  (overload/timeout/instabilidade). Vazio → sem fallback. Ver
    *  utils/fallbackChain.ts. */
   fallbackModels?: string[]
+  /** v2.93.0 — regras de permissão por PARÂMETRO (porta o Tool(param:value) do
+   *  Claude Code). Olham os argumentos da chamada: deny bloqueia, ask força
+   *  confirmação, allow pula o gate de nível. Ver utils/permissionRules.ts. */
+  permissionRules?: PermissionRule[]
   /** v2.69.0 — SCOUT proativo (opt-in, default off): em turnos agênticos com
    *  subagentes ociosos, um worker pesquisa por conta própria dados ATUAIS (data
    *  de hoje) + caminhos alternativos sobre o que a IA principal está fazendo, e
@@ -216,6 +221,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   subagentMaxDepth: 2,
   safeMode: false,
   fallbackModels: [],
+  permissionRules: [],
   scoutEnabled: false,
   compressToolOutputs: true,
 }

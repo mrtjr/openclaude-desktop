@@ -4,6 +4,7 @@ import { ProviderList } from './components/settings/ProviderList'
 import { ProviderDetail } from './components/settings/ProviderDetail'
 import { SubagentModelsPicker } from './components/settings/SubagentModelsPicker'
 import { PROVIDERS } from './config/providers'
+import { parsePermissionRules, formatPermissionRules } from './utils/permissionRules'
 
 // Settings types, defaults and load/save moved to the boot-light
 // settingsConfig module so App can pull loadSettings at startup without
@@ -334,6 +335,25 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                   {local.language === 'pt'
                     ? 'Ids de modelo do PROVEDOR ATIVO, tentados em ordem quando o modelo principal esgota os retries de um erro recuperável (sobrecarga/timeout/instabilidade). Vazio = sem fallback.'
                     : 'Model ids for the ACTIVE provider, tried in order when the main model exhausts retries on a recoverable error (overload/timeout/instability). Empty = no fallback.'}
+                </p>
+              </div>
+
+              {/* Regras de permissão por parâmetro (v2.93.0) */}
+              <div className="settings-group">
+                <label className="settings-label">
+                  <span>{local.language === 'pt' ? 'Regras de permissão (por argumento)' : 'Permission rules (by argument)'}</span>
+                </label>
+                <textarea
+                  className="settings-input"
+                  style={{ minHeight: 84, fontFamily: 'monospace', fontSize: 12, resize: 'vertical', width: '100%' }}
+                  placeholder={'deny execute_command(command:*rm -rf*)\nask write_file(path:*.env*)\nallow fetch_url(url:*localhost*)'}
+                  defaultValue={formatPermissionRules(local.permissionRules)}
+                  onBlur={(e) => setLocal(s => ({ ...s, permissionRules: parsePermissionRules(e.target.value) }))}
+                />
+                <p style={{ fontSize: '0.74rem', color: 'var(--color-text-muted, #888)', margin: '4px 0 0' }}>
+                  {local.language === 'pt'
+                    ? 'Uma regra por linha: efeito tool(arg:glob). Efeitos: deny (bloqueia), ask (sempre confirma), allow (libera). * é curinga. Olham os ARGUMENTOS da chamada — ex.: deny execute_command(command:*rm -rf*). Precedência: deny > ask > allow. Guard-rails de segurança (ações de desktop, arquivos protegidos) continuam valendo.'
+                    : 'One rule per line: effect tool(arg:glob). Effects: deny (block), ask (always confirm), allow (skip confirm). * is a wildcard. They inspect the call ARGUMENTS — e.g. deny execute_command(command:*rm -rf*). Precedence: deny > ask > allow. Hard safety guard-rails (desktop actions, protected files) still apply.'}
                 </p>
               </div>
 

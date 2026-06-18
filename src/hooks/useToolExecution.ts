@@ -3,6 +3,7 @@ import type { AppSettings, PendingApproval, TaskPlan, Conversation } from '../ty
 import { TOOLS } from '../constants/tools'
 import { resolveToolSearch, formatToolSearchResult } from '../services/toolDeferral'
 import { toolNeedsApproval, truncateToolOutput, isToolError, isProtectedWritePath } from '../utils/toolPolicy'
+import { evaluatePermissionRules } from '../utils/permissionRules'
 import { formatExecResult, resolveExecCwd, resolveExecTimeoutMs } from '../utils/execResult'
 import { formatEditResult, formatWriteResult, COACH_REWRITE_MIN_CHARS } from '../utils/editResult'
 import { mergeFact, normalizeMemory } from '../utils/persistentMemory'
@@ -803,15 +804,23 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
   const executeTool = useCallback(async (name: string, args: Record<string, any>): Promise<string> => {
     const convId = activeConvIdRef.current
     const level = settings.permissionLevel || 'ask'
+    // Regras de permissão por PARÂMETRO (v2.93.0): olham os ARGUMENTOS, não só
+    // o nome. deny bloqueia na hora; ask força confirmação; allow pula o gate
+    // de NÍVEL (mas não os guard-rails duros abaixo). Precedência deny>ask>allow.
+    const ruleEffect = evaluatePermissionRules(settings.permissionRules, name, args)
+    if (ruleEffect === 'deny') {
+      window.electron.auditLogAppend({ tool: name, args, status: 'denied', output: 'blocked by rule' }).catch(e => console.warn('[toolExec] audit error:', e))
+      logInsight('tool', 'denied', { name, rule: true })
+      return `[BLOCKED BY RULE]: uma regra de permissão bloqueou "${name}" com estes argumentos. Ajuste a abordagem ou peça ao usuário para revisar as regras em Configurações.`
+    }
     // Risky desktop actions (open app, Ctrl/Alt shortcuts, Alt+F4…) ALWAYS
     // confirm first — even in bypass mode — because they act on the user's real
-    // machine. Common desktop actions (plain typing/navigation) run free.
-    // Arquivos PROTEGIDOS (v2.89.0): escrever em arquivos que executam código
-    // (.npmrc/.zshenv/git-hooks/perfil PS…) nunca é auto-aprovado no modo
-    // auto_edits — pede confirmação. O bypass total ('ignore') ainda passa,
-    // igual ao Claude Code (bypass = bypass).
-    const needsApproval = toolNeedsApproval(level, name) || isRiskyDesktopAction(name, args)
-      || (level !== 'ignore' && isProtectedWritePath(name, args))
+    // machine. Arquivos PROTEGIDOS (v2.89.0) também não são auto-aprovados no
+    // modo auto_edits. Estes guard-rails duros valem MESMO com um allow.
+    const hardSafety = isRiskyDesktopAction(name, args) || (level !== 'ignore' && isProtectedWritePath(name, args))
+    const needsApproval = ruleEffect === 'ask' ? true
+      : ruleEffect === 'allow' ? hardSafety
+      : (toolNeedsApproval(level, name) || hardSafety)
 
     if (needsApproval) {
       const approved = await requestApproval(name, args)
