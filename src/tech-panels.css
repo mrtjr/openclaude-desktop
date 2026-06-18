@@ -379,14 +379,13 @@
    ═══════════════════════════════════════════════════════════════ */
 .settings-tabs {
   display: flex !important;
+  flex-wrap: wrap;            /* abas quebram a linha em vez de rolar (4 abas curtas) */
   gap: 4px !important;
   padding: 0 22px !important;
   margin-bottom: 4px;
   border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-  scrollbar-width: none;
+  overflow: visible;         /* sem barra de rolagem cortando o topo dos nomes */
 }
-.settings-tabs::-webkit-scrollbar { display: none; }
 
 .settings-tab-btn {
   position: relative;
@@ -394,7 +393,8 @@
   background: transparent !important;
   border: none !important;
   border-bottom: 2px solid transparent !important;
-  color: var(--text-muted);
+  color: var(--text-secondary);
+  line-height: 1.4;
   font-size: 12px !important;
   font-weight: 600;
   text-transform: uppercase;
