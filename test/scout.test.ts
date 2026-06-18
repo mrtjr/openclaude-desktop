@@ -79,14 +79,14 @@ describe('ScoutController', () => {
     const c = new ScoutController()
     c.reset(false)
     let calls = 0
-    c.step('react hooks', async () => { calls++; return 'x' }, () => true)
+    c.step('react hooks', 'react hooks', async () => { calls++; return 'x' }, () => true)
     expect(calls).toBe(0)
   })
 
   it('inicia em ociosidade, guarda o resultado para o loop consumir', async () => {
     const c = new ScoutController()
     c.reset(true)
-    c.step('última versão do React', okScout('React 20.2 saiu hoje'), () => true)
+    c.step('última versão do React', 'última versão do React', okScout('React 20.2 saiu hoje'), () => true)
     expect(c.busy).toBe(true)
     await flush()
     expect(c.busy).toBe(false)
@@ -98,7 +98,7 @@ describe('ScoutController', () => {
     const c = new ScoutController()
     c.reset(true)
     let calls = 0
-    c.step('tema', async () => { calls++; return 'x' }, () => false)
+    c.step('tema', 'tema', async () => { calls++; return 'x' }, () => false)
     expect(calls).toBe(0)
     expect(c.busy).toBe(false)
   })
@@ -111,7 +111,7 @@ describe('ScoutController', () => {
       signalSeen = signal
       signal.addEventListener('abort', () => resolve(null))
     })
-    c.step('tema A', slow, () => true)
+    c.step('tema A', 'tema A', slow, () => true)
     expect(c.busy).toBe(true)
     c.pause()
     await flush()
@@ -125,10 +125,10 @@ describe('ScoutController', () => {
     c.reset(true)
     const started: string[] = []
     const hold: RunScout = (t) => { started.push(t); return new Promise(() => {}) } // nunca resolve
-    c.step('versão do React hooks', hold, () => true)
-    c.step('React hooks ainda', hold, () => true) // mesmo tema → não relança
+    c.step('versão do React hooks', 'versão do React hooks', hold, () => true)
+    c.step('React hooks ainda', 'React hooks ainda', hold, () => true) // mesmo tema → não relança
     expect(started.length).toBe(1)
-    c.step('preço do bitcoin agora', hold, () => true) // tema novo → relança
+    c.step('preço do bitcoin agora', 'preço do bitcoin agora', hold, () => true) // tema novo → relança
     expect(started.length).toBe(2)
   })
 
@@ -140,9 +140,9 @@ describe('ScoutController', () => {
       t.includes('react')
         ? new Promise<string>((res) => { resolveA = res }) // A: resolvível à mão
         : new Promise<string>(() => {}) // B: nunca resolve
-    c.step('versão do react hooks', controllable, () => true) // scout A
+    c.step('versão do react hooks', 'versão do react hooks', controllable, () => true) // scout A
     expect(c.busy).toBe(true)
-    c.step('preço do bitcoin agora', controllable, () => true) // tema novo → B (aborta A)
+    c.step('preço do bitcoin agora', 'preço do bitcoin agora', controllable, () => true) // tema novo → B (aborta A)
     expect(c.busy).toBe(true)
     resolveA!('texto tardio do A') // A resolve DEPOIS de ser supersedido
     await flush()
@@ -150,12 +150,43 @@ describe('ScoutController', () => {
     expect(c.takeResult()).toBeNull() // o resultado de A (abortado) é descartado
   })
 
+  it('acompanha a mudança de AÇÃO mesmo com objetivo ESTÁTICO (v2.87.0)', () => {
+    // Antes: a chave vinha do foco inteiro (objetivo + ação); o objetivo
+    // dominava → o scout travava num tema só, ignorando a mudança de rota.
+    const c = new ScoutController()
+    c.reset(true)
+    const started: string[] = []
+    const hold: RunScout = (t) => { started.push(t); return new Promise(() => {}) }
+    const goal = 'investigar o site imperiodabritannia.com a fundo'
+    c.step(`${goal} — web_search: registro de dominio`, 'web_search: registro de dominio', hold, () => true)
+    // MESMO objetivo, AÇÃO diferente (a IA mudou de rota) → DEVE relançar.
+    c.step(`${goal} — browser_navigate: pagina de formulario`, 'browser_navigate: pagina de formulario', hold, () => true)
+    expect(started.length).toBe(2)
+  })
+
+  it('NÃO re-pesquisa o mesmo tema depois de entregar (anti-loop, v2.87.0)', async () => {
+    const c = new ScoutController()
+    c.reset(true)
+    let calls = 0
+    const ok: RunScout = async () => { calls++; return 'achado' }
+    c.step('objetivo X', 'web_search: tema A', ok, () => true) // lança 1
+    await flush()
+    expect(calls).toBe(1)
+    c.takeResult() // o loop consome o resultado
+    c.step('objetivo X', 'web_search: tema A', ok, () => true) // MESMA ação → NÃO relança
+    await flush()
+    expect(calls).toBe(1)
+    c.step('objetivo X', 'browser_navigate: tema B', ok, () => true) // ação MUDOU → relança
+    await flush()
+    expect(calls).toBe(2)
+  })
+
   it('respeita o teto por turno', () => {
     const c = new ScoutController()
     c.reset(true)
     let calls = 0
     const distinct = ['react alpha', 'bitcoin beta', 'vite gamma', 'docker delta', 'python epsilon', 'rust zeta', 'golang eta']
-    for (const t of distinct) c.step(t, async () => { calls++; return null }, () => true)
+    for (const t of distinct) c.step(t, t, async () => { calls++; return null }, () => true)
     expect(calls).toBe(SCOUT_MAX_PER_TURN)
   })
 })

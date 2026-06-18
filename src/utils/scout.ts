@@ -111,6 +111,9 @@ export class ScoutController {
   enabled = false
   private paused = false
   private runningKey: Set<string> | null = null
+  /** Tema do ÚLTIMO scout lançado (persiste após terminar) — usado para NÃO
+   *  re-pesquisar o mesmo tema em loop quando a IA não mudou de rota (v2.87.0). */
+  private lastKey: Set<string> | null = null
   private abort: AbortController | null = null
   private inFlight = false
   private result: ScoutResult | null = null
@@ -123,6 +126,7 @@ export class ScoutController {
     this.paused = false
     this.result = null
     this.launched = 0
+    this.lastKey = null
   }
 
   /** Delegação explícita assume o recurso → pausa e aborta a pesquisa atual. */
@@ -136,19 +140,27 @@ export class ScoutController {
   /** Há um scout rodando agora? */
   get busy(): boolean { return this.inFlight }
 
-  /** Chamado a cada passo com o foco atual da IA. (Re)inicia o scout se o tema
-   *  mudou e houver vaga (canStart). */
-  step(focus: string, runScout: RunScout, canStart: () => boolean): void {
+  /** Chamado a cada passo. `focus` é o que será PESQUISADO (objetivo + ação, dá
+   *  contexto); `steer` é o sinal que decide a (re)inicialização — a AÇÃO ATUAL
+   *  da IA (não o objetivo estático, que travava o scout num tema só). Assim o
+   *  scout ACOMPANHA a IA quando ela muda de rota, e NÃO re-pesquisa o mesmo
+   *  tema em loop (v2.87.0). */
+  step(focus: string, steer: string, runScout: RunScout, canStart: () => boolean): void {
     if (!this.enabled || this.paused) return
     if (this.launched >= SCOUT_MAX_PER_TURN) return
-    const key = topicKey(focus)
+    // A chave de (re)steer vem da AÇÃO (steer); só cai no foco completo se a IA
+    // ainda não agiu (steer vazio) — aí pesquisa o objetivo.
+    const key = topicKey(steer || focus)
     if (!key.size) return
     if (this.inFlight) {
-      // Rodando: só interrompe se o tema mudou claramente.
+      // Rodando: só interrompe se a AÇÃO mudou claramente (a IA mudou de rota).
       if (!shouldRestart(key, this.runningKey)) return
     } else {
       // Parado com resultado ainda não consumido → espera o loop injetar.
       if (this.result) return
+      // Mesmo tema do ÚLTIMO scout já lançado → NÃO re-pesquisa (anti-loop):
+      // só dispara de novo quando a ação muda de verdade.
+      if (this.lastKey && !shouldRestart(key, this.lastKey)) return
     }
     if (!canStart()) return
     this.launch(focus, key, runScout)
@@ -157,6 +169,7 @@ export class ScoutController {
   private launch(focus: string, key: Set<string>, runScout: RunScout): void {
     this.cancel()
     this.runningKey = key
+    this.lastKey = key // registra o tema pesquisado (anti-loop / steer)
     this.inFlight = true
     this.launched++
     const ac = new AbortController()
@@ -184,5 +197,5 @@ export class ScoutController {
   }
 
   /** Fim de turno / Parar: aborta e zera tudo. */
-  clear(): void { this.cancel(); this.result = null; this.paused = false }
+  clear(): void { this.cancel(); this.result = null; this.paused = false; this.lastKey = null }
 }

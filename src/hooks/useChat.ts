@@ -755,7 +755,14 @@ export function useChat({
           // chamada NESTE turno (não a prosa "Excelente!/Agora vou…", que fazia
           // o scout pesquisar lixo). Só deste turno (>= scoutBaseLen). v2.86.0.
           const activity = pickScoutActivity(allMessages, scoutBaseLen, toolCallSummary)
-          scoutController.step(inferScoutFocus(String(inputText || ''), activity), runScout, canScout || (() => true))
+          // `steer` = a AÇÃO atual da IA (decide acompanhar a mudança de rota e
+          // evita re-pesquisar o mesmo tema em loop); o foco completo (objetivo +
+          // ação) é o que será pesquisado. Ver ScoutController.step (v2.87.0).
+          scoutController.step(
+            inferScoutFocus(String(inputText || ''), activity),
+            activity || String(inputText || ''),
+            runScout, canScout || (() => true),
+          )
         }
         steps++
         bumpInsightStep()
