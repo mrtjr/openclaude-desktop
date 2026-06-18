@@ -23,6 +23,10 @@ export interface Skill {
    *  tool (ex.: "browser_navigate", "execute_command"). Restringe/foca a skill.
    *  Opcional; ausente = não remove nada. Ver utils/skills.collectDisallowedTools. */
   disallowedTools?: string[]
+  /** v2.105.0 — allowlist POSITIVA: se preenchida, enquanto a skill está ativa o
+   *  modelo só recebe ESTAS ferramentas (+ load_skill). Mais forte que
+   *  disallowedTools. Opcional; ausente = não restringe por allowlist. */
+  allowedTools?: string[]
   /** Aparece no manifesto (disponível para o modelo). */
   enabled: boolean
   /** Injeta as instruções completas SEMPRE (sem depender de load_skill) —

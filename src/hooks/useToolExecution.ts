@@ -16,7 +16,7 @@ import { isRiskyDesktopAction } from '../utils/desktopPolicy'
 import { paginateFileContent } from '../utils/readFile'
 import { formatClickResult, formatNavResult } from '../utils/browserResult'
 import { logInsight } from '../services/devInsights'
-import { findSkill, formatLoadSkillResult } from '../utils/skills'
+import { findSkill, formatLoadSkillResult, suggestSkill } from '../utils/skills'
 import { matchHooks } from '../utils/hooks'
 import { resolveSubagentPrompt } from '../constants/subagents'
 import {
@@ -117,7 +117,19 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
       // load_skill (v2.27.0): devolve as instruções completas de uma skill do
       // manifesto. Lookup puro sobre a lista de skills ativas.
       if (name === 'load_skill') {
-        return formatLoadSkillResult(findSkill(skillsRef.current || [], String(args.name || '')), String(args.name || ''))
+        // Multi-load + fuzzy match + sugestão no miss (v2.105.0). Aceita `name`
+        // (um) ou `names` (vários). Os nomes carregados são detectados pelo
+        // useChat (resultado começa com "[SKILL:") e viram skills ativas.
+        const list = (skillsRef.current || [])
+        const requested: string[] = Array.isArray(args.names) && args.names.length
+          ? args.names.map((s: any) => String(s || '')).filter(Boolean)
+          : [String(args.name || '')]
+        if (!requested.length || !requested[0]) return 'load_skill: informe "name" (ou "names").'
+        const parts = requested.map((req) => {
+          const hit = findSkill(list, req)
+          return formatLoadSkillResult(hit, req, hit ? null : suggestSkill(list, req))
+        })
+        return parts.join('\n\n---\n\n')
       }
       if (name === 'execute_command') {
         const cwd = resolveExecCwd(args.cwd, projectCwdRef.current)

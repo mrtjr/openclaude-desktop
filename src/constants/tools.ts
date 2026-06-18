@@ -158,13 +158,13 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'load_skill',
-      description: 'Load the full instructions of an available skill (listed in [SKILLS DISPONÍVEIS]) when it is relevant to the task. Returns the skill\'s detailed playbook to follow. Call this BEFORE acting on a task a skill covers.',
+      description: 'Load the full instructions of one or more available skills (listed in [SKILLS DISPONÍVEIS]) when relevant to the task. Returns the skill\'s detailed playbook to follow — and the skill stays ACTIVE for the rest of the task (re-reinforced each step). The name is matched leniently (case/space/hyphen-insensitive), and on a miss the closest skill is suggested. Call this BEFORE acting on a task a skill covers. Pass "names" to load several at once.',
       parameters: {
         type: 'object',
         properties: {
-          name: { type: 'string', description: 'The exact skill name from the manifest' }
-        },
-        required: ['name']
+          name: { type: 'string', description: 'A skill name from the manifest (lenient match)' },
+          names: { type: 'array', items: { type: 'string' }, description: 'Optional: load several skills at once' }
+        }
       }
     }
   },

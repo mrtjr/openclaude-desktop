@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   findSkill, renderSkillManifest, renderPinnedSkills, skillManifestHeaders,
   matchSkillsByText, formatLoadSkillResult, mergeSkills, BUILTIN_SKILLS,
-  collectDisallowedTools, activeSkillsForTools, findActiveSkills, renderActiveSkillReminder,
+  collectDisallowedTools, collectAllowedTools, activeSkillsForTools, findActiveSkills, renderActiveSkillReminder, suggestSkill,
 } from '../src/utils/skills'
 import type { Skill } from '../src/types/skill'
 
@@ -175,5 +175,40 @@ describe('skill ATIVA por load_skill (v2.104.0)', () => {
   it('o disallowed-tools de uma skill carregada vira efetivo via collectDisallowedTools', () => {
     const set = collectDisallowedTools(findActiveSkills(skills, ['code']))
     expect([...set]).toEqual(['browser_navigate'])
+  })
+})
+
+describe('findSkill fuzzy + suggestSkill (v2.105.0)', () => {
+  const skills = [mk({ id: 'a1', name: 'code-review' }), mk({ id: 'b2', name: 'pesquisa-com-fontes' })]
+  it('casa tolerando espaço/hífen/caixa/acento', () => {
+    expect(findSkill(skills, 'Code Review')?.id).toBe('a1')
+    expect(findSkill(skills, 'CODE_REVIEW')?.id).toBe('a1')
+    expect(findSkill(skills, 'pesquisa com fontes')?.id).toBe('b2')
+  })
+  it('prefixo só casa quando há UM candidato', () => {
+    expect(findSkill([mk({ name: 'code' }), mk({ name: 'code-review' })], 'cod')).toBeNull() // ambíguo
+    expect(findSkill([mk({ id: 'x', name: 'deploy-prod' })], 'deploy')?.id).toBe('x')
+  })
+  it('suggestSkill aponta a mais próxima num miss', () => {
+    expect(suggestSkill(skills, 'codereview')).toBe('code-review')
+    expect(suggestSkill(skills, 'fontes')).toBe('pesquisa-com-fontes')
+    expect(suggestSkill(skills, 'zzz')).toBeNull()
+  })
+  it('formatLoadSkillResult sugere no miss e surfaca tools no sucesso', () => {
+    expect(formatLoadSkillResult(null, 'code rev', 'code-review')).toContain('code-review')
+    const ok = formatLoadSkillResult(mk({ name: 'x', disallowedTools: ['execute_command'], allowedTools: ['read_file'] }), 'x')
+    expect(ok).toContain('permitidas')
+    expect(ok).toContain('read_file')
+    expect(ok).toContain('BLOQUEADAS')
+  })
+})
+
+describe('collectAllowedTools (v2.105.0)', () => {
+  it('faz a união das allowlists positivas', () => {
+    const set = collectAllowedTools([mk({ allowedTools: ['read_file', 'web_search'] }), mk({ allowedTools: ['read_file'] })])
+    expect([...set].sort()).toEqual(['read_file', 'web_search'])
+  })
+  it('vazio quando nenhuma declara', () => {
+    expect(collectAllowedTools([mk({})]).size).toBe(0)
   })
 })

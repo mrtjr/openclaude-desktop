@@ -170,10 +170,49 @@ export const BUILTIN_SKILLS: Skill[] = [
 ]
 
 /** Lookup por nome (case-insensitive) ou id. Null se não achar. */
+/** Normaliza um nome de skill p/ comparação tolerante (v2.105.0): minúsculo, sem
+ *  acentos, só alfanumérico — assim "Code Review", "code-review" e "code_review"
+ *  colapsam no mesmo. */
+export function normalizeSkillName(s: string | undefined): string {
+  return String(s ?? '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '')
+}
+
 export function findSkill(skills: Skill[], nameOrId: string): Skill | null {
   if (!nameOrId) return null
+  const all = skills || []
   const q = nameOrId.trim().toLowerCase()
-  return skills.find(s => s.name.toLowerCase() === q || s.id.toLowerCase() === q) || null
+  // 1) exato por name/id
+  const exact = all.find(s => s.name.toLowerCase() === q || s.id.toLowerCase() === q)
+  if (exact) return exact
+  // 2) FUZZY: normalizado igual (tolera espaço/hífen/_/acento/caixa) — resolve
+  //    load_skill("Code Review") → "code-review".
+  const nq = normalizeSkillName(nameOrId)
+  if (!nq) return null
+  const norm = all.find(s => normalizeSkillName(s.name) === nq || normalizeSkillName(s.id) === nq)
+  if (norm) return norm
+  // 3) prefixo normalizado, só se UM candidato (evita ambiguidade).
+  const pref = all.filter(s => {
+    const n = normalizeSkillName(s.name)
+    return n.startsWith(nq) || nq.startsWith(n)
+  })
+  return pref.length === 1 ? pref[0] : null
+}
+
+/** Melhor sugestão para um nome que NÃO casou — a skill ativa cujo nome
+ *  normalizado mais se aproxima (prefixo/inclusão). null se nada plausível. */
+export function suggestSkill(skills: Skill[], query: string): string | null {
+  const nq = normalizeSkillName(query)
+  if (!nq) return null
+  const avail = (skills || []).filter(s => s.enabled && s.status !== 'staging')
+  // melhor: inclusão mútua; ranqueia pela menor diferença de tamanho.
+  const ranked = avail
+    .map(s => ({ s, n: normalizeSkillName(s.name) }))
+    .filter(({ n }) => n.includes(nq) || nq.includes(n))
+    .sort((a, b) => Math.abs(a.n.length - nq.length) - Math.abs(b.n.length - nq.length))
+  return ranked.length ? ranked[0].s.name : null
 }
 
 /** Manifesto compacto (nome: descrição) das skills ATIVAS e NÃO fixadas — é o
@@ -215,6 +254,20 @@ export function collectDisallowedTools(activeSkills: Skill[]): Set<string> {
   const out = new Set<string>()
   for (const s of activeSkills || []) {
     for (const name of s?.disallowedTools || []) {
+      const n = String(name || '').trim()
+      if (n) out.add(n)
+    }
+  }
+  return out
+}
+
+/** União das allowlists POSITIVAS das skills ativas (v2.105.0): se alguma skill
+ *  declara `allowedTools`, só essas (∪ load_skill, aplicado no caller) ficam
+ *  disponíveis. Vazio = nenhuma skill restringe por allowlist. */
+export function collectAllowedTools(activeSkills: Skill[]): Set<string> {
+  const out = new Set<string>()
+  for (const s of activeSkills || []) {
+    for (const name of s?.allowedTools || []) {
       const n = String(name || '').trim()
       if (n) out.add(n)
     }
@@ -268,14 +321,21 @@ export function matchSkillsByText(skills: Skill[], text: string): Skill[] {
 
 /** Resultado da ferramenta load_skill: as instruções da skill, ou um erro
  *  acionável se o nome não existir. */
-export function formatLoadSkillResult(skill: Skill | null, requestedName: string): string {
+export function formatLoadSkillResult(skill: Skill | null, requestedName: string, suggestion?: string | null): string {
   if (!skill) {
-    return `Erro: skill "${requestedName}" não encontrada. Verifique o nome exato no manifesto [SKILLS DISPONÍVEIS].`
+    const hint = suggestion ? ` Você quis dizer "${suggestion}"? Tente load_skill("${suggestion}").` : ''
+    return `Erro: skill "${requestedName}" não encontrada.${hint} Verifique o nome exato no manifesto [SKILLS DISPONÍVEIS].`
   }
   if (!skill.enabled) {
     return `Erro: a skill "${skill.name}" está desativada.`
   }
-  return `[SKILL: ${skill.name}]\n${skill.instructions}`
+  // Surfacar restrições/permissões de ferramenta da skill (v2.105.0) — o modelo
+  // já sai sabendo o que pode/não pode usar enquanto a skill estiver ativa.
+  const lines: string[] = []
+  if (skill.allowedTools?.length) lines.push(`Ferramentas permitidas por esta skill: ${skill.allowedTools.join(', ')}.`)
+  if (skill.disallowedTools?.length) lines.push(`Ferramentas BLOQUEADAS enquanto esta skill estiver ativa: ${skill.disallowedTools.join(', ')}.`)
+  const toolNote = lines.length ? `\n\n${lines.join('\n')}` : ''
+  return `[SKILL: ${skill.name}]\n${skill.instructions}${toolNote}`
 }
 
 /** Mescla builtins com as skills salvas do usuário: builtins primeiro (com

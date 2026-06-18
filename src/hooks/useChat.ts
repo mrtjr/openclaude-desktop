@@ -12,7 +12,7 @@ import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice, extra
 import { classifyProviderError, humanizeProviderError, isColdStartTimeout } from '../utils/providerErrors'
 import { initStallState, decideStallRetry } from '../utils/stallRecovery'
 import { nextFallbackModel, isModelSwappableError } from '../utils/fallbackChain'
-import { renderSkillManifest, renderPinnedSkills, matchSkillsByText, collectDisallowedTools, activeSkillsForTools, findSkill, findActiveSkills, renderActiveSkillReminder } from '../utils/skills'
+import { renderSkillManifest, renderPinnedSkills, matchSkillsByText, collectDisallowedTools, collectAllowedTools, activeSkillsForTools, findSkill, findActiveSkills, renderActiveSkillReminder } from '../utils/skills'
 import type { Skill } from '../types/skill'
 import { resolveTurnUsage } from '../utils/usage'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
@@ -391,6 +391,9 @@ export function useChat({
       // disallowed-tools): preenchido no bloco de skills abaixo, aplicado ao
       // allTools mais adiante.
       let disallowedToolNames = new Set<string>()
+      // Skills-base ativas do turno (fixadas + casadas) — reusadas a cada passo
+      // p/ o tool-scoping (disallowed + allowed) junto com as carregadas (v2.105.0).
+      let turnBaseActiveSkills: Skill[] = []
       {
         const allSkills = skillsRef.current || []
         const manifest = renderSkillManifest(allSkills)
@@ -414,7 +417,8 @@ export function useChat({
         if (full) systemPrompt += `\n\n${full}`
         // disallowed-tools (v2.92.0): skills ativas (fixadas + casadas) podem
         // remover ferramentas do modelo enquanto vigoram.
-        disallowedToolNames = collectDisallowedTools(activeSkillsForTools(allSkills, autoMatched))
+        turnBaseActiveSkills = activeSkillsForTools(allSkills, autoMatched)
+        disallowedToolNames = collectDisallowedTools(turnBaseActiveSkills)
       }
 
       // RAG (fusão do RAGPanel, v2.73.0): quando há índice local, injeta a regra
@@ -869,13 +873,15 @@ export function useChat({
           })
         }
 
-        // Reforço de skill ativa (v2.104.0): re-lembra o playbook carregado para
-        // não diluir conforme a conversa cresce. Também resolve o tool-scoping
-        // deste passo (disallowed-tools das skills carregadas).
-        const stepActiveSkills = findActiveSkills(skillsRef.current || [], activeSkillNamesRef.current)
-        const activeSkillReminder = renderActiveSkillReminder(stepActiveSkills, lang)
+        // Reforço de skill ativa (v2.104.0): re-lembra SÓ as carregadas por
+        // load_skill (as fixadas já estão no prompt). Tool-scoping do passo
+        // (v2.105.0): disallowed + allowed das skills em vigor (base + carregadas).
+        const stepLoadedSkills = findActiveSkills(skillsRef.current || [], activeSkillNamesRef.current)
+        const activeSkillReminder = renderActiveSkillReminder(stepLoadedSkills, lang)
         if (activeSkillReminder) requestMessages.push({ role: 'system', content: activeSkillReminder })
-        const stepSkillDisallowed = collectDisallowedTools(stepActiveSkills)
+        const stepSkills = [...turnBaseActiveSkills, ...stepLoadedSkills.filter(s => !turnBaseActiveSkills.includes(s))]
+        const stepSkillDisallowed = collectDisallowedTools(stepSkills)
+        const stepSkillAllowed = collectAllowedTools(stepSkills)
 
         requestMessages.push({ role: 'system', content: LANGUAGE_REMINDER[lang] })
 
@@ -978,10 +984,11 @@ export function useChat({
             })
             streamCleanupRef.current = cleanup
 
-            const toolsForRequestBase = toolsDisabledForThisTurn ? [] : (deferralEnabled ? [...toolPartition.eager, toolPartition.metaTool] as any[] : allTools)
-            const toolsForRequest = stepSkillDisallowed.size
-              ? toolsForRequestBase.filter((t: any) => t?.function?.name === 'load_skill' || !stepSkillDisallowed.has(t?.function?.name))
-              : toolsForRequestBase
+            let toolsForRequest = toolsDisabledForThisTurn ? [] : (deferralEnabled ? [...toolPartition.eager, toolPartition.metaTool] as any[] : allTools)
+            // Tool-scoping por skill ativa (v2.105.0): allowlist positiva primeiro
+            // (só as permitidas + load_skill), depois remove as bloqueadas.
+            if (stepSkillAllowed.size) toolsForRequest = toolsForRequest.filter((t: any) => t?.function?.name === 'load_skill' || stepSkillAllowed.has(t?.function?.name))
+            if (stepSkillDisallowed.size) toolsForRequest = toolsForRequest.filter((t: any) => t?.function?.name === 'load_skill' || !stepSkillDisallowed.has(t?.function?.name))
             const streamCall = isNotOllama
               ? window.electron.providerChatStream({
                   provider: finalProvider, apiKey: finalApiKey, model: finalModel,
