@@ -2280,6 +2280,7 @@ export default function App() {
                   />
                 )}
                 {isAgentMode && <span className="status-pill agent"><Zap size={9} />Agente{isActiveConvLoading ? ` · Passo ${chat.agentSteps}` : ''}</span>}
+                {chat.activeSkillNames.length > 0 && <span className="status-pill persona" title={settings.language === 'en' ? 'Active skill(s)' : 'Skill(s) ativa(s)'}><Wrench size={9} />{chat.activeSkillNames.join(', ')}</span>}
                 {activePersona && <span className="status-pill persona"><UserCog size={9} />{activePersona.name}</span>}
                 {ragEnabled && <span className="status-pill rag"><Database size={9} />RAG</span>}
                 {profiles.activeProfile && <span className="status-pill profile">{profiles.activeProfile.icon} {profiles.activeProfile.name}</span>}

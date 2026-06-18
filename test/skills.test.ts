@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   findSkill, renderSkillManifest, renderPinnedSkills, skillManifestHeaders,
   matchSkillsByText, formatLoadSkillResult, mergeSkills, BUILTIN_SKILLS,
-  collectDisallowedTools, activeSkillsForTools,
+  collectDisallowedTools, activeSkillsForTools, findActiveSkills, renderActiveSkillReminder,
 } from '../src/utils/skills'
 import type { Skill } from '../src/types/skill'
 
@@ -152,5 +152,28 @@ describe('disallowed-tools (v2.92.0)', () => {
       mk({ disallowedTools: undefined }),
     ])
     expect([...set].sort()).toEqual(['browser_navigate', 'execute_command', 'web_search'])
+  })
+})
+
+describe('skill ATIVA por load_skill (v2.104.0)', () => {
+  const skills = [
+    mk({ id: 'a', name: 'code', disallowedTools: ['browser_navigate'] }),
+    mk({ id: 'b', name: 'pesquisa' }),
+    mk({ id: 'c', name: 'off', enabled: false }),
+  ]
+  it('findActiveSkills resolve nomes na ordem, ignora inexistente/desativada/duplicada', () => {
+    const got = findActiveSkills(skills, ['pesquisa', 'code', 'code', 'fantasma', 'off'])
+    expect(got.map(s => s.name)).toEqual(['pesquisa', 'code'])
+  })
+  it('renderActiveSkillReminder cita os nomes (ou vazio se nenhuma)', () => {
+    const r = renderActiveSkillReminder(findActiveSkills(skills, ['code']), 'pt')
+    expect(r).toContain('SKILL ATIVA')
+    expect(r).toContain('code')
+    expect(renderActiveSkillReminder([], 'pt')).toBe('')
+    expect(renderActiveSkillReminder(findActiveSkills(skills, ['code']), 'en')).toContain('ACTIVE SKILL')
+  })
+  it('o disallowed-tools de uma skill carregada vira efetivo via collectDisallowedTools', () => {
+    const set = collectDisallowedTools(findActiveSkills(skills, ['code']))
+    expect([...set]).toEqual(['browser_navigate'])
   })
 })

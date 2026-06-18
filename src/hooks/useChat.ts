@@ -12,7 +12,7 @@ import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice, extra
 import { classifyProviderError, humanizeProviderError, isColdStartTimeout } from '../utils/providerErrors'
 import { initStallState, decideStallRetry } from '../utils/stallRecovery'
 import { nextFallbackModel, isModelSwappableError } from '../utils/fallbackChain'
-import { renderSkillManifest, renderPinnedSkills, matchSkillsByText, collectDisallowedTools, activeSkillsForTools } from '../utils/skills'
+import { renderSkillManifest, renderPinnedSkills, matchSkillsByText, collectDisallowedTools, activeSkillsForTools, findSkill, findActiveSkills, renderActiveSkillReminder } from '../utils/skills'
 import type { Skill } from '../types/skill'
 import { resolveTurnUsage } from '../utils/usage'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
@@ -144,6 +144,22 @@ export function useChat({
   // sees during long tool runs (execute_command can run up to 600s; before
   // this the UI showed only generic dots + "Passo N" the whole time).
   const [runningTool, setRunningTool] = useState<{ name: string; detail: string } | null>(null)
+  // Skills ATIVAS por load_skill (v2.104.0): nomes carregados NESTE turno. State
+  // p/ o pill na UI + ref espelho p/ leitura sem stale-closure no loop agêntico.
+  const [activeSkillNames, setActiveSkillNames] = useState<string[]>([])
+  const activeSkillNamesRef = useRef<string[]>([])
+  const addActiveSkill = useCallback((rawName: string) => {
+    const found = findSkill(skillsRef.current || [], rawName)
+    const name = found?.name || rawName
+    if (activeSkillNamesRef.current.includes(name)) return
+    activeSkillNamesRef.current = [...activeSkillNamesRef.current, name]
+    setActiveSkillNames(activeSkillNamesRef.current)
+  }, [])
+  const resetActiveSkills = useCallback(() => {
+    if (!activeSkillNamesRef.current.length) return
+    activeSkillNamesRef.current = []
+    setActiveSkillNames([])
+  }, [])
 
   const stopRequestedRef = useRef(false)
   const streamCleanupRef = useRef<(() => void) | null>(null)
@@ -609,6 +625,8 @@ export function useChat({
       const useStreaming = isNotOllama ? (cloudStreamingSupported && settings.streamingEnabled) : settings.streamingEnabled
       let steps = 0
       let idleSteps = 0
+      // Skills ativas são por-turno: zera ao começar este turno (v2.104.0).
+      resetActiveSkills()
       const recentToolCalls: string[] = []
       let activeMemory = conv?.workingMemory || null
       // Per-turn flag for the tools-unsupported auto-retry. Starts from the
@@ -851,6 +869,14 @@ export function useChat({
           })
         }
 
+        // Reforço de skill ativa (v2.104.0): re-lembra o playbook carregado para
+        // não diluir conforme a conversa cresce. Também resolve o tool-scoping
+        // deste passo (disallowed-tools das skills carregadas).
+        const stepActiveSkills = findActiveSkills(skillsRef.current || [], activeSkillNamesRef.current)
+        const activeSkillReminder = renderActiveSkillReminder(stepActiveSkills, lang)
+        if (activeSkillReminder) requestMessages.push({ role: 'system', content: activeSkillReminder })
+        const stepSkillDisallowed = collectDisallowedTools(stepActiveSkills)
+
         requestMessages.push({ role: 'system', content: LANGUAGE_REMINDER[lang] })
 
         if (useStreaming) {
@@ -952,7 +978,10 @@ export function useChat({
             })
             streamCleanupRef.current = cleanup
 
-            const toolsForRequest = toolsDisabledForThisTurn ? [] : (deferralEnabled ? [...toolPartition.eager, toolPartition.metaTool] as any[] : allTools)
+            const toolsForRequestBase = toolsDisabledForThisTurn ? [] : (deferralEnabled ? [...toolPartition.eager, toolPartition.metaTool] as any[] : allTools)
+            const toolsForRequest = stepSkillDisallowed.size
+              ? toolsForRequestBase.filter((t: any) => t?.function?.name === 'load_skill' || !stepSkillDisallowed.has(t?.function?.name))
+              : toolsForRequestBase
             const streamCall = isNotOllama
               ? window.electron.providerChatStream({
                   provider: finalProvider, apiKey: finalApiKey, model: finalModel,
@@ -1573,6 +1602,12 @@ export function useChat({
         } finally {
           setRunningTool(null)
         }
+        // Skill ATIVA (v2.104.0): um load_skill bem-sucedido (resultado começa
+        // com "[SKILL:") fica ativo pelo resto do turno — re-reforçado a cada
+        // passo e com seu disallowed-tools valendo.
+        if (tc.function.name === 'load_skill' && /^\[SKILL:/.test(result)) {
+          addActiveSkill(String(args.name || ''))
+        }
       }
 
       tracker.toolCalls++
@@ -1605,6 +1640,7 @@ export function useChat({
     streamingPhase,
     agentSteps,
     runningTool,
+    activeSkillNames,
     stopAgent,
     sendMessage,
   }

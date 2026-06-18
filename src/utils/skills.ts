@@ -222,6 +222,32 @@ export function collectDisallowedTools(activeSkills: Skill[]): Set<string> {
   return out
 }
 
+// ─── Skill ATIVA por load_skill (v2.104.0) ──────────────────────────
+// Quando o modelo chama load_skill, a skill fica ATIVA pela tarefa: re-reforçada
+// a cada passo e com seu disallowed-tools valendo (antes era dispare-e-esqueça).
+
+/** Resolve nomes (de load_skill) para os objetos Skill correspondentes, na
+ *  ordem dada, ignorando os que não existem mais / estão desativados. */
+export function findActiveSkills(skills: Skill[], names: string[] | undefined): Skill[] {
+  const all = skills || []
+  const out: Skill[] = []
+  for (const n of names || []) {
+    const s = findSkill(all, n)
+    if (s && s.enabled && !out.includes(s)) out.push(s)
+  }
+  return out
+}
+
+/** Lembrete curto, injetado a cada passo agêntico, para o modelo não "esquecer"
+ *  a(s) skill(s) que carregou. '' quando não há nenhuma ativa. */
+export function renderActiveSkillReminder(activeSkills: Skill[], lang: string): string {
+  if (!activeSkills.length) return ''
+  const names = activeSkills.map(s => s.name).join(', ')
+  return lang === 'en'
+    ? `[ACTIVE SKILL: ${names}] Keep following the loaded skill playbook above until the task is done.`
+    : `[SKILL ATIVA: ${names}] Continue seguindo o playbook da skill carregada acima até concluir a tarefa.`
+}
+
 /** Headers curtos para o painel de contexto (orçamento de tokens do slot
  *  "skills"): nome: desc das ativas. */
 export function skillManifestHeaders(skills: Skill[]): string {
