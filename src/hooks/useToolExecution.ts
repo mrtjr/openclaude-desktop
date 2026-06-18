@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react'
 import type { AppSettings, PendingApproval, TaskPlan, Conversation } from '../types'
 import { TOOLS } from '../constants/tools'
 import { resolveToolSearch, formatToolSearchResult } from '../services/toolDeferral'
-import { toolNeedsApproval, truncateToolOutput, isToolError } from '../utils/toolPolicy'
+import { toolNeedsApproval, truncateToolOutput, isToolError, isProtectedWritePath } from '../utils/toolPolicy'
 import { formatExecResult, resolveExecCwd, resolveExecTimeoutMs } from '../utils/execResult'
 import { formatEditResult, formatWriteResult, COACH_REWRITE_MIN_CHARS } from '../utils/editResult'
 import { mergeFact, normalizeMemory } from '../utils/persistentMemory'
@@ -806,7 +806,12 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
     // Risky desktop actions (open app, Ctrl/Alt shortcuts, Alt+F4…) ALWAYS
     // confirm first — even in bypass mode — because they act on the user's real
     // machine. Common desktop actions (plain typing/navigation) run free.
+    // Arquivos PROTEGIDOS (v2.89.0): escrever em arquivos que executam código
+    // (.npmrc/.zshenv/git-hooks/perfil PS…) nunca é auto-aprovado no modo
+    // auto_edits — pede confirmação. O bypass total ('ignore') ainda passa,
+    // igual ao Claude Code (bypass = bypass).
     const needsApproval = toolNeedsApproval(level, name) || isRiskyDesktopAction(name, args)
+      || (level !== 'ignore' && isProtectedWritePath(name, args))
 
     if (needsApproval) {
       const approved = await requestApproval(name, args)

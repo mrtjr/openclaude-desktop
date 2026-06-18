@@ -37,6 +37,45 @@ export function toolNeedsApproval(level: PermissionLevel, name: string): boolean
   }
 }
 
+// ─── Arquivos PROTEGIDOS na edição (v2.89.0) ────────────────────────
+// Porta o "prompt before writing files that can run code, even in acceptEdits"
+// do Claude Code (v2.1.160). Certos arquivos EXECUTAM código quando um shell,
+// o git ou uma build-tool inicia — sobrescrevê-los é um vetor de execução. Eles
+// NUNCA são auto-aprovados no modo auto_edits (acceptEdits); ainda assim, o modo
+// bypass total ('ignore') continua passando, igual ao Claude Code. Pura+testada.
+
+const PROTECTED_WRITE_TOOLS = new Set(['write_file', 'edit_file'])
+
+/** Basenames (case-insensitive) de arquivos que rodam código ao iniciar um
+ *  shell / ferramenta. Inclui perfis PowerShell (somos Windows-primary). */
+const PROTECTED_BASENAMES = new Set([
+  // shells POSIX
+  '.zshenv', '.zshrc', '.zprofile', '.zlogin', '.zlogout',
+  '.bashrc', '.bash_profile', '.bash_login', '.bash_logout', '.profile',
+  // gerenciadores/build-tools que executam hooks/scripts
+  '.npmrc', '.yarnrc', '.yarnrc.yml', '.bazelrc', '.pre-commit-config.yaml',
+  // git
+  '.gitconfig',
+  // PowerShell (Windows)
+  'profile.ps1', 'microsoft.powershell_profile.ps1',
+])
+
+/** Fragmentos de caminho (normalizado /minúsculo) cujo conteúdo executa código:
+ *  hooks do git rodam em cada ação git; ~/.config/git roda includes. */
+const PROTECTED_PATH_FRAGMENTS = ['/.git/hooks/', '/.config/git/']
+
+/** O alvo de uma escrita é um arquivo "executável de inicialização"? Decide
+ *  apenas pelo caminho — não lê o disco. */
+export function isProtectedWritePath(name: string, args: Record<string, unknown> | null | undefined): boolean {
+  if (!PROTECTED_WRITE_TOOLS.has(name)) return false
+  const raw = String((args && (args as any).path) ?? '').trim()
+  if (!raw) return false
+  const norm = raw.replace(/\\/g, '/').toLowerCase()
+  const base = norm.split('/').pop() || ''
+  if (PROTECTED_BASENAMES.has(base)) return true
+  return PROTECTED_PATH_FRAGMENTS.some((frag) => norm.includes(frag))
+}
+
 /** Classify a tool's textual output as an error, for the audit log and the
  *  Dev Insights telemetry. The old inline check only caught `Erro:` and
  *  `[SYSTEM INTERCEPT]` — so `Git error:`, `Browser launch error:`, failed

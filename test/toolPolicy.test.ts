@@ -1,5 +1,27 @@
 import { describe, it, expect } from 'vitest'
-import { toolNeedsApproval, truncateToolOutput, isToolError, TOOL_OUTPUT_LIMIT } from '../src/utils/toolPolicy'
+import { toolNeedsApproval, truncateToolOutput, isToolError, TOOL_OUTPUT_LIMIT, isProtectedWritePath } from '../src/utils/toolPolicy'
+
+describe('isProtectedWritePath (v2.89.0)', () => {
+  it('marca arquivos que executam código no write/edit', () => {
+    expect(isProtectedWritePath('write_file', { path: 'C:\\Users\\j\\.npmrc' })).toBe(true)
+    expect(isProtectedWritePath('edit_file', { path: '/home/u/.zshenv' })).toBe(true)
+    expect(isProtectedWritePath('write_file', { path: '~/.bashrc' })).toBe(true)
+    expect(isProtectedWritePath('write_file', { path: '.pre-commit-config.yaml' })).toBe(true)
+    expect(isProtectedWritePath('write_file', { path: 'Documents/PowerShell/Microsoft.PowerShell_profile.ps1' })).toBe(true)
+  })
+  it('pega hooks do git e ~/.config/git por fragmento de caminho', () => {
+    expect(isProtectedWritePath('write_file', { path: 'repo/.git/hooks/pre-commit' })).toBe(true)
+    expect(isProtectedWritePath('edit_file', { path: 'C:\\proj\\.git\\hooks\\post-merge' })).toBe(true)
+    expect(isProtectedWritePath('write_file', { path: '/home/u/.config/git/config' })).toBe(true)
+  })
+  it('NÃO marca arquivos comuns nem outras tools', () => {
+    expect(isProtectedWritePath('write_file', { path: 'src/index.ts' })).toBe(false)
+    expect(isProtectedWritePath('write_file', { path: 'README.md' })).toBe(false)
+    expect(isProtectedWritePath('execute_command', { path: '.npmrc' })).toBe(false) // só write/edit
+    expect(isProtectedWritePath('write_file', {})).toBe(false)
+    expect(isProtectedWritePath('write_file', null)).toBe(false)
+  })
+})
 
 describe('toolNeedsApproval', () => {
   it('gates every dangerous tool in ask and planning', () => {
