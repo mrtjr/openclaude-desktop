@@ -176,6 +176,9 @@ export interface AppSettings {
    *  Bash do Claude Code): allowlist roda sem prompt, denylist é bloqueada.
    *  Não é isolamento de kernel. Ver utils/commandSandbox.ts. */
   commandSandbox?: SandboxConfig
+  /** v2.103.0 — botão de ENTRADA por voz (push-to-talk) no composer. Só aparece
+   *  se a Web Speech API existir. Default on. Ver hooks/useSpeechInput.ts. */
+  voiceInputEnabled?: boolean
   /** v2.69.0 — SCOUT proativo (opt-in, default off): em turnos agênticos com
    *  subagentes ociosos, um worker pesquisa por conta própria dados ATUAIS (data
    *  de hoje) + caminhos alternativos sobre o que a IA principal está fazendo, e
@@ -250,6 +253,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   outputStyle: 'default',
   statusLineItems: [],
   commandSandbox: DEFAULT_SANDBOX,
+  voiceInputEnabled: true,
   scoutEnabled: false,
   compressToolOutputs: true,
 }

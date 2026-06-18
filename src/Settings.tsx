@@ -358,6 +358,23 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                 </p>
               </div>
 
+              {/* Entrada por voz (v2.103.0) */}
+              <div className="settings-group">
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.9rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={local.voiceInputEnabled !== false}
+                    onChange={(e) => setLocal(s => ({ ...s, voiceInputEnabled: e.target.checked }))}
+                  />
+                  <span>{local.language === 'pt' ? '🎤 Entrada por voz (ditado) no composer' : '🎤 Voice input (dictation) in the composer'}</span>
+                </label>
+                <p style={{ fontSize: '0.74rem', color: 'var(--color-text-muted, #888)', margin: '4px 0 0' }}>
+                  {local.language === 'pt'
+                    ? 'Mostra um botão de microfone para ditar a mensagem (push-to-talk). Requer suporte de reconhecimento de fala no sistema.'
+                    : 'Shows a mic button to dictate the message (push-to-talk). Requires speech recognition support on the system.'}
+                </p>
+              </div>
+
               {/* Modo seguro (v2.90.0) */}
               <div className="settings-group">
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.9rem' }}>

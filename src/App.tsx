@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore, Suspense, lazy } from 'react'
 import 'highlight.js/styles/github-dark.css'
-import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, ArrowDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder, Wrench, BrainCircuit, Check } from 'lucide-react'
+import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, ArrowDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, MicOff, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder, Wrench, BrainCircuit, Check } from 'lucide-react'
 import { loadSettings, type AppSettings } from './settingsConfig'
 import { BackgroundSubagentRegistry } from './utils/backgroundSubagents'
 import { SubagentActivityStore } from './utils/subagentActivity'
@@ -75,6 +75,8 @@ import { parseSlashInput } from './utils/slashCommands'
 import { applyConfigCommand, CONFIG_KEYS } from './utils/configCommand'
 import { buildStatusSegments } from './utils/statusLine'
 import { buildRecap } from './utils/recap'
+import { useSpeechInput } from './hooks/useSpeechInput'
+import { appendTranscript } from './utils/speech'
 import { RegenSplit } from './components/RegenSplit'
 import { AmbientOrb } from './components/AmbientOrb'
 import { SlashPopover } from './components/SlashPopover'
@@ -1214,6 +1216,13 @@ export default function App() {
       return next
     })
   })
+  // Entrada por voz / push-to-talk (v2.103.0): o trecho ditado é acrescentado
+  // ao composer. supported=false (API ausente) esconde o botão.
+  const speechInput = useSpeechInput({
+    language: settings.language,
+    onTranscript: (text) => setInput(prev => appendTranscript(prev, text)),
+  })
+
   // Transforms de exibição (v2.94.0): identidade estável p/ não quebrar o memo
   // do ChatMessage a cada render (muda só quando as regras mudam).
   const displayTransforms = useMemo(() => settings.displayTransforms || [], [settings.displayTransforms])
@@ -2302,6 +2311,18 @@ export default function App() {
                   placeholder={isActiveConvLoading ? (settings.language === 'en' ? 'Type the next message — Enter queues it' : 'Digite a próxima mensagem — Enter coloca na fila') : PLACEHOLDER_HINTS[placeholderIdx]} className="message-input" rows={1} />
                 <div className="input-right-actions">
                   {input.length > 0 && <button className="input-icon-btn" onClick={() => { setInput(''); textareaRef.current?.focus() }} title="Limpar"><XCircle size={14} /></button>}
+                  {speechInput.supported && settings.voiceInputEnabled !== false && (
+                    <button
+                      className="input-icon-btn"
+                      onClick={speechInput.toggle}
+                      title={speechInput.listening
+                        ? (settings.language === 'en' ? 'Stop dictation' : 'Parar ditado')
+                        : (settings.language === 'en' ? 'Dictate (voice input)' : 'Ditar (entrada por voz)')}
+                      style={speechInput.listening ? { color: '#ef4444' } : undefined}
+                    >
+                      {speechInput.listening ? <MicOff size={16} /> : <Mic size={16} />}
+                    </button>
+                  )}
                   <button className={`mode-toggle ${isAgentMode ? 'agent-on' : ''}`} onClick={() => setIsAgentMode(!isAgentMode)}
                     title={isAgentMode ? 'Chat normal' : 'Modo Agente autônomo'}>
                     <Zap size={13} /><span>{isAgentMode ? 'Agente' : 'Chat'}</span>
