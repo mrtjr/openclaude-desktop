@@ -35,8 +35,8 @@ HOW TO WORK — be smart and efficient:
 }
 
 export const PLANNING_MODE_PROMPT: Record<string, string> = {
-  pt: `[MODO PLANEJAMENTO ATIVO]\nVocê DEVE criar ou atualizar o plano de tarefas usando 'plan_tasks' antes de realizar qualquer ação técnica significativa. Explique seu raciocínio de planejamento para o usuário.`,
-  en: `[PLANNING MODE ACTIVE]\nYou MUST create or update the task plan using 'plan_tasks' before performing any significant technical action. Explain your planning reasoning to the user.`
+  pt: `[MODO PLANEJAMENTO ATIVO]\nVocê está em modo de planejamento: EXPLORE com ferramentas de LEITURA (read_file, search_files, web_search, list_directory, fetch_url) e PROPONHA um plano claro. As ferramentas que ALTERAM algo (escrever/editar/executar/desktop/interação no navegador/MCP) estão BLOQUEADAS até o usuário aprovar e sair do modo — não tente usá-las. Crie/atualize o plano com 'plan_tasks', explique seu raciocínio e termine pedindo aprovação.`,
+  en: `[PLANNING MODE ACTIVE]\nYou are in plan mode: EXPLORE with READ-only tools (read_file, search_files, web_search, list_directory, fetch_url) and PROPOSE a clear plan. Tools that CHANGE things (write/edit/execute/desktop/browser-interaction/MCP) are BLOCKED until the user approves and leaves the mode — do not try to use them. Create/update the plan with 'plan_tasks', explain your reasoning, and end by asking for approval.`
 }
 
 export const LANGUAGE_RULE: Record<string, string> = {

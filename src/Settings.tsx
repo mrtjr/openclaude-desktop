@@ -6,6 +6,7 @@ import { SubagentModelsPicker } from './components/settings/SubagentModelsPicker
 import { PROVIDERS } from './config/providers'
 import { parsePermissionRules, formatPermissionRules } from './utils/permissionRules'
 import { parseDisplayTransforms, formatDisplayTransforms } from './utils/outputHooks'
+import { OUTPUT_STYLES } from './constants/outputStyles'
 
 // Settings types, defaults and load/save moved to the boot-light
 // settingsConfig module so App can pull loadSettings at startup without
@@ -301,6 +302,27 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                   <option value="planning">{local.language === 'pt' ? 'Modo de planejamento' : 'Planning mode'}</option>
                   <option value="ignore">{local.language === 'pt' ? 'Ignorar permissões' : 'Ignore all'}</option>
                 </select>
+              </div>
+
+              {/* Output style (v2.97.0) */}
+              <div className="settings-group">
+                <label className="settings-label">
+                  <span>{local.language === 'pt' ? 'Estilo de resposta' : 'Response style'}</span>
+                </label>
+                <select
+                  className="settings-select"
+                  value={local.outputStyle || 'default'}
+                  onChange={(e) => setLocal(s => ({ ...s, outputStyle: e.target.value }))}
+                >
+                  {OUTPUT_STYLES.map(st => (
+                    <option key={st.id} value={st.id}>{local.language === 'pt' ? st.name : st.nameEn}</option>
+                  ))}
+                </select>
+                <p style={{ fontSize: '0.74rem', color: 'var(--color-text-muted, #888)', margin: '4px 0 0' }}>
+                  {local.language === 'pt'
+                    ? 'Formato da resposta (conciso, explicativo, ensino, só-código). Independente da persona, que define a voz/identidade.'
+                    : 'Response format (concise, explanatory, learning, code-only). Independent from the persona, which sets the voice/identity.'}
+                </p>
               </div>
 
               {/* Modo seguro (v2.90.0) */}

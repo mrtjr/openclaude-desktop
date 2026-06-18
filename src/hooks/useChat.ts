@@ -22,6 +22,7 @@ import { detectFreshness, buildDateLine, FRESHNESS_RULE, buildFreshnessNudge } f
 import { buildRagRouterHint, type RagStats } from '../utils/rag'
 import { buildWorkflowRouterHint, type WorkflowSummary } from '../utils/workflows'
 import { buildPersonaRouterHint, type PersonaLike } from '../utils/personas'
+import { outputStyleAddition } from '../constants/outputStyles'
 import { buildTurnEntry, appendTurn, renderReportForInjection, type ReportAction } from '../utils/conversationReport'
 import { toolCallSummary } from '../utils/toolDisplay'
 import { isToolError } from '../utils/toolPolicy'
@@ -417,14 +418,11 @@ export function useChat({
       const personaHint = buildPersonaRouterHint(personaListRef.current, activePersonaNameRef.current, lang)
       if (personaHint) systemPrompt += `\n\n${personaHint}`
 
-      // PLAN MODE (v2.96.0): no nível 'planning' a IA explora e PROPÕE, sem
-      // executar. As tools de alteração estão bloqueadas no executor; aqui
-      // avisamos o modelo para entregar um plano em vez de tentar mexer.
-      if (settings.permissionLevel === 'planning') {
-        systemPrompt += lang === 'en'
-          ? '\n\n[PLAN MODE] You are in PLAN MODE: explore with read-only tools (read_file, search_files, web_search, list_directory, fetch_url) and PROPOSE a clear, numbered plan. Do NOT make changes — write/edit/execute/desktop/browser-interaction tools are BLOCKED until the user approves and leaves plan mode. End with the plan and a short note asking the user to approve.'
-          : '\n\n[MODO DE PLANEJAMENTO] Você está em MODO DE PLANEJAMENTO: explore com ferramentas de LEITURA (read_file, search_files, web_search, list_directory, fetch_url) e PROPONHA um plano claro e numerado. NÃO faça alterações — escrever/editar/executar/desktop/interação no navegador estão BLOQUEADAS até o usuário aprovar e sair do modo. Termine com o plano e um pedido curto de aprovação.'
-      }
+      // Output style (v2.97.0): preset de FORMATO da resposta (conciso/
+      // explicativo/ensino/só-código), independente da persona. '' no padrão.
+      // (A diretiva de PLAN MODE vive em PLANNING_MODE_PROMPT, injetada por passo.)
+      const styleAddition = outputStyleAddition(settings.outputStyle, lang)
+      if (styleAddition) systemPrompt += `\n\n${styleAddition}`
 
       // Tool deferral (v2.12.6; auto-decided since v2.12.11): move
       // rarely-used tools out of the request schema list into a compact

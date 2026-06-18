@@ -162,6 +162,10 @@ export interface AppSettings {
    *  trechos antes de renderizar. Não muta o conteúdo salvo. Ver
    *  utils/outputHooks.applyDisplayTransforms. */
   displayTransforms?: DisplayTransform[]
+  /** v2.97.0 — estilo de FORMATO da resposta (porta os output styles do Claude
+   *  Code): 'default' | 'concise' | 'explanatory' | 'learning' | 'code'.
+   *  Independente da persona (voz). Ver constants/outputStyles.ts. */
+  outputStyle?: string
   /** v2.69.0 — SCOUT proativo (opt-in, default off): em turnos agênticos com
    *  subagentes ociosos, um worker pesquisa por conta própria dados ATUAIS (data
    *  de hoje) + caminhos alternativos sobre o que a IA principal está fazendo, e
@@ -233,6 +237,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   fallbackModels: [],
   permissionRules: [],
   displayTransforms: [],
+  outputStyle: 'default',
   scoutEnabled: false,
   compressToolOutputs: true,
 }
