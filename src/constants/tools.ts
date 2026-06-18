@@ -568,6 +568,22 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'git_worktree',
+      description: 'Create/remove/list an ISOLATED git worktree for risky or parallel edits, without touching the main working tree. action="add" makes a new worktree on its own branch under .openclaude-worktrees/ (returns the folder path — then write/edit files using full paths inside it, and run/verify there); action="remove" with the path discards it; action="list" shows existing worktrees. Use this when you want to try a change in isolation or run several independent edits in parallel and merge later. Runs in the conversation/project working folder (set it first).',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', description: 'One of: add | remove | list' },
+          label: { type: 'string', description: 'For action=add: a short label for the worktree branch/folder (e.g. "refactor-auth")' },
+          path: { type: 'string', description: 'For action=remove: the worktree folder path returned by a previous add' }
+        },
+        required: ['action']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'delegate_subtasks',
       description: `Run multiple research subtasks IN PARALLEL. Each subtask is an independent subagent that runs its OWN read-only tool loop (web_search, fetch_url, read_file, search_files, list_directory) — it searches/reads on its own and returns a synthesis. It CANNOT write, edit, or run commands. Use this to fan out independent research/exploration (e.g. "investigate area A", "find where X is defined", "check the latest version of Y") and get all answers at once. Give each subtask a self-contained prompt. Pick a specialized role via "agent". Roles: ${subagentRolesHint()}.`,
       parameters: {
@@ -723,7 +739,7 @@ export const SAFE_TOOLS = new Set([
 ])
 
 export const DANGEROUS_TOOLS = new Set([
-  'execute_command', 'run_command_background', 'write_file', 'edit_file', 'open_file_or_url', 'git_command',
+  'execute_command', 'run_command_background', 'write_file', 'edit_file', 'open_file_or_url', 'git_command', 'git_worktree',
   'computer_open_app', 'computer_type_text', 'computer_press_keys',
   // ORION no chat (v2.78.0): clique/scroll no desktop real — gateados pela
   // permissão como os demais computer_* (bypass libera p/ power users).

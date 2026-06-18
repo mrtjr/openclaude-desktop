@@ -6,6 +6,7 @@ import { toolNeedsApproval, truncateToolOutput, isToolError, isProtectedWritePat
 import { evaluatePermissionRules } from '../utils/permissionRules'
 import { combineHookOutput } from '../utils/outputHooks'
 import { classifyCommand } from '../utils/commandSandbox'
+import { planWorktree, WORKTREE_LIST_COMMAND } from '../utils/worktree'
 import { formatExecResult, resolveExecCwd, resolveExecTimeoutMs } from '../utils/execResult'
 import { formatEditResult, formatWriteResult, COACH_REWRITE_MIN_CHARS } from '../utils/editResult'
 import { mergeFact, normalizeMemory } from '../utils/persistentMemory'
@@ -75,6 +76,7 @@ interface UseToolExecutionOptions {
 export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool, backgroundTasks, subagentActivity, subagentLimiter, personas, onSetPersona, getConversations }: UseToolExecutionOptions) {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
   const scoutSeqRef = useRef(0) // ids únicos + rodízio de modelo do scout
+  const worktreeSeqRef = useRef(0) // sufixo único dos worktrees (v2.102.0)
   const personasRef = useRef(personas)
   personasRef.current = personas
   const onSetPersonaRef = useRef(onSetPersona)
@@ -449,6 +451,31 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         const result = await window.electron.gitCommand({ command: args.command, cwd: args.cwd })
         if (result.error) return `Git error: ${result.error}`
         return (result.stdout + (result.stderr ? '\n' + result.stderr : '')).trim() || 'Done (no output)'
+      }
+      if (name === 'git_worktree') {
+        // Worktree isolado (v2.102.0) p/ edições paralelas/arriscadas sem tocar a
+        // árvore principal. Roda na pasta do projeto.
+        const cwd = projectCwdRef.current
+        if (!cwd) return 'git_worktree: defina a pasta de trabalho da conversa/projeto primeiro (o worktree é criado relativo a ela).'
+        const action = String(args.action || '').toLowerCase()
+        if (action === 'list') {
+          const r = await window.electron.execCommand({ command: WORKTREE_LIST_COMMAND, cwd, timeoutMs: 15000 })
+          return (r?.stdout || r?.stderr || 'sem worktrees').trim()
+        }
+        if (action === 'add') {
+          const plan = planWorktree(cwd, args.label, worktreeSeqRef.current++)
+          const r = await window.electron.execCommand({ command: plan.addCommand, cwd, timeoutMs: 30000 })
+          if ((r?.exitCode ?? 1) !== 0) return `git_worktree add falhou: ${(r?.stderr || r?.stdout || '').trim()}`
+          return `Worktree criado.\nbranch: ${plan.branch}\npasta: ${plan.dir}\nEdite arquivos sob essa pasta (write_file/edit_file com o caminho completo). Para descartar: git_worktree action=remove path="${plan.dir}".`
+        }
+        if (action === 'remove') {
+          const path = String(args.path || '').trim()
+          if (!path) return 'git_worktree remove: informe "path" (a pasta do worktree).'
+          const r = await window.electron.execCommand({ command: `git worktree remove "${path}" --force`, cwd, timeoutMs: 30000 })
+          if ((r?.exitCode ?? 1) !== 0) return `git_worktree remove falhou: ${(r?.stderr || r?.stdout || '').trim()}`
+          return `Worktree removido: ${path}`
+        }
+        return 'git_worktree: action deve ser "add", "remove" ou "list".'
       }
       if (name === 'undo_last_write') {
         const result = await window.electron.undoLastWrite()
