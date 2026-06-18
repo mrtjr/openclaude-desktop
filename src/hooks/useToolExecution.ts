@@ -17,7 +17,9 @@ import { matchHooks } from '../utils/hooks'
 import { resolveSubagentPrompt } from '../constants/subagents'
 import {
   buildWorkerTools, runResearchWorker, runWithConcurrency, normalizeWorkerChat,
-  summarizeToolsUsed, resolveSubagentModel, pickFallbackModel, WORKER_TOOL_NAMES, WORKER_SYSTEM_PROMPT,
+  summarizeToolsUsed, resolveSubagentModel, pickFallbackModel, WORKER_TOOL_NAMES,
+  buildWorkerToolsForDepth, workerSystemPrompt, canDelegateAtDepth, capNestedSubtasks,
+  normalizeMaxDepth, DELEGATE_TOOL_NAME,
   type WorkerChat, type WorkerExec, type WorkerMessage,
 } from '../utils/researchWorker'
 import type { Skill } from '../types/skill'
@@ -585,22 +587,19 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         const subtasks = (args.subtasks || []).filter((s: any) => s && s.prompt)
         if (!subtasks.length) return 'Nenhuma subtarefa válida fornecida.'
 
-        const workerTools = buildWorkerTools(TOOLS as any)
-        const buildMessages = (st: any): WorkerMessage[] => {
+        // Subagentes ANINHADOS (v2.88.0): teto de profundidade da árvore. 1 = sem
+        // aninhamento (clássico); 2+ = um worker pode abrir sub-workers. Ver
+        // researchWorker.canDelegateAtDepth / makeWorkerExec abaixo.
+        const maxDepth = normalizeMaxDepth(settings.subagentMaxDepth)
+        // Mensagens/ferramentas dependem da profundidade: o prompt ganha a
+        // cláusula de delegação e a allowlist ganha delegate_subtasks só enquanto
+        // ainda dá para aninhar.
+        const buildMessages = (st: any, depth: number): WorkerMessage[] => {
           const rolePrompt = resolveSubagentPrompt(st.agent)
-          const sys = [WORKER_SYSTEM_PROMPT[lang] ?? WORKER_SYSTEM_PROMPT.pt, rolePrompt, systemMsg]
+          const sys = [workerSystemPrompt(lang, canDelegateAtDepth(depth, maxDepth)), rolePrompt, systemMsg]
             .filter(Boolean).join('\n\n') + langRule
           return [{ role: 'system', content: sys }, { role: 'user', content: String(st.prompt ?? '') }]
         }
-
-        // Fronteira de segurança RÍGIDA: o worker só executa a allowlist de
-        // leitura. Mesmo que o modelo alucine um write_file/execute_command, ele
-        // não roda — reusa o executor principal (formatação consistente) sem os
-        // hooks/aprovação (workers são read-only).
-        const workerExec: WorkerExec = async (n, a) =>
-          WORKER_TOOL_NAMES.has(n)
-            ? executeToolRaw(n, a)
-            : `[A ferramenta "${n}" não está disponível para subagentes. Use só leitura/pesquisa: ${[...WORKER_TOOL_NAMES].join(', ')}.]`
 
         // Multi-modelo (v2.64.0): cada worker Ollama pode usar um modelo
         // diferente — o orquestrador escolhe por subtarefa (campo "model",
@@ -643,42 +642,78 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
           && settings.provider === 'modal' && !!modalKeyPool && modalKeyPool.totalCount > 0
 
         const batchTag = Date.now().toString(36)
-        const runOne = (st: any, index: number) => async (): Promise<string> => {
-          const runId = `${batchTag}-${index}`
+        // `depth` = nível na árvore (1 = worker direto do orquestrador).
+        // `parentRunId` fecha a árvore no painel. Mutuamente recursivo com o
+        // childExec abaixo (filhos rodam via runOne em depth+1).
+        const runOne = (st: any, index: number, depth = 1, parentRunId?: string) => async (): Promise<string> => {
+          const runId = parentRunId ? `${parentRunId}.${index}` : `${batchTag}-${index}`
           const taskLabel = String(st.prompt ?? '').replace(/\s+/g, ' ').trim().slice(0, 120)
+          const myTools = buildWorkerToolsForDepth(TOOLS as any, depth, maxDepth)
+
+          // Executor deste worker. Subagentes ANINHADOS (v2.88.0): se ele pedir
+          // delegate_subtasks (só ofertado enquanto a profundidade permite), os
+          // FILHOS rodam SEQUENCIALMENTE dentro da vaga já segurada por este
+          // worker — NÃO pegam nova vaga do semáforo. Isso evita deadlock (pai
+          // esperando filho que espera vaga que o pai segura) e mantém a carga
+          // simultânea de Ollama ≤ teto global. Fora isso, só a allowlist de
+          // leitura roda (fronteira de segurança rígida).
+          const myExec: WorkerExec = async (n, a) => {
+            if (n === DELEGATE_TOOL_NAME) {
+              if (!canDelegateAtDepth(depth, maxDepth)) {
+                return lang === 'en'
+                  ? `[Max subagent depth (${maxDepth}) reached — do not delegate further; synthesize with what you have.]`
+                  : `[Profundidade máxima de subagentes (${maxDepth}) atingida — não delegue mais; sintetize com o que tem.]`
+              }
+              const childTasks = capNestedSubtasks((a?.subtasks || []).filter((s: any) => s && s.prompt))
+              if (!childTasks.length) {
+                return lang === 'en' ? '[delegate_subtasks: no valid subtask.]' : '[delegate_subtasks: nenhuma subtarefa válida.]'
+              }
+              const childOut = await runWithConcurrency(
+                childTasks.map((cst: any, ci: number) => runOne(cst, ci, depth + 1, runId)), 1)
+              return childOut.join('\n\n---\n\n')
+            }
+            return WORKER_TOOL_NAMES.has(n)
+              ? executeToolRaw(n, a)
+              : `[A ferramenta "${n}" não está disponível para subagentes. Use só leitura/pesquisa: ${[...WORKER_TOOL_NAMES].join(', ')}.]`
+          }
+
           let chat: WorkerChat
           let slot: { key: string } | null = null
           let modelUsed: string
-          if (useModal) {
+          let onOllama = false
+          // Modal só na RAIZ (depth 1): os filhos aninhados sempre rodam no
+          // Ollama local (evita esgotar o pool de keys e o mesmo risco de
+          // deadlock no pool; e o split orquestrador-worker já cobriu a raiz).
+          if (useModal && depth === 1) {
             slot = await modalKeyPool!.acquireOrWait()
             modelUsed = settings.modalModel || selectedModel || 'zai-org/GLM-5.1-FP8'
             if (slot) chat = makeModalChat(slot.key)
             else if (settings.modalPoolFallbackOllama) {
               modelUsed = resolveSubagentModel(st.model, index, allowedModels, fallbackModel)
-              chat = makeOllamaChat(modelUsed)
+              chat = makeOllamaChat(modelUsed); onOllama = true
             } else return `[Agent ${st.id ?? '?'}]: [pool Modal esgotado]`
           } else {
             modelUsed = resolveSubagentModel(st.model, index, allowedModels, fallbackModel)
-            chat = makeOllamaChat(modelUsed)
+            chat = makeOllamaChat(modelUsed); onOllama = true
           }
           // Worker recebeu a ordem → aparece no painel como "trabalhando".
-          subagentActivity?.start(runId, taskLabel, modelUsed, Date.now())
+          subagentActivity?.start(runId, taskLabel, modelUsed, Date.now(), depth, parentRunId)
           let errored = false
           try {
             let out = await runResearchWorker({
-              messages: buildMessages(st), tools: workerTools, chat, exec: workerExec, finalNudge,
+              messages: buildMessages(st, depth), tools: myTools, chat, exec: myExec, finalNudge,
               onProgress: (p) => subagentActivity?.progress(runId, p.step, p.toolsUsed, p.lastTool),
             })
             // Retry-com-fallback (v2.83.1): se o worker Ollama falhou no modelo
             // atribuído (ex.: 9b não coube na VRAM sob concorrência), tenta 1×
             // em OUTRO modelo da lista (um menor que cabe), não num fallback fixo
             // que pode nem estar instalado. Recupera o subtask em vez de "falhou".
-            if (out.error && !useModal) {
+            if (out.error && onOllama) {
               const retryModel = pickFallbackModel(modelUsed, allowedModels, fallbackModel)
               if (retryModel) {
-                subagentActivity?.start(runId, taskLabel, `${retryModel} (fallback)`, Date.now())
+                subagentActivity?.start(runId, taskLabel, `${retryModel} (fallback)`, Date.now(), depth, parentRunId)
                 const out2 = await runResearchWorker({
-                  messages: buildMessages(st), tools: workerTools, chat: makeOllamaChat(retryModel), exec: workerExec, finalNudge,
+                  messages: buildMessages(st, depth), tools: myTools, chat: makeOllamaChat(retryModel), exec: myExec, finalNudge,
                   onProgress: (p) => subagentActivity?.progress(runId, p.step, p.toolsUsed, p.lastTool),
                 })
                 if (!out2.error) { out = out2; modelUsed = `${retryModel} (fallback)` }

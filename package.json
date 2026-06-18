@@ -1,6 +1,6 @@
 {
   "name": "openclaude-desktop",
-  "version": "2.87.1",
+  "version": "2.88.0",
   "description": "Desktop GUI for OpenClaude",
   "author": "OpenClaude",
   "main": "electron/main.js",

@@ -594,6 +594,26 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                       ? 'Quantos workers Ollama rodam ao mesmo tempo em todo o app. Muitos modelos locais de uma vez engarrafam/travam a máquina — 2 é o recomendado. A IA principal não delega mais enquanto o limite estiver ocupado.'
                       : 'How many Ollama workers run at once across the whole app. Too many local models at once jam/freeze the machine — 2 is recommended. The main AI won’t delegate more while the limit is full.'}
                   </p>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', fontSize: '0.85rem', flexWrap: 'wrap' }}>
+                    <span>{local.language === 'pt' ? 'Profundidade dos subagentes aninhados:' : 'Nested subagent depth:'}</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={5}
+                      value={local.subagentMaxDepth ?? 2}
+                      onChange={(e) => setLocal(s => ({ ...s, subagentMaxDepth: Math.max(1, Math.min(5, Math.round(Number(e.target.value) || 1))) }))}
+                      style={{ padding: '6px 8px', fontSize: '0.85rem', width: '90px' }}
+                    />
+                    <span style={{ color: 'var(--color-text-muted, #888)', fontSize: '0.78rem' }}>
+                      {local.language === 'pt' ? '1 = sem aninhamento' : '1 = no nesting'}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.74rem', color: 'var(--color-text-muted, #888)', margin: '4px 0 0' }}>
+                    {local.language === 'pt'
+                      ? 'Até que nível um subagente pode abrir os próprios sub-subagentes (igual ao Claude Code). Em 2, um worker pode dividir o sub-problema em sub-workers. Os filhos rodam um de cada vez dentro da vaga do pai — não estouram o limite acima nem travam a máquina. 1 desliga o aninhamento.'
+                      : 'How deep a subagent may spawn its own sub-subagents (like Claude Code). At 2, a worker can split its sub-problem into sub-workers. Children run one at a time inside the parent’s slot — they never exceed the limit above or freeze the machine. 1 disables nesting.'}
+                  </p>
                 </div>
               </div>
             </div>

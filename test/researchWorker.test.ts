@@ -3,6 +3,8 @@ import {
   buildWorkerTools, parseRawToolCalls, normalizeWorkerChat, summarizeToolsUsed,
   runResearchWorker, runWithConcurrency, resolveSubagentModel, pickFallbackModel, applySubagentModels,
   WORKER_TOOL_NAMES,
+  canDelegateAtDepth, normalizeMaxDepth, workerToolNamesForDepth, buildWorkerToolsForDepth,
+  capNestedSubtasks, workerSystemPrompt, DELEGATE_TOOL_NAME, NESTED_FANOUT_CAP, SUBAGENT_MAX_DEPTH_CAP,
   type WorkerChat, type WorkerExec, type WorkerChatResult,
 } from '../src/utils/researchWorker'
 
@@ -203,6 +205,95 @@ describe('applySubagentModels', () => {
   })
   it('lista vazia → retorna o array original', () => {
     expect(applySubagentModels(TOOLS, [])).toBe(TOOLS)
+  })
+})
+
+// ─── Subagentes aninhados (v2.88.0) ─────────────────────────────────
+describe('canDelegateAtDepth', () => {
+  it('permite delegar enquanto a profundidade tem orçamento (depth < maxDepth)', () => {
+    expect(canDelegateAtDepth(1, 2)).toBe(true)  // worker raiz com maxDepth 2 pode aninhar
+    expect(canDelegateAtDepth(2, 2)).toBe(false) // filho no fundo não delega mais
+    expect(canDelegateAtDepth(1, 1)).toBe(false) // maxDepth 1 = sem aninhamento
+    expect(canDelegateAtDepth(2, 3)).toBe(true)
+  })
+  it('coage entradas inválidas (maxDepth mínimo 1)', () => {
+    expect(canDelegateAtDepth(1, 0 as any)).toBe(false)
+    expect(canDelegateAtDepth(1, NaN as any)).toBe(false)
+  })
+})
+
+describe('normalizeMaxDepth', () => {
+  it('mantém valores válidos e fixa o intervalo [1, teto]', () => {
+    expect(normalizeMaxDepth(2)).toBe(2)
+    expect(normalizeMaxDepth(0)).toBe(1)
+    expect(normalizeMaxDepth(99)).toBe(SUBAGENT_MAX_DEPTH_CAP)
+    expect(normalizeMaxDepth(undefined)).toBe(2) // default
+    expect(normalizeMaxDepth('3' as any)).toBe(3)
+  })
+})
+
+describe('workerToolNamesForDepth / buildWorkerToolsForDepth', () => {
+  const ALL = [
+    ...['web_search', 'fetch_url', 'read_file', 'search_files', 'list_directory'].map(n => ({ type: 'function', function: { name: n } })),
+    { type: 'function', function: { name: 'delegate_subtasks' } },
+    { type: 'function', function: { name: 'write_file' } },
+  ]
+  it('inclui delegate_subtasks só quando a profundidade ainda permite aninhar', () => {
+    expect(workerToolNamesForDepth(1, 2).has(DELEGATE_TOOL_NAME)).toBe(true)
+    expect(workerToolNamesForDepth(2, 2).has(DELEGATE_TOOL_NAME)).toBe(false)
+    // leitura sempre presente
+    expect(workerToolNamesForDepth(2, 2).has('web_search')).toBe(true)
+  })
+  it('filtra os schemas reais por profundidade (delegate só no nível permitido)', () => {
+    const deep = buildWorkerToolsForDepth(ALL, 1, 2).map(t => t.function.name)
+    expect(deep).toContain('delegate_subtasks')
+    expect(deep).not.toContain('write_file')
+    const leaf = buildWorkerToolsForDepth(ALL, 2, 2).map(t => t.function.name)
+    expect(leaf).not.toContain('delegate_subtasks')
+    expect(leaf).toContain('read_file')
+  })
+})
+
+describe('capNestedSubtasks', () => {
+  it('limita o fan-out de uma delegação aninhada ao teto', () => {
+    const many = Array.from({ length: 10 }, (_, i) => ({ prompt: `t${i}` }))
+    expect(capNestedSubtasks(many).length).toBe(NESTED_FANOUT_CAP)
+    expect(capNestedSubtasks(many, 2).length).toBe(2)
+  })
+  it('tolera entrada inválida', () => {
+    expect(capNestedSubtasks(undefined as any)).toEqual([])
+  })
+})
+
+describe('workerSystemPrompt', () => {
+  it('adiciona a cláusula de delegação só quando o worker pode aninhar', () => {
+    expect(workerSystemPrompt('pt', true)).toContain('delegate_subtasks')
+    expect(workerSystemPrompt('pt', false)).not.toContain('delegate_subtasks')
+    expect(workerSystemPrompt('en', true)).toContain('delegate_subtasks')
+  })
+  it('cai no PT para idioma desconhecido', () => {
+    expect(workerSystemPrompt('zz', false)).toBe(workerSystemPrompt('pt', false))
+  })
+})
+
+describe('runResearchWorker — aninhamento via executor injetado', () => {
+  it('o worker pode chamar delegate_subtasks e o executor roda os filhos', async () => {
+    // 1º passo: o worker delega; 2º passo: sintetiza com o que o filho devolveu.
+    const { chat } = scriptedChat([
+      { content: '', toolCalls: [{ id: '1', name: 'delegate_subtasks', args: { subtasks: [{ prompt: 'sub' }] } }] },
+      { content: 'síntese com base no filho', toolCalls: [] },
+    ])
+    let delegated = false
+    const exec: WorkerExec = async (n, a) => {
+      if (n === 'delegate_subtasks') { delegated = true; return `[filho]: ${(a.subtasks?.[0]?.prompt) || ''} ok` }
+      return '[indisponível]'
+    }
+    const tools = buildWorkerToolsForDepth(
+      [{ type: 'function', function: { name: 'delegate_subtasks' } }], 1, 2)
+    const out = await runResearchWorker({ messages: [{ role: 'user', content: 'investigue A' }], tools, chat, exec })
+    expect(delegated).toBe(true)
+    expect(out.toolsUsed).toEqual(['delegate_subtasks'])
+    expect(out.text).toBe('síntese com base no filho')
   })
 })
 

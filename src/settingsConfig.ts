@@ -128,6 +128,13 @@ export interface AppSettings {
    *  carregados de uma vez. Default 2. A IA principal não delega mais enquanto o
    *  limite estiver ocupado (controle de admissão). Ver semaphore.ts. */
   subagentConcurrency?: number
+  /** v2.88.0 — profundidade máxima da árvore de subagentes ANINHADOS. 1 = sem
+   *  aninhamento (clássico: só os workers diretos do orquestrador). 2 = um
+   *  worker pode abrir UM nível de sub-workers; teto 5 (igual ao Claude Code).
+   *  Os filhos rodam sequencialmente dentro da vaga do pai (sem nova vaga do
+   *  semáforo → sem deadlock, carga local ≤ subagentConcurrency). Default 2.
+   *  Ver researchWorker.canDelegateAtDepth. */
+  subagentMaxDepth?: number
   /** v2.69.0 — SCOUT proativo (opt-in, default off): em turnos agênticos com
    *  subagentes ociosos, um worker pesquisa por conta própria dados ATUAIS (data
    *  de hoje) + caminhos alternativos sobre o que a IA principal está fazendo, e
@@ -194,6 +201,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   subagentsBackground: false,
   subagentTimeoutSec: 600,
   subagentConcurrency: 2,
+  subagentMaxDepth: 2,
   scoutEnabled: false,
   compressToolOutputs: true,
 }

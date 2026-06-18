@@ -25,6 +25,11 @@ export interface SubagentRun {
   result?: string
   startedAt: number
   endedAt?: number
+  /** Profundidade na árvore de subagentes (v2.88.0): 1 = worker direto do
+   *  orquestrador; 2+ = sub-worker aninhado. Usado p/ indentar no painel. */
+  depth?: number
+  /** Id do worker pai (quando aninhado) — fecha a árvore no painel. */
+  parentId?: string
 }
 
 type Listener = () => void
@@ -44,9 +49,10 @@ export class SubagentActivityStore {
 
   private notify() { for (const l of this.listeners) l() }
 
-  /** Worker recebeu a ordem e começou. */
-  start(id: string, task: string, model: string, startedAt: number): void {
-    const run: SubagentRun = { id, task, model, status: 'working', steps: 0, toolsUsed: [], startedAt }
+  /** Worker recebeu a ordem e começou. `depth`/`parentId` posicionam o worker na
+   *  árvore (subagentes aninhados, v2.88.0); ausentes → raiz (depth 1). */
+  start(id: string, task: string, model: string, startedAt: number, depth = 1, parentId?: string): void {
+    const run: SubagentRun = { id, task, model, status: 'working', steps: 0, toolsUsed: [], startedAt, depth, parentId }
     this.runs = [...this.runs.filter((r) => r.id !== id), run]
     this.notify()
   }

@@ -46,6 +46,67 @@ export const WORKER_TOOL_NAMES = new Set<string>([
   'web_search', 'fetch_url', 'read_file', 'search_files', 'list_directory',
 ])
 
+// ─── Subagentes ANINHADOS (v2.88.0) ─────────────────────────────────
+// Igual ao "sub-agents can spawn their own sub-agents" do Claude Code (Week 24):
+// um worker, quando a profundidade ainda permite, ganha a ferramenta
+// delegate_subtasks e pode quebrar o próprio sub-problema em sub-workers (que
+// também são read-only). A profundidade é LIMITADA (teto 5, como o Claude Code)
+// e o fan-out por chamada é limitado — sem isso, modelos locais explodiriam em
+// árvores concorrentes. A concorrência global continua sob o Semaphore: os
+// filhos rodam SEQUENCIALMENTE dentro da vaga já segurada pelo pai (ver
+// useToolExecution), então a carga simultânea de Ollama nunca passa do teto.
+
+/** Nome da ferramenta de delegação — oferecida a um worker só quando a
+ *  profundidade ainda permite aninhar. */
+export const DELEGATE_TOOL_NAME = 'delegate_subtasks'
+
+/** Profundidade máxima padrão da árvore. 1 = SEM aninhamento (clássico: só os
+ *  workers diretos do orquestrador). 2 = um worker pode abrir UM nível de
+ *  sub-workers. */
+export const DEFAULT_SUBAGENT_MAX_DEPTH = 2
+/** Teto rígido de profundidade (igual ao Claude Code). Além disso o
+ *  custo/risco de explosão em modelos locais não compensa. */
+export const SUBAGENT_MAX_DEPTH_CAP = 5
+/** Quantas sub-subtarefas um worker pode abrir POR chamada de delegação —
+ *  trava contra explosão combinatória (um worker pedindo dezenas de filhos). */
+export const NESTED_FANOUT_CAP = 4
+
+/** Um worker NA profundidade `depth` (1 = worker direto do orquestrador) ainda
+ *  pode delegar? Só enquanto há orçamento de profundidade. */
+export function canDelegateAtDepth(depth: number, maxDepth: number): boolean {
+  return Number(depth) < Math.max(1, Math.floor(Number(maxDepth) || 1))
+}
+
+/** Normaliza a profundidade máxima vinda das settings ao intervalo válido.
+ *  Não-numérico/ausente → default; números finitos são fixados em [1, teto]. */
+export function normalizeMaxDepth(raw: any): number {
+  const n = Math.floor(Number(raw))
+  if (!Number.isFinite(n)) return DEFAULT_SUBAGENT_MAX_DEPTH
+  return Math.max(1, Math.min(SUBAGENT_MAX_DEPTH_CAP, n))
+}
+
+/** Allowlist de um worker na profundidade `depth`: leitura SEMPRE; +
+ *  delegate_subtasks quando a profundidade ainda permite aninhar. É a fronteira
+ *  de segurança: um worker no fundo da árvore nem recebe a ferramenta. */
+export function workerToolNamesForDepth(depth: number, maxDepth: number): Set<string> {
+  const names = new Set(WORKER_TOOL_NAMES)
+  if (canDelegateAtDepth(depth, maxDepth)) names.add(DELEGATE_TOOL_NAME)
+  return names
+}
+
+/** Schemas de ferramentas de um worker na profundidade `depth` — reusa os reais
+ *  (constants/tools.ts), incluindo delegate_subtasks só quando permitido. */
+export function buildWorkerToolsForDepth(allTools: any[], depth: number, maxDepth: number): any[] {
+  if (!Array.isArray(allTools)) return []
+  const allow = workerToolNamesForDepth(depth, maxDepth)
+  return allTools.filter((t) => allow.has(t?.function?.name))
+}
+
+/** Limita o fan-out de UMA delegação aninhada ao teto rígido. */
+export function capNestedSubtasks<T>(subtasks: T[], cap = NESTED_FANOUT_CAP): T[] {
+  return Array.isArray(subtasks) ? subtasks.slice(0, Math.max(1, cap)) : []
+}
+
 export const DEFAULT_WORKER_MAX_STEPS = 6
 /** Quantos workers rodam ao mesmo tempo no Ollama (limitado pela VRAM local;
  *  o resto enfileira). Modal-pool usa o nº de keys como teto. */
@@ -57,6 +118,21 @@ export const WORKER_TOOL_RESULT_CAP = 8000
 export const WORKER_SYSTEM_PROMPT: Record<string, string> = {
   pt: 'Você é um subagente de PESQUISA com ferramentas APENAS DE LEITURA (web_search, fetch_url, read_file, search_files, list_directory). Use-as para coletar o que precisa e então devolva uma SÍNTESE objetiva e auto-contida — itens-chave, caminhos/fontes citados e a conclusão. Você NÃO pode escrever, editar nem executar comandos: só ler e buscar. Pare de usar ferramentas assim que tiver o suficiente para responder; não repita a mesma busca.',
   en: 'You are a RESEARCH subagent with READ-ONLY tools (web_search, fetch_url, read_file, search_files, list_directory). Use them to gather what you need, then return a concise, self-contained SYNTHESIS — key points, paths/sources cited, and the conclusion. You CANNOT write, edit, or run commands — only read and search. Stop using tools as soon as you have enough to answer; do not repeat the same query.',
+}
+
+/** Cláusula extra do prompt quando o worker AINDA pode aninhar (v2.88.0): avisa
+ *  que ele tem delegate_subtasks à disposição — usar com parcimônia. */
+export const WORKER_DELEGATE_CLAUSE: Record<string, string> = {
+  pt: ' Se a sua tarefa se dividir em sub-investigações INDEPENDENTES, você também pode chamar delegate_subtasks para abrir sub-workers (eles também só leem/buscam) e sintetizar o que voltarem. Use com PARCIMÔNIA — só quando dividir realmente acelera; senão, pesquise você mesmo.',
+  en: ' If your task splits into INDEPENDENT sub-investigations, you may also call delegate_subtasks to spawn sub-workers (they are read-only too) and synthesize what they return. Use SPARINGLY — only when splitting genuinely speeds things up; otherwise just research it yourself.',
+}
+
+/** System prompt do worker para uma dada profundidade: o base de leitura + a
+ *  cláusula de delegação quando ainda dá para aninhar. */
+export function workerSystemPrompt(lang: string, canDelegate: boolean): string {
+  const base = WORKER_SYSTEM_PROMPT[lang] ?? WORKER_SYSTEM_PROMPT.pt
+  if (!canDelegate) return base
+  return base + (WORKER_DELEGATE_CLAUSE[lang] ?? WORKER_DELEGATE_CLAUSE.pt)
 }
 
 /** Filtra os schemas completos de ferramentas para só os de leitura do worker —

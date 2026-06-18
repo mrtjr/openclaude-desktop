@@ -60,19 +60,24 @@ function RunRow({ run, pt, now }: { run: SubagentRun; pt: boolean; now: number }
     ? (run.lastTool ? `${labels[run.lastTool] || run.lastTool}…` : (pt ? 'pensando…' : 'thinking…'))
     : run.status === 'done' ? (pt ? 'entregou' : 'delivered') : (pt ? 'falhou' : 'failed')
   const activityColor = working ? 'var(--color-text-muted, #8a8a96)' : COLOR[run.status]
+  // Subagentes aninhados (v2.88.0): indenta por profundidade (1 = raiz) e marca
+  // os filhos com um conector de árvore.
+  const depth = Math.max(1, run.depth || 1)
+  const indent = (depth - 1) * 16
 
   return (
     <div style={{ animation: 'oc-row-in 0.25s ease' }}>
       <div
         onClick={() => run.result && setOpen((o) => !o)}
         style={{
-          display: 'flex', alignItems: 'center', gap: 9, padding: '6px 4px',
+          display: 'flex', alignItems: 'center', gap: 9, padding: '6px 4px', paddingLeft: 4 + indent,
           cursor: run.result ? 'pointer' : 'default', fontSize: '0.78rem',
           borderRadius: 6, transition: 'background 0.15s',
         }}
         onMouseEnter={(e) => { if (run.result) (e.currentTarget.style.background = 'var(--bg-elevated, rgba(255,255,255,0.04))') }}
         onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
       >
+        {depth > 1 && <span style={{ color: 'var(--color-text-muted, #8a8a96)', opacity: 0.6, flexShrink: 0, fontSize: '0.78rem' }}>↳</span>}
         <StatusIcon status={run.status} />
         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {run.task || (pt ? '(subtarefa)' : '(subtask)')}
