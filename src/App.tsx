@@ -52,7 +52,7 @@ import { PLACEHOLDER_HINTS, SUGGESTIONS } from './constants/prompts'
 import { formatMarkdown, getRelativeTime, groupByBucket, bucketLabel } from './utils/formatting'
 import { streamPhaseLabel } from './utils/streamPhase'
 import { buildSwitchOptions, groupSwitchOptions, type SwitchOption } from './utils/modelSwitcher'
-import { mergeSkills, skillManifestHeaders } from './utils/skills'
+import { mergeSkills, skillManifestHeaders, scopeSkillsToProject } from './utils/skills'
 import type { Skill } from './types/skill'
 const SkillManager = lazy(() => import('./SkillManager'))
 
@@ -598,7 +598,9 @@ export default function App() {
 
   // Em modo seguro, nada de skills (uma skill com prompt/ferramenta quebrada
   // não atrapalha a depuração). hooks/MCP já saíram via effectiveSettingsSafe.
-  const activeSkills = safeMode ? [] : skills
+  // Fora isso, escopa as skills ao projeto da conversa ativa (v2.107.0): skills
+  // de outro projeto ficam ocultas; as globais (sem projectId) sempre valem.
+  const activeSkills = safeMode ? [] : scopeSkillsToProject(skills, convManager.activeConv?.projectId)
   const toolExec = useToolExecution({
     settings: effectiveSettingsSafe,
     activeConvId: convManager.activeConvId,
@@ -1594,7 +1596,7 @@ export default function App() {
       <Suspense fallback={<div className="lazy-panel-fallback" role="status" aria-label="Carregando painel"><Loader2 size={20} className="spin" /></div>}>
         {showAnalytics && <AnalyticsDashboard isOpen={showAnalytics} onClose={() => setShowAnalytics(false)} language={settings.language} />}
         {showDevInsights && <DevInsightsPanel isOpen={showDevInsights} onClose={() => setShowDevInsights(false)} language={settings.language} providerConfig={providerConfig} />}
-        {showSkills && <SkillManager isOpen={showSkills} onClose={() => setShowSkills(false)} skills={skills} onSave={persistSkills} language={settings.language} />}
+        {showSkills && <SkillManager isOpen={showSkills} onClose={() => setShowSkills(false)} skills={skills} onSave={persistSkills} language={settings.language} projects={projManager.projects.map(p => ({ id: p.id, name: p.name }))} />}
         {showConvPicker && (
           <div className="settings-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowConvPicker(false) }}>
             <div className="analytics-modal" style={{ maxWidth: 540 }}>

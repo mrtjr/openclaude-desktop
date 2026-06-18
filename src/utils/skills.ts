@@ -230,6 +230,12 @@ export function renderSkillManifest(skills: Skill[]): string {
   ].join('\n')
 }
 
+/** Filtra as skills ao projeto ativo (v2.107.0): mantém as globais (sem
+ *  projectId) + as do projeto atual; esconde as de OUTROS projetos. Puro. */
+export function scopeSkillsToProject(skills: Skill[], activeProjectId: string | undefined): Skill[] {
+  return (skills || []).filter(s => !s.projectId || s.projectId === activeProjectId)
+}
+
 /** Corpo da skill = instruções + exemplos/few-shot (v2.106.0), quando houver. */
 export function renderSkillBody(skill: Skill): string {
   const ex = (skill.examples || '').trim()

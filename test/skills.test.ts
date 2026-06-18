@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  findSkill, renderSkillManifest, renderPinnedSkills, renderSkillBody, skillManifestHeaders,
+  findSkill, renderSkillManifest, renderPinnedSkills, renderSkillBody, scopeSkillsToProject, skillManifestHeaders,
   matchSkillsByText, formatLoadSkillResult, mergeSkills, BUILTIN_SKILLS,
   collectDisallowedTools, collectAllowedTools, activeSkillsForTools, findActiveSkills, renderActiveSkillReminder, suggestSkill,
 } from '../src/utils/skills'
@@ -224,5 +224,20 @@ describe('exemplos/few-shot na skill (v2.106.0)', () => {
   })
   it('renderPinnedSkills inclui os exemplos das fixadas', () => {
     expect(renderPinnedSkills([mk({ name: 'p', pinned: true, instructions: 'I', examples: 'EX' })])).toContain('EXEMPLOS')
+  })
+})
+
+describe('scopeSkillsToProject (v2.107.0)', () => {
+  const skills = [
+    mk({ id: 'g', name: 'global' }),
+    mk({ id: 'p1', name: 'do-projeto-1', projectId: 'proj1' }),
+    mk({ id: 'p2', name: 'do-projeto-2', projectId: 'proj2' }),
+  ]
+  it('mantém globais + as do projeto ativo, esconde as de outros', () => {
+    expect(scopeSkillsToProject(skills, 'proj1').map(s => s.id).sort()).toEqual(['g', 'p1'])
+    expect(scopeSkillsToProject(skills, 'proj2').map(s => s.id).sort()).toEqual(['g', 'p2'])
+  })
+  it('sem projeto ativo → só as globais', () => {
+    expect(scopeSkillsToProject(skills, undefined).map(s => s.id)).toEqual(['g'])
   })
 })

@@ -30,6 +30,9 @@ export interface Skill {
   /** v2.106.0 — exemplos/few-shot opcionais anexados às instruções (modelos
    *  pequenos seguem muito melhor com 1 exemplo concreto). */
   examples?: string
+  /** v2.107.0 — ESCOPO de projeto: se definido, a skill só fica disponível
+   *  quando a conversa está nesse projeto. Ausente = global (sempre). */
+  projectId?: string
   /** Aparece no manifesto (disponível para o modelo). */
   enabled: boolean
   /** Injeta as instruções completas SEMPRE (sem depender de load_skill) —

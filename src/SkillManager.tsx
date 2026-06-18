@@ -10,6 +10,8 @@ interface Props {
   skills: Skill[]
   onSave: (skills: Skill[]) => void
   language: 'pt' | 'en'
+  /** v2.107.0 — projetos para o seletor de escopo da skill. */
+  projects?: { id: string; name: string }[]
 }
 
 const empty = (): Skill => ({
@@ -19,7 +21,7 @@ const empty = (): Skill => ({
 
 /** Gestão de skills — capacidades invocadas pelo modelo via load_skill, com pin
  *  manual e gatilhos por palavra-chave. Persistência via onSave (IPC no App). */
-export default function SkillManager({ isOpen, onClose, skills, onSave, language }: Props) {
+export default function SkillManager({ isOpen, onClose, skills, onSave, language, projects }: Props) {
   const pt = language === 'pt'
   const [editing, setEditing] = useState<Skill | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -99,7 +101,7 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
 
         <div style={{ padding: '12px 20px', overflowY: 'auto', flex: 1 }}>
           {editing ? (
-            <SkillForm skill={editing} pt={pt} onCancel={() => setEditing(null)} onSave={upsert} />
+            <SkillForm skill={editing} pt={pt} projects={projects || []} onCancel={() => setEditing(null)} onSave={upsert} />
           ) : (
             <>
               <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -180,7 +182,7 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
   )
 }
 
-function SkillForm({ skill, pt, onCancel, onSave }: { skill: Skill; pt: boolean; onCancel: () => void; onSave: (s: Skill) => void }) {
+function SkillForm({ skill, pt, projects, onCancel, onSave }: { skill: Skill; pt: boolean; projects: { id: string; name: string }[]; onCancel: () => void; onSave: (s: Skill) => void }) {
   const [name, setName] = useState(skill.name)
   const [description, setDescription] = useState(skill.description)
   const [instructions, setInstructions] = useState(skill.instructions)
@@ -188,6 +190,7 @@ function SkillForm({ skill, pt, onCancel, onSave }: { skill: Skill; pt: boolean;
   const [disallowed, setDisallowed] = useState((skill.disallowedTools || []).join(', '))
   const [allowed, setAllowed] = useState((skill.allowedTools || []).join(', '))
   const [examples, setExamples] = useState(skill.examples || '')
+  const [projectId, setProjectId] = useState(skill.projectId || '')
 
   const canSave = name.trim().length > 0 && description.trim().length > 0 && instructions.trim().length > 0
   const lbl: React.CSSProperties = { fontSize: 12, opacity: 0.7, display: 'block', margin: '10px 0 4px' }
@@ -211,9 +214,16 @@ function SkillForm({ skill, pt, onCancel, onSave }: { skill: Skill; pt: boolean;
       <label style={lbl}>{pt ? 'Exemplos / few-shot (opcional — ajuda modelos pequenos)' : 'Examples / few-shot (optional — helps small models)'}</label>
       <textarea className="settings-input" style={{ minHeight: 80, fontFamily: 'monospace', fontSize: 12, resize: 'vertical' }}
                 value={examples} onChange={(e) => setExamples(e.target.value)} />
+      {projects.length > 0 && (<>
+        <label style={lbl}>{pt ? 'Escopo (projeto)' : 'Scope (project)'}</label>
+        <select className="settings-input" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+          <option value="">{pt ? 'Global (todos os projetos)' : 'Global (all projects)'}</option>
+          {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </>)}
       <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
         <button className="settings-close" style={{ width: 'auto', padding: '6px 14px', opacity: canSave ? 1 : 0.5 }} disabled={!canSave}
-                onClick={() => onSave({ ...skill, name: name.trim(), description: description.trim(), instructions, triggers: triggers.split(',').map(t => t.trim()).filter(Boolean), disallowedTools: disallowed.split(',').map(t => t.trim()).filter(Boolean), allowedTools: allowed.split(',').map(t => t.trim()).filter(Boolean), examples: examples.trim() || undefined })}>
+                onClick={() => onSave({ ...skill, name: name.trim(), description: description.trim(), instructions, triggers: triggers.split(',').map(t => t.trim()).filter(Boolean), disallowedTools: disallowed.split(',').map(t => t.trim()).filter(Boolean), allowedTools: allowed.split(',').map(t => t.trim()).filter(Boolean), examples: examples.trim() || undefined, projectId: projectId || undefined })}>
           {pt ? 'Salvar' : 'Save'}
         </button>
         <button className="settings-close" style={{ width: 'auto', padding: '6px 14px' }} onClick={onCancel}>{pt ? 'Cancelar' : 'Cancel'}</button>
