@@ -1,8 +1,6 @@
 // ─── System Prompts & Language Rules ────────────────────────────────
 // Extracted from App.tsx
 
-import { Code, FileCode, Info, Globe, Monitor, FolderTree } from 'lucide-react'
-
 export const AGENT_SYSTEM_PROMPT: Record<string, string> = {
   pt: `VOCÊ ESTÁ NO MODO AGENTE AUTÔNOMO. Sua missão é resolver o pedido por completo e ENTREGAR o resultado — fazendo o trabalho de verdade (rodar comandos, criar/editar arquivos, pesquisar), não apenas descrevê-lo.
 
@@ -71,13 +69,4 @@ export const PLACEHOLDER_HINTS = [
   'Tente: "Responda como um especialista em segurança"',
   'Tente: "Mostre a estrutura deste projeto"',
   'Shift+Enter para nova linha',
-]
-
-export const SUGGESTIONS = [
-  { text: 'Crie um script Python', icon: Code },
-  { text: 'O que está aberto na minha tela?', icon: Monitor },
-  { text: 'Mostre a estrutura deste projeto', icon: FolderTree },
-  { text: 'Pesquise na web sobre IA', icon: Globe },
-  { text: 'Liste arquivos em D:\\', icon: FileCode },
-  { text: 'Explique como funciona Ollama', icon: Info },
 ]

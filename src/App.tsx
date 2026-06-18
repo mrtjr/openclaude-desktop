@@ -48,7 +48,7 @@ const SettingsModal = lazy(() => import('./Settings'))
 
 // ─── Extracted modules ──────────────────────────────────────────────
 import type { Message } from './types'
-import { PLACEHOLDER_HINTS, SUGGESTIONS } from './constants/prompts'
+import { PLACEHOLDER_HINTS } from './constants/prompts'
 import { formatMarkdown, getRelativeTime, groupByBucket, bucketLabel } from './utils/formatting'
 import { streamPhaseLabel } from './utils/streamPhase'
 import { buildSwitchOptions, groupSwitchOptions, type SwitchOption } from './utils/modelSwitcher'
@@ -2003,14 +2003,6 @@ export default function App() {
                 <div className="empty-logo-large">OC</div>
                 <h2>Como posso ajudar?</h2>
                 <p>Modelo atual: <strong>{displayModel}</strong> via <span style={{ textTransform: 'capitalize' }}>{settings.provider}</span></p>
-                <div className="suggestions-grid">
-                  {SUGGESTIONS.map(s => (
-                    <button key={s.text} className="suggestion-card" onClick={() => { setInput(s.text); textareaRef.current?.focus() }}>
-                      <s.icon size={18} className="sugg-icon" />
-                      <span>{s.text}</span>
-                    </button>
-                  ))}
-                </div>
                 {/* Apontar pasta de trabalho (v2.84.0, estilo Claude Code) —
                     onde os comandos rodam. Mostra a pasta apontada ou convida a
                     escolher. */}
