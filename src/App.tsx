@@ -1170,6 +1170,9 @@ export default function App() {
       return next
     })
   })
+  // Transforms de exibição (v2.94.0): identidade estável p/ não quebrar o memo
+  // do ChatMessage a cada render (muda só quando as regras mudam).
+  const displayTransforms = useMemo(() => settings.displayTransforms || [], [settings.displayTransforms])
   const handleRegenerate = useStableCallback(() => regenerateResponse())
   const handleDeleteMessage = useStableCallback(deleteMessage)
   const handleBranchFrom = useStableCallback((msgId: string) => {
@@ -1958,6 +1961,7 @@ export default function App() {
                   onBranch={handleBranchFrom}
                   onDelete={handleDeleteMessage}
                   showToast={showToast}
+                  displayTransforms={displayTransforms}
                 />
               ))
             )}

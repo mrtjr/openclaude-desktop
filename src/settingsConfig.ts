@@ -10,6 +10,7 @@ export type Provider = 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openroute
 export type Language = 'pt' | 'en'
 export type PermissionLevel = 'ask' | 'auto_edits' | 'planning' | 'ignore'
 import type { PermissionRule } from './utils/permissionRules'
+import type { DisplayTransform } from './utils/outputHooks'
 
 /** Esforço de raciocínio (v2.25.0; 'auto' em v2.50.0). Reusado pelo seletor
  *  global (Settings) e pelo override por-conversa (EffortSlider). */
@@ -28,6 +29,10 @@ export interface HookDef {
   event: 'PostToolUse' | 'PreToolUse'
   matcher: string
   command: string
+  /** v2.94.0 — só PostToolUse: 'append' (default) anexa a saída do hook ao
+   *  resultado; 'replace' faz o stdout do hook SUBSTITUIR o resultado da tool
+   *  (porta o updatedToolOutput do Claude Code — ex.: redigir segredos). */
+  mode?: 'append' | 'replace'
 }
 
 export interface ModalKey {
@@ -152,6 +157,11 @@ export interface AppSettings {
    *  Claude Code). Olham os argumentos da chamada: deny bloqueia, ask força
    *  confirmação, allow pula o gate de nível. Ver utils/permissionRules.ts. */
   permissionRules?: PermissionRule[]
+  /** v2.94.0 — transformações de EXIBIÇÃO do texto do assistente (porta o
+   *  MessageDisplay hook do Claude Code, client-side via regex): redigir/ocultar
+   *  trechos antes de renderizar. Não muta o conteúdo salvo. Ver
+   *  utils/outputHooks.applyDisplayTransforms. */
+  displayTransforms?: DisplayTransform[]
   /** v2.69.0 — SCOUT proativo (opt-in, default off): em turnos agênticos com
    *  subagentes ociosos, um worker pesquisa por conta própria dados ATUAIS (data
    *  de hoje) + caminhos alternativos sobre o que a IA principal está fazendo, e
@@ -222,6 +232,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   safeMode: false,
   fallbackModels: [],
   permissionRules: [],
+  displayTransforms: [],
   scoutEnabled: false,
   compressToolOutputs: true,
 }

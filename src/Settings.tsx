@@ -5,6 +5,7 @@ import { ProviderDetail } from './components/settings/ProviderDetail'
 import { SubagentModelsPicker } from './components/settings/SubagentModelsPicker'
 import { PROVIDERS } from './config/providers'
 import { parsePermissionRules, formatPermissionRules } from './utils/permissionRules'
+import { parseDisplayTransforms, formatDisplayTransforms } from './utils/outputHooks'
 
 // Settings types, defaults and load/save moved to the boot-light
 // settingsConfig module so App can pull loadSettings at startup without
@@ -46,6 +47,7 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
   const [newHookMatcher, setNewHookMatcher] = useState('')
   const [newHookCommand, setNewHookCommand] = useState('')
   const [newHookEvent, setNewHookEvent] = useState<'PostToolUse' | 'PreToolUse'>('PostToolUse')
+  const [newHookMode, setNewHookMode] = useState<'append' | 'replace'>('append')
   // Provider tab state: which provider's detail pane is being edited
   // (not necessarily the one set as default).
   const [selectedProvider, setSelectedProvider] = useState<Provider>(settings.provider)
@@ -104,7 +106,7 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
     if (!newHookCommand.trim()) return
     setLocal(s => ({
       ...s,
-      hooks: [...(s.hooks || []), { event: newHookEvent, matcher: (newHookMatcher.trim() || '*'), command: newHookCommand.trim() }],
+      hooks: [...(s.hooks || []), { event: newHookEvent, matcher: (newHookMatcher.trim() || '*'), command: newHookCommand.trim(), ...(newHookEvent === 'PostToolUse' && newHookMode === 'replace' ? { mode: 'replace' as const } : {}) }],
     }))
     setNewHookMatcher('')
     setNewHookCommand('')
@@ -354,6 +356,25 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                   {local.language === 'pt'
                     ? 'Uma regra por linha: efeito tool(arg:glob). Efeitos: deny (bloqueia), ask (sempre confirma), allow (libera). * é curinga. Olham os ARGUMENTOS da chamada — ex.: deny execute_command(command:*rm -rf*). Precedência: deny > ask > allow. Guard-rails de segurança (ações de desktop, arquivos protegidos) continuam valendo.'
                     : 'One rule per line: effect tool(arg:glob). Effects: deny (block), ask (always confirm), allow (skip confirm). * is a wildcard. They inspect the call ARGUMENTS — e.g. deny execute_command(command:*rm -rf*). Precedence: deny > ask > allow. Hard safety guard-rails (desktop actions, protected files) still apply.'}
+                </p>
+              </div>
+
+              {/* Transforms de exibição / MessageDisplay (v2.94.0) */}
+              <div className="settings-group">
+                <label className="settings-label">
+                  <span>{local.language === 'pt' ? 'Transformar/ocultar texto exibido (regex)' : 'Transform/hide displayed text (regex)'}</span>
+                </label>
+                <textarea
+                  className="settings-input"
+                  style={{ minHeight: 72, fontFamily: 'monospace', fontSize: 12, resize: 'vertical', width: '100%' }}
+                  placeholder={'(sk-[A-Za-z0-9]{20,}) ==> «redigido»\n\\bTOKEN_\\w+\\b'}
+                  defaultValue={formatDisplayTransforms(local.displayTransforms)}
+                  onBlur={(e) => setLocal(s => ({ ...s, displayTransforms: parseDisplayTransforms(e.target.value) }))}
+                />
+                <p style={{ fontSize: '0.74rem', color: 'var(--color-text-muted, #888)', margin: '4px 0 0' }}>
+                  {local.language === 'pt'
+                    ? 'Uma regra por linha: padrão ==> substituição (sem "==>" oculta o trecho). Aplicado só à EXIBIÇÃO das respostas do assistente (não altera o que fica salvo nem o copiar). Útil para redigir segredos.'
+                    : 'One rule per line: pattern ==> replacement (without "==>" hides the match). Applied only to the DISPLAY of assistant replies (does not change what is stored or copied). Handy for redacting secrets.'}
                 </p>
               </div>
 
@@ -782,7 +803,7 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                   {(local.hooks || []).map((hk, idx) => (
                     <div key={idx} className="mcp-server-item">
                       <div className="mcp-server-info">
-                        <span className="mcp-server-name">{hk.event} · {hk.matcher}</span>
+                        <span className="mcp-server-name">{hk.event} · {hk.matcher}{hk.mode === 'replace' ? ' · replace' : ''}</span>
                         <span className="mcp-server-cmd">{hk.command}</span>
                       </div>
                       <button
@@ -807,6 +828,18 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                   <option value="PostToolUse">PostToolUse</option>
                   <option value="PreToolUse">PreToolUse</option>
                 </select>
+                {newHookEvent === 'PostToolUse' && (
+                  <select
+                    className="settings-input"
+                    value={newHookMode}
+                    onChange={(e) => setNewHookMode(e.target.value as 'append' | 'replace')}
+                    style={{ flex: '0 0 auto', minWidth: 0 }}
+                    title={local.language === 'pt' ? 'append: anexa a saída · replace: substitui o resultado pela saída do hook' : 'append: append output · replace: replace the result with the hook output'}
+                  >
+                    <option value="append">append</option>
+                    <option value="replace">replace</option>
+                  </select>
+                )}
                 <input
                   type="text"
                   className="settings-input"

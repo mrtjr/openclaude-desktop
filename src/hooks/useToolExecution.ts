@@ -4,6 +4,7 @@ import { TOOLS } from '../constants/tools'
 import { resolveToolSearch, formatToolSearchResult } from '../services/toolDeferral'
 import { toolNeedsApproval, truncateToolOutput, isToolError, isProtectedWritePath } from '../utils/toolPolicy'
 import { evaluatePermissionRules } from '../utils/permissionRules'
+import { combineHookOutput } from '../utils/outputHooks'
 import { formatExecResult, resolveExecCwd, resolveExecTimeoutMs } from '../utils/execResult'
 import { formatEditResult, formatWriteResult, COACH_REWRITE_MIN_CHARS } from '../utils/editResult'
 import { mergeFact, normalizeMemory } from '../utils/persistentMemory'
@@ -863,18 +864,19 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
     logInsight('tool', 'use', { name, ok: !failed })
 
     // Hooks PostToolUse (v2.38.0): após uma tool concluir COM SUCESSO, roda os
-    // comandos configurados que casam (ex.: lint/format/test após edit_file) e
-    // anexa a saída ao resultado — o modelo vê erros de lint/teste na hora.
+    // comandos configurados que casam (ex.: lint/format/test após edit_file).
+    // O hook recebe a saída da tool via env (OPENCLAUDE_TOOL_OUTPUT) e pode
+    // ANEXAR (default) ou SUBSTITUIR o resultado quando mode='replace' (porta o
+    // updatedToolOutput do Claude Code, v2.94.0 — ex.: redigir segredos).
     if (!failed && name !== 'execute_command') {
       const hooks = matchHooks(settings.hooks, 'PostToolUse', name)
       for (const hook of hooks) {
         try {
-          const r = await window.electron.execCommand({ command: hook.command, cwd: projectCwdRef.current, timeoutMs: 60000 })
-          const text = [r?.stdout, r?.stderr].filter(Boolean).join('\n').trim()
-          const tag = `[hook PostToolUse: ${hook.command}]`
-          out += text
-            ? `\n\n${tag}\n${text.slice(0, 1500)}`
-            : `\n\n${tag} (ok, sem saída)`
+          const r = await window.electron.execCommand({
+            command: hook.command, cwd: projectCwdRef.current, timeoutMs: 60000,
+            env: { OPENCLAUDE_TOOL_NAME: name, OPENCLAUDE_TOOL_OUTPUT: String(out ?? '').slice(0, 8000) },
+          })
+          out = combineHookOutput(out, r?.stdout, r?.stderr, (hook as any).mode, hook.command)
         } catch (e: any) {
           out += `\n\n[hook error: ${hook.command}] ${e?.message || 'falha'}`
         }

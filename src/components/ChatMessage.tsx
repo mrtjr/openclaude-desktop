@@ -2,6 +2,7 @@ import { memo } from 'react'
 import { User, RefreshCw, GitBranch, Trash } from 'lucide-react'
 import type { Message } from '../types'
 import { formatMarkdown } from '../utils/formatting'
+import { applyDisplayTransforms, type DisplayTransform } from '../utils/outputHooks'
 import { extractArtifacts, type Artifact } from '../utils/artifacts'
 import CopyButton from './CopyButton'
 import ToolCallBlock from './ToolCallBlock'
@@ -34,13 +35,19 @@ interface ChatMessageProps {
   onBranch: (msgId: string) => void
   onDelete: (msgId: string) => void
   showToast: (message: string) => void
+  /** v2.94.0 — transformações de exibição (MessageDisplay): aplicadas ao texto
+   *  do assistente antes de renderizar. Identidade estável (memoizado no App). */
+  displayTransforms?: DisplayTransform[]
 }
 
 function ChatMessageInner({
   msg, language, showThinking, collapsedTools,
-  onToggleCollapse, onOpenArtifact, onRegenerate, onBranch, onDelete, showToast,
+  onToggleCollapse, onOpenArtifact, onRegenerate, onBranch, onDelete, showToast, displayTransforms,
 }: ChatMessageProps) {
   const artifacts = msg.role === 'assistant' && msg.content ? extractArtifacts(msg.content) : []
+  // Só transforma a exibição do ASSISTENTE (mensagens do usuário ficam intactas).
+  const displayContent = msg.role === 'assistant' && displayTransforms?.length
+    ? applyDisplayTransforms(msg.content, displayTransforms) : msg.content
   return (
     <div className={`message message-${msg.role}`}>
       <div className="message-avatar">
@@ -53,7 +60,7 @@ function ChatMessageInner({
             <div className="thinking-content" style={{ marginTop: 6, padding: '8px 12px', borderLeft: '2px solid rgba(127,127,127,0.3)', opacity: 0.8, fontSize: 13 }} dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.thinking) }} />
           </details>
         )}
-        {msg.content && <div className="message-text" dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }} />}
+        {msg.content && <div className="message-text" dangerouslySetInnerHTML={{ __html: formatMarkdown(displayContent) }} />}
         {artifacts.length > 0 && (
           <button
             onClick={() => onOpenArtifact(artifacts[0])}
