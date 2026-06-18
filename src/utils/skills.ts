@@ -161,6 +161,29 @@ export function renderPinnedSkills(skills: Skill[]): string {
   return pinned.map(s => `[SKILL ATIVA: ${s.name}]\n${s.instructions}`).join('\n\n')
 }
 
+/** Skills ATIVAS para fins de restrição de ferramentas (v2.92.0): as fixadas
+ *  (pinned) somam às casadas neste turno (`matched`). Ambas estão "em vigor"
+ *  agora, então suas `disallowedTools` valem. Não inclui staging. */
+export function activeSkillsForTools(skills: Skill[], matched: Skill[]): Skill[] {
+  const pinned = skills.filter(s => s.enabled && s.pinned && s.status !== 'staging')
+  const seen = new Set(pinned.map(s => s.id))
+  const matchedOk = (matched || []).filter(s => s && s.enabled && s.status !== 'staging' && !seen.has(s.id))
+  return [...pinned, ...matchedOk]
+}
+
+/** União dos nomes de ferramenta que as skills informadas REMOVEM do modelo
+ *  (frontmatter disallowed-tools). Puro/testável. */
+export function collectDisallowedTools(activeSkills: Skill[]): Set<string> {
+  const out = new Set<string>()
+  for (const s of activeSkills || []) {
+    for (const name of s?.disallowedTools || []) {
+      const n = String(name || '').trim()
+      if (n) out.add(n)
+    }
+  }
+  return out
+}
+
 /** Headers curtos para o painel de contexto (orçamento de tokens do slot
  *  "skills"): nome: desc das ativas. */
 export function skillManifestHeaders(skills: Skill[]): string {

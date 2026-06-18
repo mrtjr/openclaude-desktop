@@ -12,7 +12,7 @@ import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice, extra
 import { classifyProviderError, humanizeProviderError, isColdStartTimeout } from '../utils/providerErrors'
 import { initStallState, decideStallRetry } from '../utils/stallRecovery'
 import { nextFallbackModel, isModelSwappableError } from '../utils/fallbackChain'
-import { renderSkillManifest, renderPinnedSkills, matchSkillsByText } from '../utils/skills'
+import { renderSkillManifest, renderPinnedSkills, matchSkillsByText, collectDisallowedTools, activeSkillsForTools } from '../utils/skills'
 import type { Skill } from '../types/skill'
 import { resolveTurnUsage } from '../utils/usage'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
@@ -370,6 +370,10 @@ export function useChat({
       // load_skill sob demanda) + instruções completas das fixadas/casadas por
       // palavra-chave (injetadas direto, fallback p/ modelos que não chamam a
       // tool). Progressive disclosure, espelha o tool-deferral.
+      // Ferramentas removidas por skills ativas (v2.92.0, frontmatter
+      // disallowed-tools): preenchido no bloco de skills abaixo, aplicado ao
+      // allTools mais adiante.
+      let disallowedToolNames = new Set<string>()
       {
         const allSkills = skillsRef.current || []
         const manifest = renderSkillManifest(allSkills)
@@ -391,6 +395,9 @@ export function useChat({
         const autoBlock = autoMatched.map(s => `[SKILL ATIVA: ${s.name}]\n${s.instructions}`).join('\n\n')
         const full = [pinnedBlock, autoBlock].filter(Boolean).join('\n\n')
         if (full) systemPrompt += `\n\n${full}`
+        // disallowed-tools (v2.92.0): skills ativas (fixadas + casadas) podem
+        // remover ferramentas do modelo enquanto vigoram.
+        disallowedToolNames = collectDisallowedTools(activeSkillsForTools(allSkills, autoMatched))
       }
 
       // RAG (fusão do RAGPanel, v2.73.0): quando há índice local, injeta a regra
@@ -424,7 +431,12 @@ export function useChat({
       const baseTools: any[] = (settings.subagentExecutor ?? 'ollama') !== 'modal' && settings.subagentModels?.length
         ? applySubagentModels(TOOLS as any, settings.subagentModels)
         : (TOOLS as any)
-      const allTools: any[] = extraToolsRef.current?.length ? [...baseTools, ...extraToolsRef.current] : baseTools
+      const mergedTools: any[] = extraToolsRef.current?.length ? [...baseTools, ...extraToolsRef.current] : baseTools
+      // Remove as ferramentas que as skills ativas proíbam (v2.92.0). load_skill
+      // nunca é removido (o modelo ainda precisa carregar/trocar de skill).
+      const allTools: any[] = disallowedToolNames.size
+        ? mergedTools.filter(t => t?.function?.name === 'load_skill' || !disallowedToolNames.has(t?.function?.name))
+        : mergedTools
       const deferral = decideDeferral(
         settings.toolDeferralMode,
         effectiveContextLimit(finalProvider, finalModel, settings.ollamaNumCtx),

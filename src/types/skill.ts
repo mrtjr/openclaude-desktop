@@ -18,6 +18,11 @@ export interface Skill {
   /** Palavras-gatilho: se aparecem na mensagem, a skill é auto-sugerida/fixada
    *  naquele turno (Fase 3). Opcional. */
   triggers?: string[]
+  /** v2.92.0 — ferramentas REMOVIDAS do modelo enquanto a skill está ativa
+   *  (porta o frontmatter `disallowed-tools` das skills do Claude Code). Nomes de
+   *  tool (ex.: "browser_navigate", "execute_command"). Restringe/foca a skill.
+   *  Opcional; ausente = não remove nada. Ver utils/skills.collectDisallowedTools. */
+  disallowedTools?: string[]
   /** Aparece no manifesto (disponível para o modelo). */
   enabled: boolean
   /** Injeta as instruções completas SEMPRE (sem depender de load_skill) —

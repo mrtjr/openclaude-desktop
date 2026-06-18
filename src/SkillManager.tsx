@@ -185,6 +185,7 @@ function SkillForm({ skill, pt, onCancel, onSave }: { skill: Skill; pt: boolean;
   const [description, setDescription] = useState(skill.description)
   const [instructions, setInstructions] = useState(skill.instructions)
   const [triggers, setTriggers] = useState((skill.triggers || []).join(', '))
+  const [disallowed, setDisallowed] = useState((skill.disallowedTools || []).join(', '))
 
   const canSave = name.trim().length > 0 && description.trim().length > 0 && instructions.trim().length > 0
   const lbl: React.CSSProperties = { fontSize: 12, opacity: 0.7, display: 'block', margin: '10px 0 4px' }
@@ -201,9 +202,11 @@ function SkillForm({ skill, pt, onCancel, onSave }: { skill: Skill; pt: boolean;
                 value={instructions} onChange={(e) => setInstructions(e.target.value)} />
       <label style={lbl}>{pt ? 'Gatilhos (palavras separadas por vírgula — auto-sugerem a skill)' : 'Triggers (comma-separated keywords — auto-suggest the skill)'}</label>
       <input className="settings-input" value={triggers} onChange={(e) => setTriggers(e.target.value)} placeholder="revisar, review, pr" />
+      <label style={lbl}>{pt ? 'Ferramentas proibidas enquanto ativa (separadas por vírgula)' : 'Disallowed tools while active (comma-separated)'}</label>
+      <input className="settings-input" value={disallowed} onChange={(e) => setDisallowed(e.target.value)} placeholder="browser_navigate, execute_command" />
       <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
         <button className="settings-close" style={{ width: 'auto', padding: '6px 14px', opacity: canSave ? 1 : 0.5 }} disabled={!canSave}
-                onClick={() => onSave({ ...skill, name: name.trim(), description: description.trim(), instructions, triggers: triggers.split(',').map(t => t.trim()).filter(Boolean) })}>
+                onClick={() => onSave({ ...skill, name: name.trim(), description: description.trim(), instructions, triggers: triggers.split(',').map(t => t.trim()).filter(Boolean), disallowedTools: disallowed.split(',').map(t => t.trim()).filter(Boolean) })}>
           {pt ? 'Salvar' : 'Save'}
         </button>
         <button className="settings-close" style={{ width: 'auto', padding: '6px 14px' }} onClick={onCancel}>{pt ? 'Cancelar' : 'Cancel'}</button>

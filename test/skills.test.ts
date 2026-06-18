@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   findSkill, renderSkillManifest, renderPinnedSkills, skillManifestHeaders,
   matchSkillsByText, formatLoadSkillResult, mergeSkills, BUILTIN_SKILLS,
+  collectDisallowedTools, activeSkillsForTools,
 } from '../src/utils/skills'
 import type { Skill } from '../src/types/skill'
 
@@ -132,5 +133,24 @@ describe('BUILTIN_SKILLS — sanidade', () => {
     expect(pentest!.instructions.toLowerCase()).toContain('escopo')
     // o passo 0 (gate de autorização) vem ANTES de qualquer recon/PoC
     expect(pentest!.instructions.indexOf('0.')).toBeLessThan(pentest!.instructions.indexOf('1.'))
+  })
+})
+
+describe('disallowed-tools (v2.92.0)', () => {
+  it('activeSkillsForTools junta fixadas + casadas (sem staging, sem duplicar)', () => {
+    const pinnedA = mk({ id: 'p1', pinned: true, disallowedTools: ['browser_navigate'] })
+    const matchedB = mk({ id: 'm1', pinned: false, disallowedTools: ['execute_command'] })
+    const staging = mk({ id: 's1', pinned: true, status: 'staging', disallowedTools: ['x'] })
+    const dup = mk({ id: 'p1', pinned: false })
+    const active = activeSkillsForTools([pinnedA, staging], [matchedB, dup])
+    expect(active.map(s => s.id).sort()).toEqual(['m1', 'p1'])
+  })
+  it('collectDisallowedTools faz a união dos nomes, ignorando vazios', () => {
+    const set = collectDisallowedTools([
+      mk({ disallowedTools: ['browser_navigate', ' ', 'execute_command'] }),
+      mk({ disallowedTools: ['execute_command', 'web_search'] }),
+      mk({ disallowedTools: undefined }),
+    ])
+    expect([...set].sort()).toEqual(['browser_navigate', 'execute_command', 'web_search'])
   })
 })
