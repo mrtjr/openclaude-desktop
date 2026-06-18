@@ -166,6 +166,10 @@ export interface AppSettings {
    *  Code): 'default' | 'concise' | 'explanatory' | 'learning' | 'code'.
    *  Independente da persona (voz). Ver constants/outputStyles.ts. */
   outputStyle?: string
+  /** v2.98.0 — itens da BARRA DE STATUS (porta a statusLine do Claude Code):
+   *  subconjunto de model/provider/branch/cwd/persona/context. Vazio → mostra a
+   *  dica de atalhos padrão. Ver utils/statusLine.ts. */
+  statusLineItems?: string[]
   /** v2.69.0 — SCOUT proativo (opt-in, default off): em turnos agênticos com
    *  subagentes ociosos, um worker pesquisa por conta própria dados ATUAIS (data
    *  de hoje) + caminhos alternativos sobre o que a IA principal está fazendo, e
@@ -238,6 +242,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   permissionRules: [],
   displayTransforms: [],
   outputStyle: 'default',
+  statusLineItems: [],
   scoutEnabled: false,
   compressToolOutputs: true,
 }

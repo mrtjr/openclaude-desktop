@@ -73,6 +73,7 @@ import { useAccentColor } from './hooks/useAccentColor'
 import { AccentPicker } from './components/AccentPicker'
 import { parseSlashInput } from './utils/slashCommands'
 import { applyConfigCommand, CONFIG_KEYS } from './utils/configCommand'
+import { buildStatusSegments } from './utils/statusLine'
 import { RegenSplit } from './components/RegenSplit'
 import { AmbientOrb } from './components/AmbientOrb'
 import { SlashPopover } from './components/SlashPopover'
@@ -538,6 +539,19 @@ export default function App() {
     () => convManager.activeConv?.cwd?.trim() || activeProjectCwd,
     [convManager.activeConv?.cwd, activeProjectCwd],
   )
+  // Branch git da pasta ativa, p/ a barra de status (v2.98.0). Best-effort: só
+  // busca quando 'branch' está habilitado; '' se não for um repo. Cancela em
+  // troca de cwd para não pisar num resultado velho.
+  const [gitBranch, setGitBranch] = useState('')
+  useEffect(() => {
+    const wantBranch = (settings.statusLineItems || []).includes('branch')
+    if (!wantBranch || !activeCwd) { setGitBranch(''); return }
+    let cancelled = false
+    window.electron.execCommand?.({ command: 'git rev-parse --abbrev-ref HEAD', cwd: activeCwd, timeoutMs: 5000 })
+      .then((r: any) => { if (!cancelled) setGitBranch((r?.exitCode ?? 1) === 0 ? String(r?.stdout || '').trim() : '') })
+      .catch(() => { if (!cancelled) setGitBranch('') })
+    return () => { cancelled = true }
+  }, [activeCwd, settings.statusLineItems])
   // Apontar a pasta de trabalho da conversa atual via seletor nativo (chip no
   // composer / empty state). Limpa com path vazio.
   const setConvCwd = useCallback((cwd: string | undefined) => {
@@ -1174,6 +1188,11 @@ export default function App() {
   // Transforms de exibição (v2.94.0): identidade estável p/ não quebrar o memo
   // do ChatMessage a cada render (muda só quando as regras mudam).
   const displayTransforms = useMemo(() => settings.displayTransforms || [], [settings.displayTransforms])
+  // Barra de status (v2.98.0): segmentos visíveis conforme settings.statusLineItems.
+  const statusSegments = useMemo(() => buildStatusSegments(settings.statusLineItems, {
+    model: providerConfig.model, provider: settings.provider, branch: gitBranch,
+    cwd: activeCwd, persona: activePersona?.name, contextPct: tokenInfo.percentage,
+  }, settings.language), [settings.statusLineItems, providerConfig.model, settings.provider, gitBranch, activeCwd, activePersona?.name, tokenInfo.percentage, settings.language])
   const handleRegenerate = useStableCallback(() => regenerateResponse())
   const handleDeleteMessage = useStableCallback(deleteMessage)
   const handleBranchFrom = useStableCallback((msgId: string) => {
@@ -2246,7 +2265,19 @@ export default function App() {
               </div>
 
               <div className="input-footer">
-                <p className="input-hint">Enter para enviar · Shift+Enter nova linha · Ctrl+N nova conversa · Ctrl+, config</p>
+                {statusSegments.length > 0 ? (
+                  <p className="input-hint" style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {statusSegments.map((seg, i) => (
+                      <span key={seg.key} style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                        {i > 0 && <span style={{ opacity: 0.4 }}>·</span>}
+                        <span style={{ opacity: 0.55 }}>{seg.label}</span>
+                        <span style={{ opacity: 0.9, fontVariantNumeric: 'tabular-nums' }}>{seg.value}</span>
+                      </span>
+                    ))}
+                  </p>
+                ) : (
+                  <p className="input-hint">Enter para enviar · Shift+Enter nova linha · Ctrl+N nova conversa · Ctrl+, config</p>
+                )}
                 <div className="input-footer-right">
                   {settings.provider !== 'ollama' && usageTracking.getTodayCost() > 0 && (
                     <span className="cost-counter">{usageTracking.formatCost(usageTracking.getTodayCost())} hoje</span>

@@ -7,6 +7,7 @@ import { PROVIDERS } from './config/providers'
 import { parsePermissionRules, formatPermissionRules } from './utils/permissionRules'
 import { parseDisplayTransforms, formatDisplayTransforms } from './utils/outputHooks'
 import { OUTPUT_STYLES } from './constants/outputStyles'
+import { STATUS_LINE_ITEMS } from './utils/statusLine'
 
 // Settings types, defaults and load/save moved to the boot-light
 // settingsConfig module so App can pull loadSettings at startup without
@@ -322,6 +323,37 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                   {local.language === 'pt'
                     ? 'Formato da resposta (conciso, explicativo, ensino, só-código). Independente da persona, que define a voz/identidade.'
                     : 'Response format (concise, explanatory, learning, code-only). Independent from the persona, which sets the voice/identity.'}
+                </p>
+              </div>
+
+              {/* Barra de status (v2.98.0) */}
+              <div className="settings-group">
+                <label className="settings-label">
+                  <span>{local.language === 'pt' ? 'Barra de status (itens)' : 'Status line (items)'}</span>
+                </label>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  {STATUS_LINE_ITEMS.map(item => {
+                    const on = (local.statusLineItems || []).includes(item)
+                    return (
+                      <label key={item} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.82rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={(e) => setLocal(s => {
+                            const cur = new Set(s.statusLineItems || [])
+                            if (e.target.checked) cur.add(item); else cur.delete(item)
+                            return { ...s, statusLineItems: STATUS_LINE_ITEMS.filter(i => cur.has(i)) }
+                          })}
+                        />
+                        <span>{item}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+                <p style={{ fontSize: '0.74rem', color: 'var(--color-text-muted, #888)', margin: '4px 0 0' }}>
+                  {local.language === 'pt'
+                    ? 'Mostra uma linha de status no rodapé do chat (modelo, provedor, branch git, pasta, persona, % de contexto). Nenhum marcado = dica de atalhos padrão.'
+                    : 'Shows a status line in the chat footer (model, provider, git branch, folder, persona, context %). None checked = default shortcuts hint.'}
                 </p>
               </div>
 
