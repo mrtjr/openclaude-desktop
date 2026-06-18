@@ -8,6 +8,7 @@ import { parsePermissionRules, formatPermissionRules } from './utils/permissionR
 import { parseDisplayTransforms, formatDisplayTransforms } from './utils/outputHooks'
 import { OUTPUT_STYLES } from './constants/outputStyles'
 import { STATUS_LINE_ITEMS } from './utils/statusLine'
+import { DEFAULT_SANDBOX } from './utils/commandSandbox'
 
 // Settings types, defaults and load/save moved to the boot-light
 // settingsConfig module so App can pull loadSettings at startup without
@@ -430,6 +431,45 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                     ? 'Uma regra por linha: padrão ==> substituição (sem "==>" oculta o trecho). Aplicado só à EXIBIÇÃO das respostas do assistente (não altera o que fica salvo nem o copiar). Útil para redigir segredos.'
                     : 'One rule per line: pattern ==> replacement (without "==>" hides the match). Applied only to the DISPLAY of assistant replies (does not change what is stored or copied). Handy for redacting secrets.'}
                 </p>
+              </div>
+
+              {/* Sandbox de comandos (v2.101.0) */}
+              <div className="settings-group">
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.9rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={local.commandSandbox?.enabled === true}
+                    onChange={(e) => setLocal(s => ({ ...s, commandSandbox: { ...(s.commandSandbox || DEFAULT_SANDBOX), enabled: e.target.checked } }))}
+                  />
+                  <span>{local.language === 'pt' ? '🧱 Sandbox de comandos (política)' : '🧱 Command sandbox (policy)'}</span>
+                </label>
+                <p style={{ fontSize: '0.74rem', color: 'var(--color-text-muted, #888)', margin: '4px 0 8px' }}>
+                  {local.language === 'pt'
+                    ? 'Comandos da allowlist rodam SEM confirmação; padrões da denylist são BLOQUEADOS; o resto cai no gate normal. É sandbox de POLÍTICA (não isolamento de SO). Um por linha.'
+                    : 'Allowlist commands run WITHOUT confirmation; denylist patterns are BLOCKED; the rest falls to the normal gate. This is a POLICY sandbox (not OS isolation). One per line.'}
+                </p>
+                {local.commandSandbox?.enabled && (
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+                      <label style={{ fontSize: 12, opacity: 0.7, display: 'block', marginBottom: 4 }}>{local.language === 'pt' ? 'Allowlist (roda sem prompt)' : 'Allowlist (runs without prompt)'}</label>
+                      <textarea
+                        className="settings-input"
+                        style={{ minHeight: 96, fontFamily: 'monospace', fontSize: 12, resize: 'vertical', width: '100%' }}
+                        defaultValue={(local.commandSandbox?.allowPrefixes || []).join('\n')}
+                        onBlur={(e) => setLocal(s => ({ ...s, commandSandbox: { ...(s.commandSandbox || DEFAULT_SANDBOX), allowPrefixes: e.target.value.split('\n').map(x => x.trim()).filter(Boolean) } }))}
+                      />
+                    </div>
+                    <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+                      <label style={{ fontSize: 12, opacity: 0.7, display: 'block', marginBottom: 4 }}>{local.language === 'pt' ? 'Denylist (bloqueada)' : 'Denylist (blocked)'}</label>
+                      <textarea
+                        className="settings-input"
+                        style={{ minHeight: 96, fontFamily: 'monospace', fontSize: 12, resize: 'vertical', width: '100%' }}
+                        defaultValue={(local.commandSandbox?.denyPatterns || []).join('\n')}
+                        onBlur={(e) => setLocal(s => ({ ...s, commandSandbox: { ...(s.commandSandbox || DEFAULT_SANDBOX), denyPatterns: e.target.value.split('\n').map(x => x.trim()).filter(Boolean) } }))}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Context limit */}

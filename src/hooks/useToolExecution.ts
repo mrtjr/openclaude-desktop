@@ -5,6 +5,7 @@ import { resolveToolSearch, formatToolSearchResult } from '../services/toolDefer
 import { toolNeedsApproval, truncateToolOutput, isToolError, isProtectedWritePath, isBlockedInPlanMode } from '../utils/toolPolicy'
 import { evaluatePermissionRules } from '../utils/permissionRules'
 import { combineHookOutput } from '../utils/outputHooks'
+import { classifyCommand } from '../utils/commandSandbox'
 import { formatExecResult, resolveExecCwd, resolveExecTimeoutMs } from '../utils/execResult'
 import { formatEditResult, formatWriteResult, COACH_REWRITE_MIN_CHARS } from '../utils/editResult'
 import { mergeFact, normalizeMemory } from '../utils/persistentMemory'
@@ -821,13 +822,26 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
       logInsight('tool', 'denied', { name, rule: true })
       return `[BLOCKED BY RULE]: uma regra de permissão bloqueou "${name}" com estes argumentos. Ajuste a abordagem ou peça ao usuário para revisar as regras em Configurações.`
     }
+    // Sandbox de comandos (v2.101.0): só p/ execute_command. deny → bloqueia um
+    // padrão perigoso; allow → roda sem prompt (comando da allowlist segura).
+    const sandboxVerdict = name === 'execute_command'
+      ? classifyCommand(args?.command, settings.commandSandbox)
+      : 'ask'
+    if (sandboxVerdict === 'deny') {
+      window.electron.auditLogAppend({ tool: name, args, status: 'denied', output: 'blocked by sandbox' }).catch(e => console.warn('[toolExec] audit error:', e))
+      logInsight('tool', 'denied', { name, sandbox: true })
+      return `[BLOCKED BY SANDBOX]: o comando casa um padrão perigoso da denylist do sandbox e foi bloqueado. Use uma abordagem mais segura ou peça ao usuário para ajustar o sandbox em Configurações.`
+    }
     // Risky desktop actions (open app, Ctrl/Alt shortcuts, Alt+F4…) ALWAYS
     // confirm first — even in bypass mode — because they act on the user's real
     // machine. Arquivos PROTEGIDOS (v2.89.0) também não são auto-aprovados no
     // modo auto_edits. Estes guard-rails duros valem MESMO com um allow.
     const hardSafety = isRiskyDesktopAction(name, args) || (level !== 'ignore' && isProtectedWritePath(name, args))
+    // allow vem de uma regra OU do sandbox (comando da allowlist): pula só o gate
+    // de NÍVEL, nunca os guard-rails duros.
+    const allowed = ruleEffect === 'allow' || sandboxVerdict === 'allow'
     const needsApproval = ruleEffect === 'ask' ? true
-      : ruleEffect === 'allow' ? hardSafety
+      : allowed ? hardSafety
       : (toolNeedsApproval(level, name) || hardSafety)
 
     if (needsApproval) {

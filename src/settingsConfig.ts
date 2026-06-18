@@ -11,6 +11,8 @@ export type Language = 'pt' | 'en'
 export type PermissionLevel = 'ask' | 'auto_edits' | 'planning' | 'ignore'
 import type { PermissionRule } from './utils/permissionRules'
 import type { DisplayTransform } from './utils/outputHooks'
+import type { SandboxConfig } from './utils/commandSandbox'
+import { DEFAULT_SANDBOX } from './utils/commandSandbox'
 
 /** Esforço de raciocínio (v2.25.0; 'auto' em v2.50.0). Reusado pelo seletor
  *  global (Settings) e pelo override por-conversa (EffortSlider). */
@@ -170,6 +172,10 @@ export interface AppSettings {
    *  subconjunto de model/provider/branch/cwd/persona/context. Vazio → mostra a
    *  dica de atalhos padrão. Ver utils/statusLine.ts. */
   statusLineItems?: string[]
+  /** v2.101.0 — sandbox de POLÍTICA do execute_command (inspirado no sandboxed
+   *  Bash do Claude Code): allowlist roda sem prompt, denylist é bloqueada.
+   *  Não é isolamento de kernel. Ver utils/commandSandbox.ts. */
+  commandSandbox?: SandboxConfig
   /** v2.69.0 — SCOUT proativo (opt-in, default off): em turnos agênticos com
    *  subagentes ociosos, um worker pesquisa por conta própria dados ATUAIS (data
    *  de hoje) + caminhos alternativos sobre o que a IA principal está fazendo, e
@@ -243,6 +249,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   displayTransforms: [],
   outputStyle: 'default',
   statusLineItems: [],
+  commandSandbox: DEFAULT_SANDBOX,
   scoutEnabled: false,
   compressToolOutputs: true,
 }
