@@ -230,12 +230,18 @@ export function renderSkillManifest(skills: Skill[]): string {
   ].join('\n')
 }
 
+/** Corpo da skill = instruções + exemplos/few-shot (v2.106.0), quando houver. */
+export function renderSkillBody(skill: Skill): string {
+  const ex = (skill.examples || '').trim()
+  return ex ? `${skill.instructions}\n\nEXEMPLOS:\n${ex}` : skill.instructions
+}
+
 /** Instruções COMPLETAS das skills fixadas (pinned) + ativas — injetadas direto,
  *  sem depender do modelo chamar load_skill. '' se não houver. */
 export function renderPinnedSkills(skills: Skill[]): string {
   const pinned = skills.filter(s => s.enabled && s.pinned && s.status !== 'staging')
   if (pinned.length === 0) return ''
-  return pinned.map(s => `[SKILL ATIVA: ${s.name}]\n${s.instructions}`).join('\n\n')
+  return pinned.map(s => `[SKILL ATIVA: ${s.name}]\n${renderSkillBody(s)}`).join('\n\n')
 }
 
 /** Skills ATIVAS para fins de restrição de ferramentas (v2.92.0): as fixadas
@@ -335,7 +341,7 @@ export function formatLoadSkillResult(skill: Skill | null, requestedName: string
   if (skill.allowedTools?.length) lines.push(`Ferramentas permitidas por esta skill: ${skill.allowedTools.join(', ')}.`)
   if (skill.disallowedTools?.length) lines.push(`Ferramentas BLOQUEADAS enquanto esta skill estiver ativa: ${skill.disallowedTools.join(', ')}.`)
   const toolNote = lines.length ? `\n\n${lines.join('\n')}` : ''
-  return `[SKILL: ${skill.name}]\n${skill.instructions}${toolNote}`
+  return `[SKILL: ${skill.name}]\n${renderSkillBody(skill)}${toolNote}`
 }
 
 /** Mescla builtins com as skills salvas do usuário: builtins primeiro (com

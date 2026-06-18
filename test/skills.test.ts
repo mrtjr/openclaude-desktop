@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  findSkill, renderSkillManifest, renderPinnedSkills, skillManifestHeaders,
+  findSkill, renderSkillManifest, renderPinnedSkills, renderSkillBody, skillManifestHeaders,
   matchSkillsByText, formatLoadSkillResult, mergeSkills, BUILTIN_SKILLS,
   collectDisallowedTools, collectAllowedTools, activeSkillsForTools, findActiveSkills, renderActiveSkillReminder, suggestSkill,
 } from '../src/utils/skills'
@@ -210,5 +210,19 @@ describe('collectAllowedTools (v2.105.0)', () => {
   })
   it('vazio quando nenhuma declara', () => {
     expect(collectAllowedTools([mk({})]).size).toBe(0)
+  })
+})
+
+describe('exemplos/few-shot na skill (v2.106.0)', () => {
+  it('renderSkillBody anexa os exemplos quando há', () => {
+    expect(renderSkillBody(mk({ instructions: 'FAÇA X', examples: 'ex1' }))).toBe('FAÇA X\n\nEXEMPLOS:\nex1')
+    expect(renderSkillBody(mk({ instructions: 'FAÇA X' }))).toBe('FAÇA X')
+    expect(renderSkillBody(mk({ instructions: 'FAÇA X', examples: '   ' }))).toBe('FAÇA X')
+  })
+  it('formatLoadSkillResult inclui os exemplos', () => {
+    expect(formatLoadSkillResult(mk({ name: 'a', instructions: 'I', examples: 'EX' }), 'a')).toContain('EXEMPLOS')
+  })
+  it('renderPinnedSkills inclui os exemplos das fixadas', () => {
+    expect(renderPinnedSkills([mk({ name: 'p', pinned: true, instructions: 'I', examples: 'EX' })])).toContain('EXEMPLOS')
   })
 })

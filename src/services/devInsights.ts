@@ -12,7 +12,7 @@
 // Errors are logged as their *category* (classifyProviderError kind), never
 // the raw text. Honors the existing `analyticsEnabled` setting.
 
-export type InsightCategory = 'chat' | 'error' | 'tool' | 'feature' | 'context' | 'provider' | 'agent'
+export type InsightCategory = 'chat' | 'error' | 'tool' | 'feature' | 'context' | 'provider' | 'agent' | 'skill'
 
 export interface InsightEvent {
   t: number   // timestamp (ms)

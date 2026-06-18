@@ -27,6 +27,9 @@ export interface Skill {
    *  modelo só recebe ESTAS ferramentas (+ load_skill). Mais forte que
    *  disallowedTools. Opcional; ausente = não restringe por allowlist. */
   allowedTools?: string[]
+  /** v2.106.0 — exemplos/few-shot opcionais anexados às instruções (modelos
+   *  pequenos seguem muito melhor com 1 exemplo concreto). */
+  examples?: string
   /** Aparece no manifesto (disponível para o modelo). */
   enabled: boolean
   /** Injeta as instruções completas SEMPRE (sem depender de load_skill) —

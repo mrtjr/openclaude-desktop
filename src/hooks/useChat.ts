@@ -12,7 +12,7 @@ import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice, extra
 import { classifyProviderError, humanizeProviderError, isColdStartTimeout } from '../utils/providerErrors'
 import { initStallState, decideStallRetry } from '../utils/stallRecovery'
 import { nextFallbackModel, isModelSwappableError } from '../utils/fallbackChain'
-import { renderSkillManifest, renderPinnedSkills, matchSkillsByText, collectDisallowedTools, collectAllowedTools, activeSkillsForTools, findSkill, findActiveSkills, renderActiveSkillReminder } from '../utils/skills'
+import { renderSkillManifest, renderPinnedSkills, renderSkillBody, matchSkillsByText, collectDisallowedTools, collectAllowedTools, activeSkillsForTools, findSkill, findActiveSkills, renderActiveSkillReminder } from '../utils/skills'
 import type { Skill } from '../types/skill'
 import { resolveTurnUsage } from '../utils/usage'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
@@ -412,7 +412,7 @@ export function useChat({
           } catch { /* fallback: keyword apenas */ }
         }
         const pinnedBlock = renderPinnedSkills(allSkills)
-        const autoBlock = autoMatched.map(s => `[SKILL ATIVA: ${s.name}]\n${s.instructions}`).join('\n\n')
+        const autoBlock = autoMatched.map(s => `[SKILL ATIVA: ${s.name}]\n${renderSkillBody(s)}`).join('\n\n')
         const full = [pinnedBlock, autoBlock].filter(Boolean).join('\n\n')
         if (full) systemPrompt += `\n\n${full}`
         // disallowed-tools (v2.92.0): skills ativas (fixadas + casadas) podem
@@ -1613,7 +1613,8 @@ export function useChat({
         // com "[SKILL:") fica ativo pelo resto do turno — re-reforçado a cada
         // passo e com seu disallowed-tools valendo.
         if (tc.function.name === 'load_skill' && /^\[SKILL:/.test(result)) {
-          addActiveSkill(String(args.name || ''))
+          const loaded = Array.isArray(args.names) && args.names.length ? args.names : [args.name]
+          for (const nm of loaded) { if (nm) { addActiveSkill(String(nm)); logInsight('skill', 'load', { name: String(nm) }) } }
         }
       }
 

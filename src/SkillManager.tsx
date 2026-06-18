@@ -187,6 +187,7 @@ function SkillForm({ skill, pt, onCancel, onSave }: { skill: Skill; pt: boolean;
   const [triggers, setTriggers] = useState((skill.triggers || []).join(', '))
   const [disallowed, setDisallowed] = useState((skill.disallowedTools || []).join(', '))
   const [allowed, setAllowed] = useState((skill.allowedTools || []).join(', '))
+  const [examples, setExamples] = useState(skill.examples || '')
 
   const canSave = name.trim().length > 0 && description.trim().length > 0 && instructions.trim().length > 0
   const lbl: React.CSSProperties = { fontSize: 12, opacity: 0.7, display: 'block', margin: '10px 0 4px' }
@@ -207,9 +208,12 @@ function SkillForm({ skill, pt, onCancel, onSave }: { skill: Skill; pt: boolean;
       <input className="settings-input" value={disallowed} onChange={(e) => setDisallowed(e.target.value)} placeholder="browser_navigate, execute_command" />
       <label style={lbl}>{pt ? 'Allowlist: SÓ estas ferramentas enquanto ativa (opcional, mais forte)' : 'Allowlist: ONLY these tools while active (optional, stronger)'}</label>
       <input className="settings-input" value={allowed} onChange={(e) => setAllowed(e.target.value)} placeholder="read_file, search_files, web_search" />
+      <label style={lbl}>{pt ? 'Exemplos / few-shot (opcional — ajuda modelos pequenos)' : 'Examples / few-shot (optional — helps small models)'}</label>
+      <textarea className="settings-input" style={{ minHeight: 80, fontFamily: 'monospace', fontSize: 12, resize: 'vertical' }}
+                value={examples} onChange={(e) => setExamples(e.target.value)} />
       <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
         <button className="settings-close" style={{ width: 'auto', padding: '6px 14px', opacity: canSave ? 1 : 0.5 }} disabled={!canSave}
-                onClick={() => onSave({ ...skill, name: name.trim(), description: description.trim(), instructions, triggers: triggers.split(',').map(t => t.trim()).filter(Boolean), disallowedTools: disallowed.split(',').map(t => t.trim()).filter(Boolean), allowedTools: allowed.split(',').map(t => t.trim()).filter(Boolean) })}>
+                onClick={() => onSave({ ...skill, name: name.trim(), description: description.trim(), instructions, triggers: triggers.split(',').map(t => t.trim()).filter(Boolean), disallowedTools: disallowed.split(',').map(t => t.trim()).filter(Boolean), allowedTools: allowed.split(',').map(t => t.trim()).filter(Boolean), examples: examples.trim() || undefined })}>
           {pt ? 'Salvar' : 'Save'}
         </button>
         <button className="settings-close" style={{ width: 'auto', padding: '6px 14px' }} onClick={onCancel}>{pt ? 'Cancelar' : 'Cancel'}</button>
