@@ -570,3 +570,65 @@ describe('drillEvents — timeline por trás de um achado', () => {
     expect(d.findings.find((f) => f.id === 'frequent-error')?.drill).toEqual({ type: 'errors', kind: 'timeout' })
   })
 })
+
+describe('Onda A — precisão (v2.108.0)', () => {
+  const now = 1_700_000_000_000
+  const ev = (c: InsightCategory, a: string, m?: Record<string, string | number | boolean>, daysOld = 0): InsightEvent =>
+    ({ t: now - daysOld * 86_400_000, c, a, m })
+
+  it('agrega falhas por tool (ok:false) e gera o finding failing-tool', () => {
+    const events: InsightEvent[] = []
+    // execute_command: 5 usos, 3 falhas (60%)
+    for (let i = 0; i < 2; i++) events.push(ev('tool', 'use', { name: 'execute_command', ok: true }))
+    for (let i = 0; i < 3; i++) events.push(ev('tool', 'use', { name: 'execute_command', ok: false }))
+    // web_search: 4 usos, 0 falhas
+    for (let i = 0; i < 4; i++) events.push(ev('tool', 'use', { name: 'web_search', ok: true }))
+    const d = summarizeInsights(events, 30, now)
+    expect(d.toolFailures['execute_command']).toBe(3)
+    expect(d.toolFailures['web_search']).toBeUndefined()
+    const f = d.findings.find(x => x.id === 'failing-tool')!
+    expect(f).toBeTruthy()
+    expect(f.evidence).toContain('execute_command')
+    expect(f.evidence).toContain('60%')
+  })
+
+  it('segmenta latência e erro por modelo (byModel) e gera failing-model', () => {
+    const events: InsightEvent[] = []
+    for (let i = 0; i < 5; i++) {
+      events.push(ev('chat', 'turn', { provider: 'modal', model: 'glm', turn: `g${i}` }))
+      events.push(ev('chat', 'complete', { turn: `g${i}`, ms: 10000, outcome: 'ok' }))
+    }
+    // 2 erros no glm → 0.4/turno
+    events.push(ev('error', 'timeout', { model: 'glm' }))
+    events.push(ev('error', 'timeout', { model: 'glm' }))
+    const d = summarizeInsights(events, 30, now)
+    expect(d.byModel['glm'].turns).toBe(5)
+    expect(d.byModel['glm'].errors).toBe(2)
+    expect(d.byModel['glm'].errorRate).toBe(0.4)
+    expect(d.byModel['glm'].avgMs).toBe(10000)
+    expect(d.findings.some(f => f.id === 'failing-model' && f.evidence.includes('glm'))).toBe(true)
+  })
+
+  it('auto-monitoramento: data-quality denuncia modelo desconhecido / sem perfil', () => {
+    const events: InsightEvent[] = []
+    for (let i = 0; i < 6; i++) {
+      // metade sem modelo → unknownModelRate alto; nenhum com stream_profile
+      events.push(ev('chat', 'turn', i % 2 === 0 ? { provider: 'x', turn: `t${i}` } : { provider: 'x', model: 'm', turn: `t${i}` }))
+    }
+    const d = summarizeInsights(events, 30, now)
+    expect(d.dataQuality.unknownModelRate).toBeGreaterThanOrEqual(0.4)
+    expect(d.dataQuality.profileCoverage).toBe(0)
+    expect(d.findings.some(f => f.id === 'data-quality')).toBe(true)
+  })
+
+  it('o relatório .md mostra falhas por tool e métricas por modelo', () => {
+    const events: InsightEvent[] = [
+      ev('tool', 'use', { name: 'execute_command', ok: false }),
+      ev('chat', 'turn', { provider: 'modal', model: 'glm', turn: 'a' }),
+      ev('chat', 'complete', { turn: 'a', ms: 5000, outcome: 'ok' }),
+    ]
+    const md = formatInsightsReport(summarizeInsights(events, 30, now))
+    expect(md).toContain('Uso de tools (uso · falhas)')
+    expect(md).toContain('Por modelo')
+  })
+})

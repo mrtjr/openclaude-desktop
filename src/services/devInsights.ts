@@ -28,8 +28,17 @@ export interface InsightsDigest {
   errorsByKind: Record<string, number>
   featureUsage: Record<string, number>
   toolUsage: Record<string, number>
+  /** Falhas por ferramenta (v2.108.0): o `ok:false` de cada tool/use, antes
+   *  descartado. Cruzado com toolUsage dá a TAXA de falha — "tool X falha Y%". */
+  toolFailures: Record<string, number>
   providerMix: Record<string, number>
   modelMix: Record<string, number>
+  /** Métricas SEGMENTADAS por modelo (v2.108.0): latência e erro por modelo, em
+   *  vez de só números globais — responde "qual modelo está lento/falhando". */
+  byModel: Record<string, ModelStats>
+  /** Auto-monitoramento (v2.108.0): a própria telemetria denuncia seus buracos
+   *  (eventos sem modelo/tool, turnos sem perfil de geração). */
+  dataQuality: { unknownModelRate: number; unknownToolRate: number; profileCoverage: number }
   friction: {
     circuitBreaks: number
     retries: number
@@ -82,6 +91,16 @@ export interface InsightsDigest {
 // sustentam — achado sem evidência não entra) + recomendação acionável +
 // score de impacto para ranquear. O maintainer lê os 3 primeiros e já sabe
 // o que atacar no ciclo; a UI pinta por severidade.
+
+/** Métricas por modelo (v2.108.0). errorRate = erros/turno (um turno pode logar
+ *  mais de um erro). */
+export interface ModelStats {
+  turns: number
+  errors: number
+  errorRate: number
+  avgMs: number
+  p95Ms: number
+}
 
 export type FindingSeverity = 'critical' | 'warning' | 'info'
 
@@ -518,6 +537,35 @@ export function buildFindings(d: Omit<InsightsDigest, 'notes' | 'findings'>): Fi
       'Turnos "parados" que parecem travamento. A redução só vem de gerar MENOS tokens (conteúdo menor; edit_file para editar em vez de regenerar) — realocar os mesmos tokens para outra ferramenta não muda o tempo.',
       s.longToolAssemblies * 3, { type: 'long-tool-assemblies' })
   }
+  // Tool que mais FALHA (v2.108.0): cruza uso × ok:false. Prioriza pela
+  // frequência da falha (rate × volume), não só a taxa — uma tool com 1 uso e
+  // 1 falha (100%) não vale o mesmo que uma com 40 usos e 30% de falha.
+  {
+    const candidates = Object.entries(d.toolFailures)
+      .map(([name, fails]) => ({ name, fails, uses: d.toolUsage[name] || fails, rate: fails / (d.toolUsage[name] || fails) }))
+      .filter(c => c.uses >= 4 && c.rate >= 0.25)
+      .sort((a, b) => b.fails - a.fails)
+    if (candidates.length) {
+      const c = candidates[0]
+      add('failing-tool', 'warning', `Ferramenta com muita falha: "${c.name}"`,
+        `${c.name} falhou ${c.fails}× em ${c.uses} usos (${Math.round(c.rate * 100)}%)`,
+        `Investigar por que "${c.name}" falha tanto — é a tool com maior atrito real. Ver classificação de erro/args e o handler em useToolExecution.`,
+        c.fails * 3, { type: 'tool', name: c.name })
+    }
+  }
+  // Modelo que mais FALHA (v2.108.0): erro/turno segmentado por modelo.
+  {
+    const worst = Object.entries(d.byModel)
+      .map(([model, st]) => ({ model, ...st }))
+      .filter(m => m.model !== 'unknown' && m.turns >= 4 && m.errorRate >= 0.3)
+      .sort((a, b) => b.errorRate - a.errorRate)[0]
+    if (worst) {
+      add('failing-model', 'warning', `Modelo com mais erros: "${worst.model}"`,
+        `${worst.model}: ${worst.errors} erro(s) em ${worst.turns} turnos (${worst.errorRate}/turno)${worst.p95Ms ? `, p95 ${Math.round(worst.p95Ms / 1000)}s` : ''}`,
+        'Cruzar com o provedor e considerar fallback/troca de modelo para essa fatia de uso.',
+        Math.round(worst.errorRate * 10), { type: 'errors' })
+    }
+  }
   const topError = Object.entries(d.errorsByKind).sort((a, b) => b[1] - a[1])[0]
   if (topError && topError[1] >= 3) {
     add('frequent-error', 'warning', `Erro mais frequente: "${topError[0]}"`,
@@ -545,6 +593,21 @@ export function buildFindings(d: Omit<InsightsDigest, 'notes' | 'findings'>): Fi
   }
 
   // ── Informativos ──
+  // Auto-monitoramento (v2.108.0): a telemetria denuncia os próprios buracos —
+  // sinal sem modelo/tool ou turnos sem perfil pioram TODAS as outras métricas.
+  if (d.turns.started >= 5) {
+    const q = d.dataQuality
+    const issues: string[] = []
+    if (q.unknownModelRate >= 0.2) issues.push(`${Math.round(q.unknownModelRate * 100)}% dos turnos sem modelo identificado`)
+    if (q.unknownToolRate >= 0.2) issues.push(`${Math.round(q.unknownToolRate * 100)}% das tools sem nome`)
+    if (q.profileCoverage < 0.5) issues.push(`só ${Math.round(q.profileCoverage * 100)}% dos turnos têm perfil de geração`)
+    if (issues.length) {
+      add('data-quality', 'info', 'Buracos na instrumentação',
+        issues.join('; '),
+        'Fechar os buracos de telemetria (anexar modelo/nome de tool/perfil) antes de confiar nas demais métricas — sinal cego enviesa o ranking.',
+        0)
+    }
+  }
   if (d.friction.contextCompactions >= 5) {
     add('context-pressure', 'info', 'Pressão de contexto alta',
       `${d.friction.contextCompactions} compactações na janela`,
@@ -599,9 +662,18 @@ export function summarizeInsights(
   const errorsByKind: Record<string, number> = {}
   const featureUsage: Record<string, number> = {}
   const toolUsage: Record<string, number> = {}
+  const toolFailures: Record<string, number> = {}
   const providerMix: Record<string, number> = {}
   const modelMix: Record<string, number> = {}
   const versionMix: Record<string, number> = {}
+  // Segmentação por modelo (v2.108.0): turnos/erros/latências por modelo.
+  const turnsByModel: Record<string, number> = {}
+  const errorsByModel: Record<string, number> = {}
+  const latByModel: Record<string, number[]> = {}
+  const turnModel = new Map<string, string>()  // turnId → modelo (p/ joinar a latência)
+  // Auto-monitoramento (v2.108.0): cobertura de instrumentação.
+  let toolUsesTotal = 0, toolUsesUnknown = 0
+  const turnsWithProfile = new Set<string>()
   const friction = { circuitBreaks: 0, retries: 0, toolDenials: 0, emptyReplies: 0, contextCompactions: 0, rewriteExisting: 0 }
   const latencies: number[] = []
   // turnos com id → ciclo de vida; sem id (eventos legados) → só contagens.
@@ -633,6 +705,7 @@ export function summarizeInsights(
     switch (e.c) {
       case 'error':
         bump(errorsByKind, e.a)
+        bump(errorsByModel, typeof e.m?.model === 'string' ? e.m.model : 'unknown')
         break
       case 'feature':
         if (e.a === 'open') bump(featureUsage, String(e.m?.feature ?? 'unknown'))
@@ -640,10 +713,12 @@ export function summarizeInsights(
       case 'chat':
         if (e.a === 'turn') {
           turnsStarted++
+          const model = String(e.m?.model ?? 'unknown')
           bump(providerMix, String(e.m?.provider ?? 'unknown'))
-          bump(modelMix, String(e.m?.model ?? 'unknown'))
+          bump(modelMix, model)
+          bump(turnsByModel, model)
           if (typeof e.m?.v === 'string') bump(versionMix, e.m.v)
-          if (typeof e.m?.turn === 'string') turnMap.set(e.m.turn, { startT: e.t, outcome: null })
+          if (typeof e.m?.turn === 'string') { turnMap.set(e.m.turn, { startT: e.t, outcome: null }); turnModel.set(e.m.turn, model) }
         } else if (e.a === 'retry') friction.retries++
         else if (e.a === 'empty_reply') friction.emptyReplies++
         else if (e.a === 'complete') {
@@ -653,7 +728,14 @@ export function summarizeInsights(
           const tracked = id ? turnMap.get(id) : undefined
           if (tracked) tracked.outcome = outcome
           else legacyOutcomes.push(outcome) // legado ou início fora da janela
+          // Latência por modelo (join complete→turn): atribui o tempo ao modelo
+          // do turno (v2.108.0).
+          if (typeof e.m?.ms === 'number' && id) {
+            const model = turnModel.get(id)
+            if (model) (latByModel[model] ||= []).push(e.m.ms)
+          }
         } else if (e.a === 'stream_profile') {
+          if (typeof e.m?.turn === 'string') turnsWithProfile.add(e.m.turn)
           streamShare.samples++
           for (const k of ['waitMs', 'reasoningMs', 'toolMs', 'contentMs'] as const) {
             if (typeof e.m?.[k] === 'number') streamShare[k] += e.m[k] as number
@@ -676,7 +758,14 @@ export function summarizeInsights(
         }
         break
       case 'tool':
-        if (e.a === 'use') bump(toolUsage, String(e.m?.name ?? 'unknown'))
+        if (e.a === 'use') {
+          const tname = String(e.m?.name ?? 'unknown')
+          bump(toolUsage, tname)
+          toolUsesTotal++
+          if (!e.m?.name || tname === 'unknown') toolUsesUnknown++
+          // Taxa de falha (v2.108.0): o ok:false antes descartado.
+          if (e.m?.ok === false) bump(toolFailures, tname)
+        }
         else if (e.a === 'denied') friction.toolDenials++
         else if (e.a === 'rewrite_existing') friction.rewriteExisting++
         break
@@ -705,6 +794,22 @@ export function summarizeInsights(
   }
   for (const o of legacyOutcomes) countOutcome(o)
 
+  // Segmentação por modelo (v2.108.0): junta turnos+erros+latências por modelo.
+  const byModel: Record<string, ModelStats> = {}
+  const allModels = new Set([...Object.keys(turnsByModel), ...Object.keys(errorsByModel), ...Object.keys(latByModel)])
+  for (const m of allModels) {
+    const t = turnsByModel[m] || 0
+    const errs = errorsByModel[m] || 0
+    const lat = computeLatency(latByModel[m] || [])
+    byModel[m] = { turns: t, errors: errs, errorRate: t > 0 ? Math.round((errs / t) * 100) / 100 : 0, avgMs: lat.avgMs, p95Ms: lat.p95Ms }
+  }
+  // Cobertura de instrumentação (v2.108.0): quanto do sinal está "cego".
+  const dataQuality = {
+    unknownModelRate: turnsStarted > 0 ? Math.round(((turnsByModel['unknown'] || 0) / turnsStarted) * 100) / 100 : 0,
+    unknownToolRate: toolUsesTotal > 0 ? Math.round((toolUsesUnknown / toolUsesTotal) * 100) / 100 : 0,
+    profileCoverage: turnMap.size > 0 ? Math.round((turnsWithProfile.size / turnMap.size) * 100) / 100 : 0,
+  }
+
   const base = {
     generatedAt: now,
     windowDays,
@@ -712,8 +817,11 @@ export function summarizeInsights(
     errorsByKind,
     featureUsage,
     toolUsage,
+    toolFailures,
     providerMix,
     modelMix,
+    byModel,
+    dataQuality,
     friction,
     latency: computeLatency(latencies),
     turns,
@@ -792,9 +900,37 @@ export function formatInsightsReport(d: InsightsDigest): string {
   }
   section('Erros por categoria', d.errorsByKind)
   section('Uso de features', d.featureUsage)
-  section('Uso de tools', d.toolUsage)
+  // Uso de tools com TAXA de falha por ferramenta (v2.108.0).
+  {
+    const entries = Object.entries(d.toolUsage).sort((a, b) => b[1] - a[1])
+    if (entries.length) {
+      lines.push(`## Uso de tools (uso · falhas)`)
+      for (const [k, uses] of entries) {
+        const fails = d.toolFailures[k] || 0
+        lines.push(`- ${k}: ${uses}${fails ? ` · ${fails} falha(s) (${Math.round((fails / uses) * 100)}%)` : ''}`)
+      }
+      lines.push(``)
+    }
+  }
   section('Provedores', d.providerMix)
   section('Modelos', d.modelMix)
+  // Métricas por modelo (v2.108.0): latência + erro segmentados.
+  {
+    const entries = Object.entries(d.byModel).sort((a, b) => b[1].turns - a[1].turns)
+    if (entries.length) {
+      lines.push(`## Por modelo (turnos · erro/turno · p95)`)
+      for (const [m, st] of entries) {
+        lines.push(`- ${m}: ${st.turns} turnos · ${st.errorRate} erro/turno${st.p95Ms ? ` · p95 ${Math.round(st.p95Ms / 1000)}s` : ''}`)
+      }
+      lines.push(``)
+    }
+  }
+  // Qualidade da instrumentação (v2.108.0).
+  if (d.turns.started >= 5) {
+    const q = d.dataQuality
+    lines.push(`## Qualidade do sinal`,
+      `- modelo desconhecido: ${Math.round(q.unknownModelRate * 100)}% · tool sem nome: ${Math.round(q.unknownToolRate * 100)}% · cobertura de perfil: ${Math.round(q.profileCoverage * 100)}%`, ``)
+  }
   section('Versões', d.versionMix)
   lines.push(
     `## Atrito`,
