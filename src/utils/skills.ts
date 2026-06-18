@@ -33,6 +33,44 @@ export const BUILTIN_SKILLS: Skill[] = [
     createdAt: 0,
   },
   {
+    id: 'builtin-code-review-diff',
+    name: 'code-review',
+    description: 'Revisar o diff atual em busca de bugs/correção, reuso e simplificação, classificando por severidade.',
+    instructions: `Revisão de código do DIFF atual (read-only — não edite, só relate):
+
+1. PEGAR O DIFF. Use git_command 'diff' (e 'diff --staged') para ver o que mudou. Se não houver diff, peça ao usuário o alvo (branch/arquivos) ou use search_files/read_file no escopo indicado. Leia também o contexto vizinho dos trechos alterados (read_file) — não revise linhas isoladas.
+
+2. O QUE PROCURAR. Correção (lógica, off-by-one, nulos, async/await, tratamento de erro), regressões, casos de borda não cobertos, validação de entrada, segredos/PII em log, reuso/duplicação que dá pra simplificar, e ineficiências reais. NÃO reescreva o estilo nem invente requisitos.
+
+3. CLASSIFICAR. Cada achado com severidade BLOQUEADOR > CRÍTICO > MAIOR > nit, com arquivo:linha e a correção sugerida (concisa). Baseie-se SÓ no que leu; não suponha código que não viu.
+
+4. ENTREGAR. Liste os achados por severidade (do maior ao menor). Se nada relevante, diga claramente "sem achados bloqueadores". Termine com um veredito curto (aprovar / aprovar com ajustes / precisa de mudanças). Não aplique as correções — quem decide é o usuário.`,
+    triggers: ['code review', 'code-review', 'revisar código', 'revisar o código', 'revise o diff', 'revisar diff', 'revisão de código'],
+    enabled: true,
+    pinned: false,
+    isBuiltIn: true,
+    createdAt: 0,
+  },
+  {
+    id: 'builtin-security-review',
+    name: 'security-review',
+    description: 'Revisão de SEGURANÇA do diff atual: injeção, segredos, authz, validação de entrada, deps.',
+    instructions: `Revisão de SEGURANÇA do diff atual (read-only — só relate):
+
+1. PEGAR O DIFF e o contexto. git_command 'diff'/'diff --staged'; read_file nos arquivos tocados e vizinhos relevantes (handlers, validação, config). search_files por padrões de risco (eval, exec, child_process, innerHTML, dangerouslySetInnerHTML, SQL concatenado, fetch/axios com URL do usuário, fs com caminho do usuário, segredos hardcoded).
+
+2. CLASSES DE VULNERABILIDADE. Injeção (comando/SQL/path traversal), XSS/HTML injection, deserialização insegura, SSRF, authz/authn ausente ou furada, validação/sanitização de entrada do usuário, segredos/credenciais/tokens hardcoded ou logados, PII em log, CORS/headers, uso inseguro de cripto/aleatoriedade, e dependências com risco conhecido.
+
+3. CLASSIFICAR por severidade (BLOQUEADOR > CRÍTICO > MAIOR > nit) com arquivo:linha, o vetor de ataque concreto e a mitigação. Marque o que é exploração real vs. defesa em profundidade. Não invente vulnerabilidades — baseie-se no código lido.
+
+4. ENTREGAR a lista priorizada + um veredito. Não corrija sozinho. Se o usuário pedir teste ativo (pentest), exija autorização e escopo antes (ver a skill 'pentest').`,
+    triggers: ['security review', 'security-review', 'revisar segurança', 'revisão de segurança', 'vulnerabilidade', 'segurança do diff', 'security'],
+    enabled: true,
+    pinned: false,
+    isBuiltIn: true,
+    createdAt: 0,
+  },
+  {
     id: 'builtin-cite-sources',
     name: 'pesquisa-com-fontes',
     description: 'Pesquisar com busca eficiente, triangular fontes e responder citando URLs reais, sem alucinar.',

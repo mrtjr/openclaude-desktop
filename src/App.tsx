@@ -1309,6 +1309,24 @@ export default function App() {
         })()
         setInput('')
         break
+      case 'code-review': {
+        // Dispara uma revisão do diff atual (a skill code-review é casada pelo
+        // gatilho "revise o diff"). Alvo opcional vira escopo.
+        const scope = clean ? ` Alvo: ${clean}.` : ''
+        sendMessageRef.current((lang === 'en'
+          ? `Please code-review the current diff${clean ? ` (target: ${clean})` : ''}: get the diff, read the changed code and its context, and report findings by severity (BLOCKER > CRITICAL > MAJOR > nit) with file:line. Do not change anything.`
+          : `Faça uma revisão de código (revise o diff atual).${scope} Pegue o diff, leia o código alterado e o contexto, e relate os achados por severidade (BLOQUEADOR > CRÍTICO > MAIOR > nit) com arquivo:linha. Não altere nada.`))
+        setInput('')
+        break
+      }
+      case 'security-review': {
+        const scope = clean ? ` Alvo: ${clean}.` : ''
+        sendMessageRef.current((lang === 'en'
+          ? `Please do a security review of the current diff${clean ? ` (target: ${clean})` : ''}: get the diff, inspect for injection, secrets, authz, input validation and risky deps, and report by severity with file:line and the attack vector. Do not change anything.`
+          : `Faça uma revisão de segurança do diff atual.${scope} Pegue o diff, procure injeção, segredos, authz, validação de entrada e dependências de risco, e relate por severidade com arquivo:linha e o vetor de ataque. Não altere nada.`))
+        setInput('')
+        break
+      }
       default:
         // Unknown — fall through to normal send.
         sendMessageRef.current(input.trim())

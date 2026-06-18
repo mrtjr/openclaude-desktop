@@ -41,9 +41,9 @@ describe('parseSlashInput', () => {
     // "/" alone matches everything.
     const all = parseSlashInput('/')
     expect(all!.matches.length).toBe(SLASH_COMMANDS.length)
-    // Prefix "c" matches "clear", "compact", "config", "context".
+    // Prefix "c" matches clear, code-review, compact, config, context.
     const clearOnly = parseSlashInput('/c')
-    expect(clearOnly!.matches.map(m => m.name).sort()).toEqual(['clear', 'compact', 'config', 'context'])
+    expect(clearOnly!.matches.map(m => m.name).sort()).toEqual(['clear', 'code-review', 'compact', 'config', 'context'])
     // Prefix "m" only matches "model".
     const modelOnly = parseSlashInput('/m')
     expect(modelOnly!.matches.map(m => m.name)).toEqual(['model'])
@@ -65,7 +65,7 @@ describe('parseSlashInput', () => {
 describe('SLASH_COMMANDS registry', () => {
   it('has a stable set of command names exposed to the UI', () => {
     const names = SLASH_COMMANDS.map(c => c.name).sort()
-    expect(names).toEqual(['clear', 'compact', 'config', 'context', 'model', 'regen', 'system', 'theme'])
+    expect(names).toEqual(['clear', 'code-review', 'compact', 'config', 'context', 'model', 'regen', 'security-review', 'system', 'theme'])
   })
 
   it('each command declares a description (PT at minimum)', () => {

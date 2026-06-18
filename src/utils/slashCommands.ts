@@ -70,6 +70,20 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     description: 'Mudar uma configuração (ex.: temperature=0.3 effort=high)',
     descriptionEn: 'Change a setting (e.g. temperature=0.3 effort=high)',
   },
+  {
+    name: 'code-review',
+    argHint: '[alvo opcional]',
+    argHintEn: '[optional target]',
+    description: 'Revisar o diff atual (bugs, correção, simplificação)',
+    descriptionEn: 'Review the current diff (bugs, correctness, simplification)',
+  },
+  {
+    name: 'security-review',
+    argHint: '[alvo opcional]',
+    argHintEn: '[optional target]',
+    description: 'Revisão de segurança do diff atual',
+    descriptionEn: 'Security review of the current diff',
+  },
 ]
 
 export interface ParsedSlash {
