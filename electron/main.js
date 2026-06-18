@@ -499,13 +499,26 @@ ipcMain.handle('kill-commands', async () => {
 // rodando entre passos/turnos: a IA inicia, continua trabalhando, consulta a
 // saída INCREMENTAL e mata quando quiser. Buffer capado (não cresce sem limite);
 // órfãos mortos no quit. Usa spawn (sem maxBuffer, ao contrário do exec).
-const bgCommands = new Map() // id -> { child, command, stdout, stderr, done, exitCode, killedByUser, startedAt }
+const bgCommands = new Map() // id -> { child, command, stdout, stderr, done, exitCode, killedByUser, startedAt, doneAt }
 let bgSeq = 0
 const BG_BUF_CAP = 60000 // últimos ~60KB por stream entre consultas
+const BG_DONE_TTL = 5 * 60 * 1000 // entrada CONCLUÍDA e não mais consultada expira em 5min
+
+// Limpa entradas que já terminaram e a IA nunca mais consultou (senão o Map
+// retém o child encerrado + buffers indefinidamente). O command-output já apaga
+// a entrada na 1ª consulta pós-término; isto pega só as órfãs. Chamado nos
+// handlers (sem timer de fundo).
+function reapBgCommands() {
+  const now = Date.now()
+  for (const [id, e] of bgCommands) {
+    if (e.done && e.doneAt && now - e.doneAt > BG_DONE_TTL) bgCommands.delete(id)
+  }
+}
 
 ipcMain.handle('start-background-command', async (event, { command, cwd } = {}) => {
   if (!command || typeof command !== 'string') return { error: 'comando vazio' }
   if (cwd && !fs.existsSync(cwd)) return { error: `Pasta de trabalho não existe: ${cwd}` }
+  reapBgCommands() // poda órfãs concluídas antes de criar mais uma
   const id = `bg${++bgSeq}`
   try {
     const { spawn } = require('child_process')
@@ -515,14 +528,15 @@ ipcMain.handle('start-background-command', async (event, { command, cwd } = {}) 
     const entry = { child, command, stdout: '', stderr: '', done: false, exitCode: null, killedByUser: false, startedAt: Date.now() }
     if (child.stdout) { child.stdout.setEncoding('utf8'); child.stdout.on('data', d => { entry.stdout = (entry.stdout + d).slice(-BG_BUF_CAP) }) }
     if (child.stderr) { child.stderr.setEncoding('utf8'); child.stderr.on('data', d => { entry.stderr = (entry.stderr + d).slice(-BG_BUF_CAP) }) }
-    child.on('error', (e) => { entry.done = true; if (entry.exitCode == null) entry.exitCode = 1; entry.stderr = (entry.stderr + `\n[erro de spawn: ${e.message}]`).slice(-BG_BUF_CAP) })
-    child.on('close', (code) => { entry.done = true; if (entry.exitCode == null) entry.exitCode = code })
+    child.on('error', (e) => { entry.done = true; entry.doneAt = Date.now(); if (entry.exitCode == null) entry.exitCode = 1; entry.stderr = (entry.stderr + `\n[erro de spawn: ${e.message}]`).slice(-BG_BUF_CAP) })
+    child.on('close', (code) => { entry.done = true; entry.doneAt = Date.now(); if (entry.exitCode == null) entry.exitCode = code })
     bgCommands.set(id, entry)
     return { id, pid: child.pid, error: null }
   } catch (e) { return { error: e.message } }
 })
 
 ipcMain.handle('command-output', async (event, { id } = {}) => {
+  reapBgCommands() // poda órfãs concluídas a cada consulta
   const e = bgCommands.get(id)
   if (!e) return { found: false }
   // Return-and-clear: devolve só a saída NOVA desde a última consulta (estilo BashOutput).

@@ -55,6 +55,21 @@ describe('isToolError (audit/telemetry classification)', () => {
     expect(isToolError('log antigo:\n[exit code: 1]', 'read_file')).toBe(false)
   })
 
+  it('catches the PT failure prefixes from the fused tools (glob/background)', () => {
+    expect(isToolError('Não consegui varrer "D:\\proj": acesso negado')).toBe(true)
+    expect(isToolError('Não consegui iniciar o comando em background: pasta inexistente.')).toBe(true)
+    expect(isToolError('Falha ao conectar')).toBe(true)
+    expect(isToolError('Falhou a verificação')).toBe(true)
+    expect(isToolError('Falhei ao abrir o arquivo')).toBe(true)
+  })
+
+  it('does NOT flag legitimate no-match / empty results as errors', () => {
+    // "Nenhum …"/"Nada encontrado …" são no-match válidos, não falhas
+    expect(isToolError('Nenhum arquivo casa "**/*.xyz" em D:\\proj (…).')).toBe(false)
+    expect(isToolError('Nenhum comando em background com id "bg9" — ele já terminou…')).toBe(false)
+    expect(isToolError('Nada encontrado nas conversas anteriores sobre "x".')).toBe(false)
+  })
+
   it('treats normal output as success — including text that mentions errors', () => {
     expect(isToolError('Arquivo escrito com sucesso')).toBe(false)
     expect(isToolError('build ok', 'execute_command')).toBe(false)

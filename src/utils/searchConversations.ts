@@ -28,6 +28,20 @@ function norm(s: string): string {
   return (s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
 }
 
+/** Dobra (lowercase + sem acento) com mapa de cada índice do resultado de volta
+ *  ao índice no texto ORIGINAL. Necessário porque `norm` pode MUDAR o tamanho
+ *  (uma marca combinante solta vira ''), e aí indexar o original com um índice
+ *  do texto dobrado saía desalinhado. Per-char mantém o mapa exato. */
+export function foldWithMap(s: string): { low: string; map: number[] } {
+  let low = ''
+  const map: number[] = []
+  for (let i = 0; i < s.length; i++) {
+    const f = norm(s[i]) // 1 char → 0 (marca solta) ou 1 char dobrado
+    for (let k = 0; k < f.length; k++) { low += f[k]; map.push(i) }
+  }
+  return { low, map }
+}
+
 function toMs(d: number | string | Date | undefined): number {
   if (typeof d === 'number') return d
   if (!d) return 0
@@ -43,11 +57,12 @@ export function queryTerms(query: string): string[] {
 /** Recorta um trecho ao redor da 1ª ocorrência de qualquer termo. */
 export function snippetAround(content: string, terms: string[], len = 160): string {
   const flat = content.replace(/\s+/g, ' ').trim()
-  const low = norm(flat)
+  const { low, map } = foldWithMap(flat)
   let idx = -1
   for (const t of terms) { const i = low.indexOf(t); if (i !== -1 && (idx === -1 || i < idx)) idx = i }
   if (idx === -1) return flat.length > len ? flat.slice(0, len) + '…' : flat
-  const start = Math.max(0, idx - Math.floor(len / 3))
+  const origIdx = map[idx] ?? 0 // índice no texto ORIGINAL (não no dobrado)
+  const start = Math.max(0, origIdx - Math.floor(len / 3))
   const end = Math.min(flat.length, start + len)
   return (start > 0 ? '…' : '') + flat.slice(start, end).trim() + (end < flat.length ? '…' : '')
 }

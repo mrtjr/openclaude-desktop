@@ -49,7 +49,11 @@ export function toolNeedsApproval(level: PermissionLevel, name: string): boolean
  *     markers (scoped to that tool — other tools may echo similar text). */
 export function isToolError(output: string, toolName?: string): boolean {
   const out = output || ''
-  if (/^(Erro\b|Error:|\[SYSTEM INTERCEPT\])/.test(out)) return true
+  // Prefixos de falha — inclui os PT usados pelas tools fundidas (glob_files,
+  // background commands): "Não consegui …" e "Falha/Falhou/Falhei …" eram
+  // logados como SUCESSO no relatório .md e no Dev Insights. NÃO inclui
+  // "Nenhum …"/"Nada encontrado …" de propósito: são no-match legítimos, não erro.
+  if (/^(Erro\b|Error:|Falh[aeio]|Não consegui|\[SYSTEM INTERCEPT\])/.test(out)) return true
   if (/^[A-Za-z][A-Za-z ]{0,30} error:/.test(out)) return true
   if (toolName === 'execute_command' && EXEC_FAILURE_MARKER.test(out)) return true
   return false
