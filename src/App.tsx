@@ -368,6 +368,16 @@ export default function App() {
     return eff
   }, [settings, profiles.activeProfile])
 
+  // MODO SEGURO (v2.90.0, porta --safe-mode): tira TODAS as customizações
+  // (systemPrompt custom, hooks, MCP, skills, persona, instruções de projeto)
+  // para depurar uma config quebrada. Provider/modelo/temperatura ficam — só as
+  // extensões somem. Os consumidores abaixo usam esta versão saneada.
+  const safeMode = settings.safeMode === true
+  const effectiveSettingsSafe = useMemo(
+    () => (safeMode ? { ...effectiveSettings, systemPrompt: '', hooks: [], mcpServers: [] } : effectiveSettings),
+    [effectiveSettings, safeMode],
+  )
+
   // ─── Custom hooks ──────────────────────────────────────────────
   const providerConfig = useProviderConfig(effectiveSettings, selectedModel)
   const providerHealth = useProviderHealth(settings)
@@ -499,6 +509,8 @@ export default function App() {
     // BASE do chat (personagem completo, substitui o prompt padrão). Antes a
     // persona era só um pill e não chegava ao modelo. As instruções de projeto
     // ainda somam por cima.
+    // Modo seguro: nada de persona nem instruções de projeto — system prompt cru.
+    if (safeMode) return effectiveSettingsSafe
     const base = activePersona?.systemPrompt
       ? { ...effectiveSettings, systemPrompt: activePersona.systemPrompt }
       : effectiveSettings
@@ -511,7 +523,7 @@ export default function App() {
     const addition = projectInstructionsAddition(project) + cwdNote
     if (!addition) return base
     return { ...base, systemPrompt: (base.systemPrompt || '') + addition }
-  }, [effectiveSettings, activePersona, convManager.activeConv?.projectId, convManager.activeConv?.cwd, projManager.projects])
+  }, [effectiveSettings, effectiveSettingsSafe, safeMode, activePersona, convManager.activeConv?.projectId, convManager.activeConv?.cwd, projManager.projects])
   // Projects ciclo 4 (v2.12.47): the project folder is no longer prompt-only —
   // execute_command actually runs there (default cwd, model can override).
   const activeProjectCwd = useMemo(() => {
@@ -550,7 +562,7 @@ export default function App() {
   const modalKeyPool = useModalKeyPool(settings)
   // MCP ponta a ponta (v2.35.0): conecta nos servidores configurados, expõe as
   // tools ao modelo (extraTools) e roteia as chamadas mcp__* (callMcpTool).
-  const mcp = useMcp(effectiveSettings.mcpServers)
+  const mcp = useMcp(effectiveSettingsSafe.mcpServers)
 
   // Registro compartilhado de subagentes em background (v2.65.0): useToolExecution
   // registra os lotes; useChat coleta/drena. Instância estável por toda a sessão.
@@ -566,14 +578,17 @@ export default function App() {
   // vive aqui (estável); useChat o dirige a cada passo.
   const scoutController = useMemo(() => new ScoutController(), [])
 
+  // Em modo seguro, nada de skills (uma skill com prompt/ferramenta quebrada
+  // não atrapalha a depuração). hooks/MCP já saíram via effectiveSettingsSafe.
+  const activeSkills = safeMode ? [] : skills
   const toolExec = useToolExecution({
-    settings: effectiveSettings,
+    settings: effectiveSettingsSafe,
     activeConvId: convManager.activeConvId,
     setConversations: convManager.setConversations,
     selectedModel,
     modalKeyPool,
     projectCwd: activeCwd,
-    skills,
+    skills: activeSkills,
     callMcpTool: mcp.callMcpTool,
     backgroundTasks,
     subagentActivity,
@@ -629,7 +644,7 @@ export default function App() {
       }
     },
     onUsage: (inputTokens, outputTokens) => usageTracking.recordUsage(effectiveSettings.provider, providerConfig.model, inputTokens, outputTokens),
-    skills,
+    skills: activeSkills,
     extraTools: mcp.mcpTools,
     semanticMatch: semantic.matchSemantic,
     ragStats,

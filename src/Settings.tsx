@@ -300,6 +300,23 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                 </select>
               </div>
 
+              {/* Modo seguro (v2.90.0) */}
+              <div className="settings-group">
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.9rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={local.safeMode === true}
+                    onChange={(e) => setLocal(s => ({ ...s, safeMode: e.target.checked }))}
+                  />
+                  <span>{local.language === 'pt' ? '🛟 Modo seguro (depuração)' : '🛟 Safe mode (troubleshooting)'}</span>
+                </label>
+                <p style={{ fontSize: '0.74rem', color: 'var(--color-text-muted, #888)', margin: '4px 0 0' }}>
+                  {local.language === 'pt'
+                    ? 'Sobe a sessão SEM customizações: system prompt custom, hooks, servidores MCP, skills, persona e instruções de projeto ficam desligados. O provedor e o modelo continuam. Use para isolar uma config quebrada (ex.: um hook barrando tudo, um MCP travado).'
+                    : 'Starts the session WITHOUT customizations: custom system prompt, hooks, MCP servers, skills, persona and project instructions are off. Provider and model still work. Use it to isolate a broken config (e.g. a hook blocking everything, a stuck MCP).'}
+                </p>
+              </div>
+
               {/* Context limit */}
               <div className="settings-group">
                 <label className="settings-label">

@@ -135,6 +135,12 @@ export interface AppSettings {
    *  semáforo → sem deadlock, carga local ≤ subagentConcurrency). Default 2.
    *  Ver researchWorker.canDelegateAtDepth. */
   subagentMaxDepth?: number
+  /** v2.90.0 — MODO SEGURO (porta --safe-mode do Claude Code): sobe a sessão SEM
+   *  nenhuma customização (systemPrompt custom, hooks, servidores MCP, skills,
+   *  persona, instruções de projeto) para depurar uma config quebrada — ex.: um
+   *  hook PreToolUse barrando tudo, um MCP travado, um prompt ruim. Provider e
+   *  modelo continuam (senão não dá pra conversar). Default off. */
+  safeMode?: boolean
   /** v2.69.0 — SCOUT proativo (opt-in, default off): em turnos agênticos com
    *  subagentes ociosos, um worker pesquisa por conta própria dados ATUAIS (data
    *  de hoje) + caminhos alternativos sobre o que a IA principal está fazendo, e
@@ -202,6 +208,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   subagentTimeoutSec: 600,
   subagentConcurrency: 2,
   subagentMaxDepth: 2,
+  safeMode: false,
   scoutEnabled: false,
   compressToolOutputs: true,
 }
