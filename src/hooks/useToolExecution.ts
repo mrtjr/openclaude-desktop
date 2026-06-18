@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react'
 import type { AppSettings, PendingApproval, TaskPlan, Conversation } from '../types'
 import { TOOLS } from '../constants/tools'
 import { resolveToolSearch, formatToolSearchResult } from '../services/toolDeferral'
-import { toolNeedsApproval, truncateToolOutput, isToolError, isProtectedWritePath } from '../utils/toolPolicy'
+import { toolNeedsApproval, truncateToolOutput, isToolError, isProtectedWritePath, isBlockedInPlanMode } from '../utils/toolPolicy'
 import { evaluatePermissionRules } from '../utils/permissionRules'
 import { combineHookOutput } from '../utils/outputHooks'
 import { formatExecResult, resolveExecCwd, resolveExecTimeoutMs } from '../utils/execResult'
@@ -805,6 +805,13 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
   const executeTool = useCallback(async (name: string, args: Record<string, any>): Promise<string> => {
     const convId = activeConvIdRef.current
     const level = settings.permissionLevel || 'ask'
+    // PLAN MODE (v2.96.0): no nível 'planning', as ferramentas que ALTERAM algo
+    // são bloqueadas de saída — a IA deve explorar (read-only) e apresentar um
+    // plano. Tem precedência sobre regras/aprovação (é uma postura deliberada).
+    if (level === 'planning' && isBlockedInPlanMode(name)) {
+      logInsight('tool', 'denied', { name, plan: true })
+      return `[PLAN MODE] Você está em MODO DE PLANEJAMENTO: a ferramenta "${name}" faz alterações e está BLOQUEADA. Explore com ferramentas de leitura/pesquisa e apresente um PLANO claro e numerado. Para executar, peça ao usuário que aprove e saia do modo de planejamento (mude o Nível de Permissão em Configurações).`
+    }
     // Regras de permissão por PARÂMETRO (v2.93.0): olham os ARGUMENTOS, não só
     // o nome. deny bloqueia na hora; ask força confirmação; allow pula o gate
     // de NÍVEL (mas não os guard-rails duros abaixo). Precedência deny>ask>allow.

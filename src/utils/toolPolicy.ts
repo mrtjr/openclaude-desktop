@@ -76,6 +76,27 @@ export function isProtectedWritePath(name: string, args: Record<string, unknown>
   return PROTECTED_PATH_FRAGMENTS.some((frag) => norm.includes(frag))
 }
 
+// ─── Plan Mode (v2.96.0) ────────────────────────────────────────────
+// Porta o "Plan mode explores and proposes without executing" do Claude Code.
+// Com permissionLevel='planning', as ferramentas que ALTERAM algo (escrever/
+// editar/executar/agir no desktop/interagir no navegador/MCP externo) são
+// BLOQUEADAS — não pedem aprovação, simplesmente não rodam, e a IA é instruída a
+// apresentar um PLANO. Leitura, navegação e pesquisa (read-only) continuam
+// livres para explorar. O usuário sai do modo (troca o nível) para executar.
+
+/** Ferramentas perigosas que AINDA são permitidas no plan mode por serem de
+ *  exploração/leitura (não alteram o sistema). */
+export const PLAN_MODE_ALLOWED_DANGEROUS = new Set(['delegate_subtasks', 'browser_navigate', 'open_file_or_url'])
+
+/** A ferramenta é bloqueada no modo de planejamento? Bloqueia toda mutação
+ *  (DANGEROUS_TOOLS) e tools MCP externas; libera a exploração read-only. */
+export function isBlockedInPlanMode(name: string): boolean {
+  if (!name) return false
+  if (name.startsWith('mcp__')) return true
+  if (PLAN_MODE_ALLOWED_DANGEROUS.has(name)) return false
+  return DANGEROUS_TOOLS.has(name)
+}
+
 /** Classify a tool's textual output as an error, for the audit log and the
  *  Dev Insights telemetry. The old inline check only caught `Erro:` and
  *  `[SYSTEM INTERCEPT]` — so `Git error:`, `Browser launch error:`, failed

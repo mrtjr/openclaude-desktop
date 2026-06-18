@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toolNeedsApproval, truncateToolOutput, isToolError, TOOL_OUTPUT_LIMIT, isProtectedWritePath } from '../src/utils/toolPolicy'
+import { toolNeedsApproval, truncateToolOutput, isToolError, TOOL_OUTPUT_LIMIT, isProtectedWritePath, isBlockedInPlanMode } from '../src/utils/toolPolicy'
 
 describe('isProtectedWritePath (v2.89.0)', () => {
   it('marca arquivos que executam código no write/edit', () => {
@@ -20,6 +20,19 @@ describe('isProtectedWritePath (v2.89.0)', () => {
     expect(isProtectedWritePath('execute_command', { path: '.npmrc' })).toBe(false) // só write/edit
     expect(isProtectedWritePath('write_file', {})).toBe(false)
     expect(isProtectedWritePath('write_file', null)).toBe(false)
+  })
+})
+
+describe('isBlockedInPlanMode (v2.96.0)', () => {
+  it('bloqueia as ferramentas que ALTERAM algo', () => {
+    for (const t of ['write_file', 'edit_file', 'execute_command', 'git_command', 'computer_click', 'browser_click', 'run_workflow', 'mcp__foo__bar']) {
+      expect(isBlockedInPlanMode(t)).toBe(true)
+    }
+  })
+  it('libera exploração read-only (incl. navegação e pesquisa)', () => {
+    for (const t of ['read_file', 'search_files', 'web_search', 'list_directory', 'fetch_url', 'delegate_subtasks', 'browser_navigate', 'open_file_or_url']) {
+      expect(isBlockedInPlanMode(t)).toBe(false)
+    }
   })
 })
 
