@@ -74,6 +74,7 @@ import { AccentPicker } from './components/AccentPicker'
 import { parseSlashInput } from './utils/slashCommands'
 import { applyConfigCommand, CONFIG_KEYS } from './utils/configCommand'
 import { buildStatusSegments } from './utils/statusLine'
+import { buildRecap } from './utils/recap'
 import { RegenSplit } from './components/RegenSplit'
 import { AmbientOrb } from './components/AmbientOrb'
 import { SlashPopover } from './components/SlashPopover'
@@ -671,6 +672,34 @@ export default function App() {
   const activeConv = convManager.activeConv
   // True only when the currently visible conversation is the one loading
   const isActiveConvLoading = chat.isLoading && chat.streamingConvId === convManager.activeConvId
+
+  // Session recap (v2.100.0): quando um turno TERMINA numa conversa que não está
+  // aberta (a IA respondeu enquanto você olhava outra), marca não-lida + toast
+  // com atalho para abrir. "Away summary" estilo Claude Code.
+  const [unreadConvIds, setUnreadConvIds] = useState<Set<string>>(() => new Set())
+  const recapPrevLoadingRef = useRef(false)
+  const recapStreamConvRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (chat.streamingConvId) recapStreamConvRef.current = chat.streamingConvId
+    const was = recapPrevLoadingRef.current
+    recapPrevLoadingRef.current = chat.isLoading
+    if (!was || chat.isLoading) return // só na transição carregando→pronto
+    const convId = recapStreamConvRef.current
+    if (!convId || convId === convManager.activeConvId) return
+    const conv = convManager.conversationsRef.current.find(c => c.id === convId)
+    setUnreadConvIds(prev => { const n = new Set(prev); n.add(convId); return n })
+    showToast({
+      message: buildRecap(conv as any, settings.language),
+      severity: 'info',
+      duration: 8000,
+      action: { label: settings.language === 'en' ? 'Open' : 'Abrir', onClick: () => convManager.setActiveConvId(convId) },
+    })
+  }, [chat.isLoading, chat.streamingConvId])
+  // Abrir uma conversa limpa a marca de não-lida.
+  useEffect(() => {
+    const id = convManager.activeConvId
+    if (id && unreadConvIds.has(id)) setUnreadConvIds(prev => { const n = new Set(prev); n.delete(id); return n })
+  }, [convManager.activeConvId])
 
   // Trocar de conversa LIMPA o painel de subagentes (o store é global) +
   // abandona background/scout pendentes — senão as runs da conversa ANTERIOR
@@ -1805,7 +1834,12 @@ export default function App() {
                   onClick={() => convManager.setActiveConvId(conv.id)}>
                   {convManager.pinnedConvs.has(conv.id) ? <Pin size={14} className="conv-icon pinned-icon" /> : <MessageSquare size={14} className="conv-icon" />}
                   <div className="conv-info">
-                    <span className="conv-title">{conv.title}</span>
+                    <span className="conv-title">
+                      {unreadConvIds.has(conv.id) && (
+                        <span title={settings.language === 'en' ? 'New reply' : 'Resposta nova'} style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#22c55e', marginRight: 6, verticalAlign: 'middle' }} />
+                      )}
+                      {conv.title}
+                    </span>
                     <span className="conv-date">{getRelativeTime(conv.createdAt)}</span>
                   </div>
                   <div className="conv-actions">
