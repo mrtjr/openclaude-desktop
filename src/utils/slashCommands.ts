@@ -63,6 +63,13 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     description: 'Abrir painel da janela de contexto',
     descriptionEn: 'Open the context window panel',
   },
+  {
+    name: 'config',
+    argHint: 'chave=valor',
+    argHintEn: 'key=value',
+    description: 'Mudar uma configuração (ex.: temperature=0.3 effort=high)',
+    descriptionEn: 'Change a setting (e.g. temperature=0.3 effort=high)',
+  },
 ]
 
 export interface ParsedSlash {

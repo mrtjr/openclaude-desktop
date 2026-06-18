@@ -72,6 +72,7 @@ import { useTokenCounter, formatTokenCount } from './hooks/useTokenCounter'
 import { useAccentColor } from './hooks/useAccentColor'
 import { AccentPicker } from './components/AccentPicker'
 import { parseSlashInput } from './utils/slashCommands'
+import { applyConfigCommand, CONFIG_KEYS } from './utils/configCommand'
 import { RegenSplit } from './components/RegenSplit'
 import { AmbientOrb } from './components/AmbientOrb'
 import { SlashPopover } from './components/SlashPopover'
@@ -1240,6 +1241,26 @@ export default function App() {
         setShowContextPanel(true)
         setInput('')
         break
+      case 'config': {
+        // /config key=value (v2.95.0): muda preferências pela barra do chat.
+        if (!clean) {
+          setShowSettings(true)
+          showToast(lang === 'en' ? `Keys: ${Object.keys(CONFIG_KEYS).join(', ')}` : `Chaves: ${Object.keys(CONFIG_KEYS).join(', ')}`, 'info')
+          setInput('')
+          break
+        }
+        const res = applyConfigCommand(settings, clean)
+        if (res.changes.length) {
+          const next = res.settings as AppSettings
+          setSettings(next); localStorage.setItem('openclaude-settings', JSON.stringify(next))
+          showToast((lang === 'en' ? 'Updated: ' : 'Atualizado: ') + res.changes.join(', '), 'success')
+        }
+        if (res.errors.length) {
+          showToast(res.errors.join(' · '), res.changes.length ? 'warn' : 'error')
+        }
+        setInput('')
+        break
+      }
       case 'compact':
         // Manual compact: if conv has history, send the current history
         // through the existing compactContext IPC and store the summary.
