@@ -676,3 +676,59 @@ describe('Onda B — qualidade/satisfação (v2.109.0)', () => {
     expect(md).toContain('Skills carregadas')
   })
 })
+
+describe('Onda C — inteligência (v2.110.0)', () => {
+  const now = 1_700_000_000_000
+  const ev = (c: InsightCategory, a: string, m?: Record<string, string | number | boolean>, daysOld = 0): InsightEvent =>
+    ({ t: now - daysOld * 86_400_000, c, a, m })
+
+  it('topPriority é o 1º achado acionável (não-info)', () => {
+    const events: InsightEvent[] = []
+    // gera zumbis (critical) + uma feature usada (info) — o topPriority deve ser o crítico
+    events.push(ev('chat', 'turn', { provider: 'x', model: 'm', turn: 'z1' }, 1))
+    events.push(ev('chat', 'turn', { provider: 'x', model: 'm', turn: 'z2' }, 0)) // turno novo prova zumbi do z1
+    events.push(ev('feature', 'open', { feature: 'rag' }))
+    const d = summarizeInsights(events, 30, now)
+    expect(d.topPriority).toBeTruthy()
+    expect(d.topPriority!.severity).not.toBe('info')
+  })
+
+  it('topPriority null quando só há informativos', () => {
+    const d = summarizeInsights([ev('feature', 'open', { feature: 'rag' })], 30, now)
+    expect(d.findings.every(f => f.severity === 'info')).toBe(true)
+    expect(d.topPriority).toBeNull()
+  })
+
+  it('detecta piora intra-janela (erros subindo na 2ª metade) e gera trend-worsening', () => {
+    const events: InsightEvent[] = []
+    // 1ª metade (dias 20-16): 4 turnos, 0 erros
+    for (let i = 0; i < 4; i++) events.push(ev('chat', 'turn', { provider: 'x', model: 'm', turn: `a${i}` }, 20 - i))
+    // 2ª metade (dias 5-1): 4 turnos, 4 erros
+    for (let i = 0; i < 4; i++) {
+      events.push(ev('chat', 'turn', { provider: 'x', model: 'm', turn: `b${i}` }, 5 - (i % 5)))
+      events.push(ev('error', 'timeout', { model: 'm' }, 5 - (i % 5)))
+    }
+    const d = summarizeInsights(events, 30, now)
+    expect(d.trend).toBeTruthy()
+    expect(d.trend!.secondHalf.errorRate).toBeGreaterThan(d.trend!.firstHalf.errorRate)
+    expect(d.trend!.worsening.some(w => w.metric === 'erros/turno')).toBe(true)
+    expect(d.findings.some(f => f.id === 'trend-worsening')).toBe(true)
+  })
+
+  it('trend null sem amostra mínima em cada metade', () => {
+    const d = summarizeInsights([ev('chat', 'turn', { provider: 'x', model: 'm', turn: 'x' }, 1)], 30, now)
+    expect(d.trend).toBeNull()
+  })
+
+  it('o relatório mostra a Prioridade nº1 e a Tendência', () => {
+    const events: InsightEvent[] = []
+    for (let i = 0; i < 4; i++) events.push(ev('chat', 'turn', { provider: 'x', model: 'm', turn: `a${i}` }, 20 - i))
+    for (let i = 0; i < 4; i++) {
+      events.push(ev('chat', 'turn', { provider: 'x', model: 'm', turn: `b${i}` }, 4 - (i % 4)))
+      events.push(ev('error', 'timeout', { model: 'm' }, 4 - (i % 4)))
+    }
+    const md = formatInsightsReport(summarizeInsights(events, 30, now))
+    expect(md).toContain('Prioridade nº1')
+    expect(md).toContain('Tendência (1ª metade')
+  })
+})

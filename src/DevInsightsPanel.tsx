@@ -144,6 +144,20 @@ export default function DevInsightsPanel({ isOpen, onClose, language, providerCo
               <p style={{ fontSize: 12, opacity: 0.6, marginTop: 0 }}>
                 {digest.totalEvents} {pt ? 'eventos' : 'events'} · {pt ? 'janela' : 'window'} {digest.windowDays}d
               </p>
+              {/* Prioridade nº1 em destaque (v2.110.0): o "faça isto a seguir". */}
+              {digest.topPriority && (
+                <div style={{
+                  ...sectionStyle, padding: '10px 12px', borderRadius: 8, marginBottom: 10,
+                  background: digest.topPriority.severity === 'critical' ? 'rgba(229,72,77,0.10)' : 'rgba(245,165,36,0.10)',
+                  border: `1px solid ${digest.topPriority.severity === 'critical' ? 'rgba(229,72,77,0.35)' : 'rgba(245,165,36,0.35)'}`,
+                }}>
+                  <h3 style={{ fontSize: 13, fontWeight: 700, margin: '0 0 4px' }}>
+                    {digest.topPriority.severity === 'critical' ? '🔴' : '🟡'} {pt ? 'Prioridade nº1' : 'Top priority'} — {digest.topPriority.title}
+                  </h3>
+                  <p style={{ fontSize: 12, opacity: 0.85, margin: '0 0 4px' }}>{digest.topPriority.evidence}.</p>
+                  <p style={{ fontSize: 12, opacity: 0.7, margin: 0 }}>{digest.topPriority.recommendation}</p>
+                </div>
+              )}
               {analysis.status !== 'idle' && (
                 <div style={{
                   ...sectionStyle, padding: '10px 12px', borderRadius: 8,

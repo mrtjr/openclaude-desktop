@@ -84,11 +84,34 @@ export interface InsightsDigest {
   /** Comparativo entre as duas versões mais recentes com amostra suficiente
    *  (v2.15.0) — "o que mudou desde a release anterior". Null sem dados. */
   comparison: VersionComparison | null
+  /** Tendência DENTRO da janela (v2.110.0): 1ª metade vs 2ª metade — pega
+   *  regressão/melhora gradual que o comparativo entre versões não vê. */
+  trend: WindowTrend | null
   /** Achados estruturados ranqueados por impacto (v2.16.0) — substituem as
    *  notas de threshold fixo como fonte; `notes` é derivado deles. */
   findings: Finding[]
+  /** O achado acionável de MAIOR impacto (v2.110.0): o 1º finding não-info já
+   *  ranqueado por frequência×severidade. É o "faça isto a seguir" que o loop lê
+   *  direto, sem reinterpretar a lista. Null se só houver informativos. */
+  topPriority: Finding | null
   /** Renderização em texto dos findings (compatibilidade + leitura rápida). */
   notes: string[]
+}
+
+/** Tendência intra-janela (v2.110.0): métricas normalizadas por turno na 1ª vs
+ *  2ª metade da janela, e quais pioraram/melhoraram. */
+export interface TrendHalf {
+  turns: number
+  errorRate: number
+  frictionRate: number
+  dissatisfactionRate: number
+  avgMs: number
+}
+export interface WindowTrend {
+  firstHalf: TrendHalf
+  secondHalf: TrendHalf
+  worsening: { metric: string; from: number; to: number }[]
+  improving: { metric: string; from: number; to: number }[]
 }
 
 // ─── Motor de findings (v2.16.0) ────────────────────────────────────
@@ -311,6 +334,55 @@ export function compareVersionSegments(events: InsightEvent[], now: number): Ver
   return { current, previous, newErrorKinds, resolvedErrorKinds }
 }
 
+// ─── Tendência intra-janela (v2.110.0) ──────────────────────────────
+// O comparativo entre versões só dispara quando há 2 versões com amostra. Mas
+// um problema pode crescer DENTRO da mesma versão/janela (degradação gradual,
+// drift). Aqui partimos a janela ao meio e comparamos as taxas por turno — pega
+// a regressão antes de virar crítica. Pura (midpoint injetável).
+
+const TREND_MIN_TURNS = 3
+
+export function computeWindowTrend(recent: InsightEvent[], midpointT: number): WindowTrend | null {
+  const half = (inHalf: (t: number) => boolean): TrendHalf => {
+    let turns = 0, errors = 0, friction = 0, dissat = 0
+    const lat: number[] = []
+    for (const e of recent) {
+      if (!inHalf(e.t)) continue
+      if (e.c === 'error') errors++
+      else if (e.c === 'agent' && e.a === 'circuit_break') friction++
+      else if (e.c === 'chat') {
+        if (e.a === 'turn') turns++
+        else if (e.a === 'retry' || e.a === 'empty_reply') friction++
+        else if (e.a === 'regenerate' || e.a === 'quick_followup') dissat++
+        else if (e.a === 'complete' && typeof e.m?.ms === 'number') lat.push(e.m.ms)
+      }
+    }
+    const per = (n: number) => (turns > 0 ? Math.round((n / turns) * 100) / 100 : 0)
+    const avgMs = lat.length ? Math.round(lat.reduce((a, b) => a + b, 0) / lat.length) : 0
+    return { turns, errorRate: per(errors), frictionRate: per(friction), dissatisfactionRate: per(dissat), avgMs }
+  }
+  const firstHalf = half((t) => t < midpointT)
+  const secondHalf = half((t) => t >= midpointT)
+  if (firstHalf.turns < TREND_MIN_TURNS || secondHalf.turns < TREND_MIN_TURNS) return null
+
+  const worsening: WindowTrend['worsening'] = []
+  const improving: WindowTrend['improving'] = []
+  const cmpRate = (metric: string, from: number, to: number) => {
+    if (to >= from * 1.5 && to - from >= 0.1) worsening.push({ metric, from, to })
+    else if (from > 0 && to <= from * 0.5) improving.push({ metric, from, to })
+  }
+  cmpRate('erros/turno', firstHalf.errorRate, secondHalf.errorRate)
+  cmpRate('atrito/turno', firstHalf.frictionRate, secondHalf.frictionRate)
+  cmpRate('insatisfação/turno', firstHalf.dissatisfactionRate, secondHalf.dissatisfactionRate)
+  // Latência: limiar relativo + absoluto (2s) para não disparar por ruído.
+  if (firstHalf.avgMs > 0 && secondHalf.avgMs >= firstHalf.avgMs * 1.5 && secondHalf.avgMs - firstHalf.avgMs >= 2000) {
+    worsening.push({ metric: 'latência média', from: firstHalf.avgMs, to: secondHalf.avgMs })
+  } else if (secondHalf.avgMs > 0 && firstHalf.avgMs >= secondHalf.avgMs * 1.5) {
+    improving.push({ metric: 'latência média', from: firstHalf.avgMs, to: secondHalf.avgMs })
+  }
+  return { firstHalf, secondHalf, worsening, improving }
+}
+
 // Turno mais recente sem desfecho só vira zumbi depois desta idade (pode
 // ainda estar rodando); os anteriores ao último turno são zumbis na hora —
 // o app roda um turno por vez (sendingRef), então um novo turno prova que
@@ -430,7 +502,7 @@ function dominantAssemblyTool(byName: Record<string, number>): { name: string; m
   return best
 }
 
-export function buildFindings(d: Omit<InsightsDigest, 'notes' | 'findings'>): Finding[] {
+export function buildFindings(d: Omit<InsightsDigest, 'notes' | 'findings' | 'topPriority'>): Finding[] {
   const findings: Finding[] = []
   const add = (id: string, severity: FindingSeverity, title: string, evidence: string, recommendation: string, bonus = 0, drill?: DrillSelector) =>
     findings.push({ id, severity, title, evidence, recommendation, score: SEVERITY_BASE[severity] + bonus, ...(drill ? { drill } : {}) })
@@ -471,6 +543,23 @@ export function buildFindings(d: Omit<InsightsDigest, 'notes' | 'findings'>): Fi
         `eram ${prev.zombies} na ${prev.v}`,
         'Nada a fazer; monitorar.')
     }
+  }
+  // Tendência intra-janela (v2.110.0): uma métrica subindo na 2ª metade da
+  // janela é regressão em formação — pega antes de virar crítica, mesmo dentro
+  // da mesma versão. Reporta a pior; melhora vira informativo.
+  if (d.trend?.worsening.length) {
+    const w = [...d.trend.worsening].sort((a, b) => (b.to - b.from) - (a.to - a.from))[0]
+    const isLat = w.metric.startsWith('latência')
+    const fmt = (n: number) => isLat ? `${Math.round(n / 1000)}s` : `${n}`
+    add('trend-worsening', 'warning', `Piora em formação: ${w.metric}`,
+      `${w.metric} subiu de ${fmt(w.from)} para ${fmt(w.to)} entre a 1ª e a 2ª metade da janela`,
+      'Regressão gradual (mesma versão ou drift). Investigar o que mudou no período antes de virar crítico.',
+      Math.round((w.to - w.from) * (isLat ? 0.005 : 15)), { type: 'action', c: 'chat', a: 'turn' })
+  } else if (d.trend?.improving.length) {
+    const i = d.trend.improving[0]
+    add('trend-improving', 'info', `Melhora em curso: ${i.metric}`,
+      `${i.metric} caiu na 2ª metade da janela`,
+      'Tendência boa — confirmar no próximo digest.')
   }
 
   // ── Perfil de geração (v2.20.0: denominador HONESTO inclui a espera) ──
@@ -866,9 +955,13 @@ export function summarizeInsights(
     streamShare,
     versionMix,
     comparison: compareVersionSegments(recent, now),
+    trend: computeWindowTrend(recent, now - (windowDays / 2) * 24 * 60 * 60 * 1000),
   }
   const findings = buildFindings(base)
-  return { ...base, findings, notes: findings.map(renderFinding) }
+  // topPriority (v2.110.0): o 1º achado acionável (não-info) já ranqueado — o
+  // ponteiro único de "faça isto a seguir" para o loop.
+  const topPriority = findings.find((f) => f.severity !== 'info') ?? null
+  return { ...base, findings, topPriority, notes: findings.map(renderFinding) }
 }
 
 function computeLatency(ms: number[]): InsightsDigest['latency'] {
@@ -888,6 +981,11 @@ export function formatInsightsReport(d: InsightsDigest): string {
     `Gerado: ${new Date(d.generatedAt).toISOString()} · Janela: ${d.windowDays} dias · Eventos: ${d.totalEvents}`,
     ``,
   ]
+  // Prioridade nº1 em destaque (v2.110.0): o que atacar a seguir.
+  if (d.topPriority) {
+    const icon: Record<FindingSeverity, string> = { critical: '🔴', warning: '🟡', info: '🔵' }
+    lines.push(`## ▶ Prioridade nº1`, `${icon[d.topPriority.severity]} ${renderFinding(d.topPriority)}`, ``)
+  }
   const section = (title: string, rec: Record<string, number>) => {
     const entries = Object.entries(rec).sort((a, b) => b[1] - a[1])
     if (entries.length === 0) return
@@ -989,6 +1087,15 @@ export function formatInsightsReport(d: InsightsDigest): string {
   section('Skills carregadas', d.skillUsage)
   if (d.latency.count > 0) {
     lines.push(`## Latência`, `- amostras: ${d.latency.count} · média: ${d.latency.avgMs}ms · p95: ${d.latency.p95Ms}ms`, ``)
+  }
+  // Tendência intra-janela (v2.110.0).
+  if (d.trend) {
+    const t = d.trend
+    lines.push(`## Tendência (1ª metade → 2ª metade da janela)`,
+      `- erros/turno: ${t.firstHalf.errorRate} → ${t.secondHalf.errorRate} · atrito/turno: ${t.firstHalf.frictionRate} → ${t.secondHalf.frictionRate} · insatisfação/turno: ${t.firstHalf.dissatisfactionRate} → ${t.secondHalf.dissatisfactionRate} · latência: ${Math.round(t.firstHalf.avgMs / 1000)}s → ${Math.round(t.secondHalf.avgMs / 1000)}s`)
+    if (t.worsening.length) lines.push(`- piorando: ${t.worsening.map(w => w.metric).join(', ')}`)
+    if (t.improving.length) lines.push(`- melhorando: ${t.improving.map(w => w.metric).join(', ')}`)
+    lines.push(``)
   }
   if (d.findings.length) {
     const icon: Record<FindingSeverity, string> = { critical: '🔴', warning: '🟡', info: '🔵' }
