@@ -1155,6 +1155,8 @@ export default function App() {
 
   const regenerateResponse = useCallback((modelOverride?: string) => {
     if (!activeConv || isActiveConvLoading) return
+    // Proxy de insatisfação (v2.109.0): refazer = a resposta não serviu.
+    logInsight('chat', 'regenerate', modelOverride ? { withModel: true } : undefined)
     // Grab last user content from the current snapshot for the resend call,
     // but recompute the slice index inside the updater against the *fresh*
     // prev state — otherwise rapid regen clicks or in-flight streams leave
@@ -1228,6 +1230,16 @@ export default function App() {
   // Transforms de exibição (v2.94.0): identidade estável p/ não quebrar o memo
   // do ChatMessage a cada render (muda só quando as regras mudam).
   const displayTransforms = useMemo(() => settings.displayTransforms || [], [settings.displayTransforms])
+
+  // Proxy de satisfação (v2.109.0): marca quando o turno ativo CONCLUI, para o
+  // próximo envio detectar uma re-pergunta RÁPIDA (insatisfação). Efeito na
+  // transição loading true→false da conversa visível.
+  const lastTurnCompleteAtRef = useRef(0)
+  const prevConvLoadingRef = useRef(false)
+  useEffect(() => {
+    if (prevConvLoadingRef.current && !isActiveConvLoading) lastTurnCompleteAtRef.current = Date.now()
+    prevConvLoadingRef.current = isActiveConvLoading
+  }, [isActiveConvLoading])
   // Barra de status (v2.98.0): segmentos visíveis conforme settings.statusLineItems.
   const statusSegments = useMemo(() => buildStatusSegments(settings.statusLineItems, {
     model: providerConfig.model, provider: settings.provider, branch: gitBranch,
@@ -1239,6 +1251,7 @@ export default function App() {
     if (!activeConv) return
     const idx = activeConv.messages.findIndex(m => m.id === msgId)
     if (idx < 0) return
+    logInsight('chat', 'branch')
     forkFrom(activeConv.id, idx)
     showToast(settings.language === 'en' ? 'Conversation branched' : 'Conversa bifurcada')
   })
@@ -1397,6 +1410,12 @@ export default function App() {
     // refletiu o newConversation neste tick; o sendMessage usa o override).
     let cid = convManager.activeConvId
     if (!cid) cid = convManager.newConversation()
+    // Proxy de satisfação (v2.109.0): re-pergunta < 20s após um turno concluir =
+    // a resposta anterior provavelmente não serviu. Só no envio genuíno (regen
+    // não passa por aqui → sem dupla contagem).
+    const since = lastTurnCompleteAtRef.current
+    if (since && Date.now() - since < 20_000) logInsight('chat', 'quick_followup', { gapMs: Date.now() - since })
+    lastTurnCompleteAtRef.current = 0
     sendMessageRef.current(payload.trim(), cid)
     setInput('')
   }, [input, slash, slashIdx, executeSlash, isActiveConvLoading, convManager.activeConvId, convManager.newConversation])

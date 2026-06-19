@@ -632,3 +632,47 @@ describe('Onda A — precisão (v2.108.0)', () => {
     expect(md).toContain('Por modelo')
   })
 })
+
+describe('Onda B — qualidade/satisfação (v2.109.0)', () => {
+  const now = 1_700_000_000_000
+  const ev = (c: InsightCategory, a: string, m?: Record<string, string | number | boolean>, daysOld = 0): InsightEvent =>
+    ({ t: now - daysOld * 86_400_000, c, a, m })
+
+  it('agrega proxies de satisfação e gera low-satisfaction', () => {
+    const events: InsightEvent[] = []
+    // 5 turnos completos
+    for (let i = 0; i < 5; i++) {
+      events.push(ev('chat', 'turn', { provider: 'modal', model: 'glm', turn: `t${i}` }))
+      events.push(ev('chat', 'complete', { turn: `t${i}`, ms: 1000, outcome: 'ok' }))
+    }
+    // 2 regenerações + 1 re-pergunta rápida = 3 negativos (60%)
+    events.push(ev('chat', 'regenerate'))
+    events.push(ev('chat', 'regenerate'))
+    events.push(ev('chat', 'quick_followup', { gapMs: 5000 }))
+    events.push(ev('chat', 'copy'))
+    const d = summarizeInsights(events, 30, now)
+    expect(d.turnQuality).toEqual({ regenerated: 2, quickFollowups: 1, copies: 1, branches: 0 })
+    const f = d.findings.find(x => x.id === 'low-satisfaction')!
+    expect(f).toBeTruthy()
+    expect(f.evidence).toContain('60%')
+  })
+
+  it('agrega skill/load (skillUsage) e gera top-skill', () => {
+    const events: InsightEvent[] = [
+      ev('skill', 'load', { name: 'code' }),
+      ev('skill', 'load', { name: 'code' }),
+      ev('skill', 'load', { name: 'pesquisa' }),
+    ]
+    const d = summarizeInsights(events, 30, now)
+    expect(d.skillUsage).toEqual({ code: 2, pesquisa: 1 })
+    expect(d.findings.some(f => f.id === 'top-skill' && f.title.includes('code'))).toBe(true)
+  })
+
+  it('o relatório mostra satisfação e skills carregadas', () => {
+    const md = formatInsightsReport(summarizeInsights([
+      ev('chat', 'regenerate'), ev('skill', 'load', { name: 'code' }),
+    ], 30, now))
+    expect(md).toContain('Satisfação (proxies)')
+    expect(md).toContain('Skills carregadas')
+  })
+})

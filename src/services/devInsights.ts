@@ -39,6 +39,13 @@ export interface InsightsDigest {
   /** Auto-monitoramento (v2.108.0): a própria telemetria denuncia seus buracos
    *  (eventos sem modelo/tool, turnos sem perfil de geração). */
   dataQuality: { unknownModelRate: number; unknownToolRate: number; profileCoverage: number }
+  /** Qualidade do turno (v2.109.0): proxies de (in)satisfação. regenerated e
+   *  quickFollowups = sinais NEGATIVOS (resposta não serviu); copies = POSITIVO
+   *  (usuário levou a saída). */
+  turnQuality: { regenerated: number; quickFollowups: number; copies: number; branches: number }
+  /** Carregamentos por skill (v2.109.0): o skill/load (logado desde a v2.106)
+   *  finalmente agregado — quais skills são realmente usadas. */
+  skillUsage: Record<string, number>
   friction: {
     circuitBreaks: number
     retries: number
@@ -566,6 +573,18 @@ export function buildFindings(d: Omit<InsightsDigest, 'notes' | 'findings'>): Fi
         Math.round(worst.errorRate * 10), { type: 'errors' })
     }
   }
+  // (In)satisfação (v2.109.0): regenerações + re-perguntas rápidas sobre turnos
+  // completos. Sinal direto de "a resposta não serviu" — antes invisível.
+  {
+    const completed = d.turns.completed
+    const negative = d.turnQuality.regenerated + d.turnQuality.quickFollowups
+    if (completed >= 5 && negative >= 3 && negative / completed >= 0.4) {
+      add('low-satisfaction', 'warning', 'Sinais de insatisfação nas respostas',
+        `${d.turnQuality.regenerated} regeneração(ões) + ${d.turnQuality.quickFollowups} re-pergunta(s) rápida(s) sobre ${completed} turnos completos (${Math.round((negative / completed) * 100)}%)`,
+        'A resposta frequentemente não serve de primeira. Cruzar com modelo/tool dominante e revisar prompt/efeito; medir se cai no próximo digest.',
+        Math.round((negative / completed) * 20), { type: 'action', c: 'chat', a: 'regenerate' })
+    }
+  }
   const topError = Object.entries(d.errorsByKind).sort((a, b) => b[1] - a[1])[0]
   if (topError && topError[1] >= 3) {
     add('frequent-error', 'warning', `Erro mais frequente: "${topError[0]}"`,
@@ -640,6 +659,14 @@ export function buildFindings(d: Omit<InsightsDigest, 'notes' | 'findings'>): Fi
       'Área de maior uso real — otimizações aqui têm o maior alcance.',
       0, { type: 'tool', name: topTool[0] })
   }
+  // Skill mais carregada (v2.109.0): fecha o loop com o skill/load da v2.106.
+  const topSkill = Object.entries(d.skillUsage).sort((a, b) => b[1] - a[1])[0]
+  if (topSkill && topSkill[1] >= 2) {
+    add('top-skill', 'info', `Skill mais usada: "${topSkill[0]}"`,
+      `carregada ${topSkill[1]}× na janela`,
+      'Skill de maior valor percebido — vale investir no playbook/exemplos dela.',
+      0, { type: 'action', c: 'skill', a: 'load' })
+  }
 
   return findings.sort((a, b) => b.score - a.score)
 }
@@ -675,6 +702,8 @@ export function summarizeInsights(
   let toolUsesTotal = 0, toolUsesUnknown = 0
   const turnsWithProfile = new Set<string>()
   const friction = { circuitBreaks: 0, retries: 0, toolDenials: 0, emptyReplies: 0, contextCompactions: 0, rewriteExisting: 0 }
+  const turnQuality = { regenerated: 0, quickFollowups: 0, copies: 0, branches: 0 }
+  const skillUsage: Record<string, number> = {}
   const latencies: number[] = []
   // turnos com id → ciclo de vida; sem id (eventos legados) → só contagens.
   const turnMap = new Map<string, { startT: number; outcome: string | null }>()
@@ -721,6 +750,10 @@ export function summarizeInsights(
           if (typeof e.m?.turn === 'string') { turnMap.set(e.m.turn, { startT: e.t, outcome: null }); turnModel.set(e.m.turn, model) }
         } else if (e.a === 'retry') friction.retries++
         else if (e.a === 'empty_reply') friction.emptyReplies++
+        else if (e.a === 'regenerate') turnQuality.regenerated++
+        else if (e.a === 'quick_followup') turnQuality.quickFollowups++
+        else if (e.a === 'copy') turnQuality.copies++
+        else if (e.a === 'branch') turnQuality.branches++
         else if (e.a === 'complete') {
           if (typeof e.m?.ms === 'number') latencies.push(e.m.ms)
           const outcome = typeof e.m?.outcome === 'string' ? e.m.outcome : 'ok'
@@ -775,6 +808,9 @@ export function summarizeInsights(
       case 'context':
         if (e.a === 'compaction') friction.contextCompactions++
         break
+      case 'skill':
+        if (e.a === 'load') bump(skillUsage, String(e.m?.name ?? 'unknown'))
+        break
     }
   }
 
@@ -822,6 +858,8 @@ export function summarizeInsights(
     modelMix,
     byModel,
     dataQuality,
+    turnQuality,
+    skillUsage,
     friction,
     latency: computeLatency(latencies),
     turns,
@@ -942,6 +980,13 @@ export function formatInsightsReport(d: InsightsDigest): string {
     `- reescritas de arquivo existente (era p/ ser edit_file): ${d.friction.rewriteExisting}`,
     ``,
   )
+  // (In)satisfação (v2.109.0).
+  const tq = d.turnQuality
+  if (tq.regenerated + tq.quickFollowups + tq.copies + tq.branches > 0) {
+    lines.push(`## Satisfação (proxies)`,
+      `- regenerações: ${tq.regenerated} · re-perguntas rápidas: ${tq.quickFollowups} · cópias: ${tq.copies} · bifurcações: ${tq.branches}`, ``)
+  }
+  section('Skills carregadas', d.skillUsage)
   if (d.latency.count > 0) {
     lines.push(`## Latência`, `- amostras: ${d.latency.count} · média: ${d.latency.avgMs}ms · p95: ${d.latency.p95Ms}ms`, ``)
   }

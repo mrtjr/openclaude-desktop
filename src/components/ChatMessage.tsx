@@ -3,6 +3,7 @@ import { User, RefreshCw, GitBranch, Trash } from 'lucide-react'
 import type { Message } from '../types'
 import { formatMarkdown } from '../utils/formatting'
 import { applyDisplayTransforms, type DisplayTransform } from '../utils/outputHooks'
+import { logInsight } from '../services/devInsights'
 import { extractArtifacts, type Artifact } from '../utils/artifacts'
 import CopyButton from './CopyButton'
 import ToolCallBlock from './ToolCallBlock'
@@ -84,7 +85,7 @@ function ChatMessageInner({
         <div className="message-footer">
           <span className="message-timestamp">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
           <div className="message-actions">
-            {msg.content && <CopyButton text={msg.content} title={language === 'en' ? 'Copy as Markdown' : 'Copiar como Markdown'} onCopied={() => showToast(language === 'en' ? 'Copied as Markdown' : 'Copiado como Markdown')} />}
+            {msg.content && <CopyButton text={msg.content} title={language === 'en' ? 'Copy as Markdown' : 'Copiar como Markdown'} onCopied={() => { if (msg.role === 'assistant') logInsight('chat', 'copy'); showToast(language === 'en' ? 'Copied as Markdown' : 'Copiado como Markdown') }} />}
             {msg.role === 'assistant' && (
               <button
                 className="msg-action-btn msg-regen-btn"
