@@ -4,6 +4,8 @@ const path = require('path')
 const fs = require('fs')
 const http = require('http')
 const https = require('https')
+const dns = require('dns')
+const { ipToBlockReason, hostnameBlockReason } = require('./ssrf-guard')
 
 const os = require('os')
 const { atomicWriteJSON, readJSONWithFallback } = require('./atomic-write')
@@ -949,7 +951,22 @@ ipcMain.handle('fetch-url', async (event, url) => {
     let redirects = 0
     let done = false
     const finish = (obj) => { if (!done) { done = true; resolve(obj) } }
+    // Guard SSRF (v2.113.0): valida o host (literal) e resolve o DNS antes de
+    // CADA request — revalida em redirect, defeitando redirect→localhost. Os
+    // classificadores puros vivem em electron/ssrf-guard.js.
     const get = (u) => {
+      let host
+      try { host = new URL(u).hostname } catch { return finish({ error: 'Invalid URL' }) }
+      const litReason = hostnameBlockReason(host)
+      if (litReason) return finish({ error: `URL recusada por segurança (SSRF: ${litReason}) — destinos locais/privados são bloqueados.` })
+      dns.lookup(host, (err, address) => {
+        if (err) return finish({ error: `DNS falhou para "${host}": ${err.message}` })
+        const ipReason = ipToBlockReason(address)
+        if (ipReason) return finish({ error: `URL recusada por segurança (SSRF: o host resolve para um IP ${ipReason}).` })
+        doRequest(u)
+      })
+    }
+    const doRequest = (u) => {
       let lib
       try { lib = u.startsWith('http://') ? http : https } catch { return finish({ error: 'Invalid URL' }) }
       const req = lib.get(u, { headers }, (res) => {
