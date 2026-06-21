@@ -11,6 +11,7 @@ const { providerTimeoutMs, createStallWatchdog } = require('./provider-timeouts'
 const { reasoningRequestParams } = require('./reasoning-control')
 const { cachedSystem, withCachedTools } = require('./anthropic-cache')
 const { resolveNavOutcome } = require('./browser-nav')
+const { buildOrionScript } = require('./orion-script')
 const { planScreenshot, SHOT_JPEG_QUALITY } = require('./screenshot-util')
 const { initAutoUpdater, quitAndInstall } = require('./updater')
 const { dedupeResults, formatResults, cacheKey, isFresh } = require('./web-search-util')
@@ -3248,36 +3249,11 @@ ipcMain.handle('orion-capture', async () => {
 ipcMain.handle('orion-run-action', async (event, { type, params }) => {
   const { exec: execChild } = require('child_process')
 
-  let script = ''
-  switch (type) {
-    case 'move_mouse':
-      script = `Add-Type -AssemblyName System.Windows.Forms\n[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${Math.round(params.x || 0)}, ${Math.round(params.y || 0)})`
-      break
-    case 'click': {
-      const cx = Math.round(params.x || 0), cy = Math.round(params.y || 0)
-      script = `Add-Type -AssemblyName System.Windows.Forms\n[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${cx}, ${cy})\nAdd-Type -TypeDefinition @"\nusing System; using System.Runtime.InteropServices;\npublic class MC18 { [DllImport(\"user32.dll\")] public static extern void mouse_event(int f,int x,int y,int c,int e); }\n"@\n[MC18]::mouse_event(2,0,0,0,0); Start-Sleep -Milliseconds 80; [MC18]::mouse_event(4,0,0,0,0)`
-      break
-    }
-    case 'type_text': {
-      const safeText = (params.text || '').replace(/\\/g, '\\\\').replace(/"/g, '`"').replace(/\n/g, '{ENTER}').replace(/\t/g, '{TAB}')
-      script = `Add-Type -AssemblyName System.Windows.Forms\n[System.Windows.Forms.SendKeys]::SendWait("${safeText}")`
-      break
-    }
-    case 'key_press':
-      script = `Add-Type -AssemblyName System.Windows.Forms\n[System.Windows.Forms.SendKeys]::SendWait("${params.key || '{ENTER}'}")`
-      break
-    case 'wait':
-      script = `Start-Sleep -Milliseconds ${Math.min(params.ms || 1000, 30000)}`
-      break
-    case 'scroll':
-      script = `Add-Type -TypeDefinition @"\nusing System; using System.Runtime.InteropServices;\npublic class SC18 { [DllImport(\"user32.dll\")] public static extern void mouse_event(int f,int x,int y,int c,int e); }\n"@\n[SC18]::mouse_event(0x0800,0,0,${(params.delta || 3) * 120},0)`
-      break
-    case 'open_app':
-      script = `Start-Process "${(params.app || '').replace(/"/g, '')}"`
-      break
-    default:
-      return { output: `Ação '${type}' não reconhecida`, error: null }
-  }
+  // Montagem SEGURA do script (v2.111.0): escapes contra injeção PowerShell
+  // ($()/$var), SendKeys e args do open_app vivem em electron/orion-script.js
+  // (puro + testado). main.js só escreve e executa.
+  const script = buildOrionScript(type, params || {})
+  if (script === null) return { output: `Ação '${type}' não reconhecida`, error: null }
 
   const scriptPath = path.join(os.tmpdir(), `orion_${Date.now()}.ps1`)
   return new Promise((resolve) => {
