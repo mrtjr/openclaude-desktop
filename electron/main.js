@@ -24,26 +24,22 @@ let tray = null
 let activeOllamaStream = null
 let activeProviderStream = null
 
-// ─── Path safety check ─────────────────────────────────────────────
+// ─── Path safety check (v2.112.0: segment-aware + resolve symlink) ──
+// A lista/matching puro vive em electron/path-safety.js (testado). Aqui só a
+// parte impura: resolver symlinks (realpath) ANTES de checar — assim um link
+// apontando para fora não escapa. Para arquivo a ser CRIADO (ainda não existe),
+// resolve a pasta-pai real + basename.
+const { isBlockedPath } = require('./path-safety')
 function isPathSafe(filePath) {
-  const resolved = path.resolve(filePath)
-  const home = os.homedir()
-  const blocked = [
-    path.join(home, '.ssh'),
-    path.join(home, '.gnupg'),
-    path.join(home, '.aws'),
-    path.join(home, '.config', 'gcloud'),
-    path.join(home, '.env'),
-  ]
-  if (process.platform === 'win32') {
-    blocked.push('C:\\Windows\\System32', 'C:\\Windows\\SysWOW64')
-  } else {
-    blocked.push('/etc/shadow', '/etc/passwd')
+  let resolved = path.resolve(filePath)
+  try {
+    resolved = fs.realpathSync(resolved)
+  } catch (e) {
+    // não existe ainda (write/edit de arquivo novo): resolve o pai real.
+    try { resolved = path.join(fs.realpathSync(path.dirname(resolved)), path.basename(resolved)) }
+    catch (e2) { /* pai também não existe — usa o resolved literal */ }
   }
-  for (const b of blocked) {
-    if (resolved.toLowerCase().startsWith(b.toLowerCase())) return false
-  }
-  return true
+  return !isBlockedPath(resolved, os.homedir(), process.platform)
 }
 
 const CONVERSATIONS_PATH = path.join(app.getPath('userData'), 'conversations.json')
@@ -2093,6 +2089,10 @@ ipcMain.handle('browser-type', async (event, { selector, text, pressEnter }) => 
 ipcMain.handle('browser-evaluate', async (event, code) => {
   const bw = getActiveTab()
   if (!bw) return { error: 'No active browser tab' }
+  // Guards (v2.112.0): este handler executa JS arbitrário na página. Recusa
+  // entrada não-string ou gigante antes de avaliar (defesa em profundidade).
+  if (typeof code !== 'string') return { error: 'browser-evaluate: code deve ser string' }
+  if (code.length > 50000) return { error: 'browser-evaluate: code grande demais (máx 50000 chars)' }
   try {
     const result = await bw.webContents.executeJavaScript(code)
     return { success: true, result: JSON.stringify(result).substring(0, 8000) }
