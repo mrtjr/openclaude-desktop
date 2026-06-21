@@ -6,6 +6,7 @@ const http = require('http')
 const https = require('https')
 const dns = require('dns')
 const { ipToBlockReason, hostnameBlockReason } = require('./ssrf-guard')
+const { sanitizeChildEnv } = require('./exec-env')
 
 const os = require('os')
 const { atomicWriteJSON, readJSONWithFallback } = require('./atomic-write')
@@ -472,7 +473,9 @@ ipcMain.handle('exec-command', async (event, payload) => {
       maxBuffer: 10 * 1024 * 1024, // 10MB
       windowsHide: true,
       // env extra (ex.: hooks PreToolUse recebem OPENCLAUDE_TOOL_NAME/ARGS).
-      ...(env && typeof env === 'object' ? { env: { ...process.env, ...env } } : {})
+      // Sanitizado (v2.114.0): chaves de hijack (PATH/NODE_OPTIONS/LD_PRELOAD…)
+      // são barradas; valores limitados. Ver electron/exec-env.js.
+      ...((() => { const safe = sanitizeChildEnv(env); return safe ? { env: { ...process.env, ...safe } } : {} })())
     }, finish)
     entry.child = child
     entry.markUser = () => { killedByUser = true }
