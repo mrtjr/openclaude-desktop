@@ -4,7 +4,7 @@ import {
   Loader2, AlertCircle, ImageIcon, History, Keyboard
 } from 'lucide-react'
 import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+import { sanitizeHtml } from './utils/formatting'
 
 interface AppSettings {
   provider: 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'custom'
@@ -64,7 +64,7 @@ function getModel(settings: AppSettings): string {
 
 function renderMarkdown(text: string): string {
   const raw = marked(text, { breaks: true }) as string
-  return DOMPurify.sanitize(raw)
+  return sanitizeHtml(raw)
 }
 
 export default function VisionMode({ settings, ollamaModels, onClose, onInsertToChat }: VisionModeProps) {

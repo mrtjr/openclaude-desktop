@@ -19,6 +19,41 @@ renderer.code = ({ text, lang }: any) => {
 }
 marked.use({ renderer })
 
+// ─── Sanitização HTML central (v2.116.0) ───────────────────────────
+// A varredura apontou 12 usos de dangerouslySetInnerHTML que chamavam
+// DOMPurify.sanitize com config DEFAULT, espalhada — se a config enfraquecesse,
+// todos viravam vetor de XSS. Aqui fica UMA config explícita e endurecida +
+// hook de link seguro, usada por formatMarkdown e pelos demais sites.
+//
+// Mantém o allowlist amplo padrão do DOMPurify (precisamos de input[checkbox]
+// das task-lists, span+style inline do KaTeX output:'html', code/pre/tabelas),
+// mas PROÍBE tags que são vetor e nunca aparecem na nossa saída de markdown:
+// <style> (exfil via CSS), svg/math/foreignObject (XSS), iframe/object/embed/form.
+const SANITIZE_CONFIG = {
+  FORBID_TAGS: ['style', 'svg', 'math', 'foreignObject', 'iframe', 'object', 'embed', 'form'],
+}
+
+// Hook global (uma vez): todo link abre em nova aba com rel seguro (anti
+// tabnabbing); javascript:/data: em href já são removidos pelo DOMPurify.
+let _hookAdded = false
+function ensureSanitizeHook(): void {
+  if (_hookAdded) return
+  _hookAdded = true
+  DOMPurify.addHook('afterSanitizeAttributes', (node: any) => {
+    if (node && node.tagName === 'A' && node.getAttribute && node.getAttribute('href')) {
+      node.setAttribute('target', '_blank')
+      node.setAttribute('rel', 'noopener noreferrer')
+    }
+  })
+}
+
+/** Sanitiza HTML com a config endurecida central. Use SEMPRE isto em vez de
+ *  DOMPurify.sanitize direto. */
+export function sanitizeHtml(html: string): string {
+  ensureSanitizeHook()
+  return DOMPurify.sanitize(String(html ?? ''), SANITIZE_CONFIG) as string
+}
+
 // Cache rendered HTML by source text. formatMarkdown is pure given the KaTeX
 // ready-state, but the chat re-runs it for EVERY message on every streamed
 // token (App re-renders per token), so a long conversation re-parses all of
@@ -40,7 +75,7 @@ export function formatMarkdown(text: string, cache = true): string {
   // Lazy-load KaTeX the first time math appears. This render stays plain and
   // upgrades to typeset output once the lib is ready (see useMathReady).
   if (!isKatexReady() && hasMath(text)) ensureKatex()
-  const html = DOMPurify.sanitize(marked.parse(text) as string)
+  const html = sanitizeHtml(marked.parse(text) as string)
   if (cache) {
     if (FORMAT_CACHE.size >= FORMAT_CACHE_CAP) FORMAT_CACHE.clear()
     FORMAT_CACHE.set(text, html)

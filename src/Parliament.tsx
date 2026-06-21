@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { X, Play, Copy, Loader2, CheckCircle2, AlertCircle, Users, Scale, ChevronDown, RefreshCw, Download } from 'lucide-react'
 import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+import { sanitizeHtml } from './utils/formatting'
 import type { AppSettings } from './Settings'
 import type { Provider } from './Settings'
 
@@ -37,7 +37,7 @@ interface ParliamentProps {
 
 function formatMd(text: string): string {
   const html = marked.parse(text) as string
-  return DOMPurify.sanitize(html)
+  return sanitizeHtml(html)
 }
 
 function getModelForProvider(provider: Provider, settings: AppSettings, ollamaModels: string[]): string {

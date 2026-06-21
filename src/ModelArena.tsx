@@ -4,7 +4,7 @@ import {
   Copy, Check, Loader2, Zap, Clock, Hash, ThumbsUp
 } from 'lucide-react'
 import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+import { sanitizeHtml } from './utils/formatting'
 import { AppSettings } from './Settings'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -87,9 +87,9 @@ function getDefaultModelForProvider(settings: AppSettings, provider: string): st
 function renderMarkdown(text: string): string {
   try {
     const html = marked.parse(text, { async: false }) as string
-    return DOMPurify.sanitize(html)
+    return sanitizeHtml(html)
   } catch {
-    return DOMPurify.sanitize(text)
+    return sanitizeHtml(text)
   }
 }
 

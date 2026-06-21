@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isSmallModel, parseModelSizeB, generateId, getRelativeTime, formatMarkdown } from '../src/utils/formatting'
+import { isSmallModel, parseModelSizeB, generateId, getRelativeTime, formatMarkdown, sanitizeHtml } from '../src/utils/formatting'
 
 describe('formatMarkdown (cached)', () => {
   it('renders markdown to sanitized HTML', () => {
@@ -131,5 +131,31 @@ describe('getRelativeTime', () => {
     const out = getRelativeTime(d)
     // Must NOT be "há 1 dias" — regression from v2.2.1
     expect(out).not.toMatch(/1 dias/)
+  })
+})
+
+describe('sanitizeHtml — central, endurecido (v2.116.0)', () => {
+  it('remove script e handlers de evento (XSS)', () => {
+    expect(sanitizeHtml('<img src=x onerror="alert(1)">')).not.toContain('onerror')
+    expect(sanitizeHtml('<script>alert(1)</script>hi')).not.toContain('<script')
+    expect(sanitizeHtml('<a href="javascript:alert(1)">x</a>')).not.toContain('javascript:')
+  })
+  it('bloqueia svg/style/iframe (vetores nunca usados no nosso markdown)', () => {
+    expect(sanitizeHtml('<svg><script>alert(1)</script></svg>')).not.toContain('<svg')
+    expect(sanitizeHtml('<style>body{background:url(x)}</style>')).not.toContain('<style')
+    expect(sanitizeHtml('<iframe src="evil"></iframe>')).not.toContain('<iframe')
+  })
+  it('mantém o HTML seguro do markdown (code, span, input checkbox, tabela)', () => {
+    expect(sanitizeHtml('<p><strong>x</strong> <code>y</code></p>')).toContain('<code>y</code>')
+    expect(sanitizeHtml('<input type="checkbox" disabled>')).toContain('checkbox')
+    expect(sanitizeHtml('<span style="margin:1px">k</span>')).toContain('<span')
+  })
+  it('endurece links: target _blank + rel noopener', () => {
+    const out = sanitizeHtml('<a href="https://x.com">x</a>')
+    expect(out).toContain('rel="noopener noreferrer"')
+    expect(out).toContain('target="_blank"')
+  })
+  it('formatMarkdown passa pelo sanitizeHtml (sem script)', () => {
+    expect(formatMarkdown('<script>alert(1)</script>**ok**')).not.toContain('<script')
   })
 })
