@@ -17,6 +17,19 @@
 // Tudo aqui é PURO/determinístico. A I/O (localStorage + loadMemory/saveMemory)
 // fica no useChat, fora do caminho quente (fire-and-forget).
 
+import { sanitizeFact, isDangerousFact } from './memoryInduction'
+
+/** Sanitiza uma preferência candidata antes de virar memória injetada no prompt
+ *  (v2.115.0, anti prompt-injection): remove controle/zero-width/bidi e colapsa
+ *  espaço (sanitizeFact); descarta (null) se vazia, longa demais, ou se contém
+ *  comando/injeção/expansão (isDangerousFact). Pura. */
+export function sanitizePreference(text: string): string | null {
+  const clean = sanitizeFact(text)
+  if (!clean || clean.length > MAX_PREF_LEN) return null
+  if (isDangerousFact(clean)) return null
+  return clean
+}
+
 export interface PrefCandidate {
   text: string
   count: number
@@ -74,10 +87,13 @@ export function extractPreferenceCandidates(text: string): string[] {
     if (!trimmed || trimmed.length > MAX_PREF_LEN) continue
     if (trimmed.endsWith('?')) continue // pergunta não é preferência
     if (!MARKERS.some(m => m.test(trimmed))) continue
-    const k = keyOf(trimmed)
+    // Sanitiza + descarta preferências perigosas/injeção (v2.115.0).
+    const safe = sanitizePreference(trimmed.replace(/[.!]+$/, ''))
+    if (!safe) continue
+    const k = keyOf(safe)
     if (seen.has(k)) continue
     seen.add(k)
-    out.push(trimmed.replace(/[.!]+$/, ''))
+    out.push(safe)
     if (out.length >= 3) break
   }
   return out

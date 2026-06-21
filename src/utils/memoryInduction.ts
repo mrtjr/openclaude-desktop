@@ -32,7 +32,12 @@ const STOPWORDS = new Set([
   'the', 'and', 'for', 'with', 'that', 'this', 'from', 'have', 'has', 'was', 'are', 'not', 'you', 'your', 'can', 'should', 'when', 'where', 'which', 'each', 'also', 'very', 'use', 'using', 'about', 'into', 'then', 'than', 'they', 'them', 'its',
 ])
 
-const DANGEROUS = /\b(execute_command|browser_\w+|computer_\w+|rm\s+-rf|del\s+\/|format\s+c:|curl[^\n|]*\|\s*(sh|bash)|wget[^\n|]*\|\s*(sh|bash)|invoke-expression|iex\s)\b/i
+// v2.115.0 — endurecido: variações de espaço/underscore em "execute command",
+// mais tools de risco, e expansão de shell/PS.
+const DANGEROUS = /\b(execute[\s_]*command|run_command_background|git_worktree|browser_\w+|computer_\w+|rm\s+-rf|del\s+\/|format\s+c:|curl[^\n|]*\|\s*(sh|bash)|wget[^\n|]*\|\s*(sh|bash)|invoke-expression|iex\s)\b/i
+// v2.115.0 — frases de PROMPT-INJECTION que jamais devem virar fato/preferência
+// injetada no system prompt ("ignore as instruções anteriores", "system prompt"…).
+const INJECTION = /\b(ignore|disregard|forget|override|esque[çc]a)\b[\s\S]{0,40}(instru|regras?|\brules?\b|system\s*prompt|prompt do sistema)/i
 
 /** Tokens significativos de um texto (minúsculos, sem stopwords/números). */
 export function keywordsOf(text: string): string[] {
@@ -70,9 +75,11 @@ export function sanitizeFact(text: string): string {
   return out.replace(/[ \t]+/g, ' ').trim()
 }
 
-/** True se o fato pede execução de comando/navegador — não entra em skill aprendida. */
+/** True se o fato pede execução de comando/navegador, traz frase de injeção, ou
+ *  contém expansão de shell/PS — não entra em skill aprendida nem em preferência. */
 export function isDangerousFact(text: string): boolean {
-  return DANGEROUS.test(String(text || ''))
+  const s = String(text || '')
+  return DANGEROUS.test(s) || INJECTION.test(s) || /\$\(|\$\{/.test(s)
 }
 
 /**

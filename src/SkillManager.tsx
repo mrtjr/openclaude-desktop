@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { X, Plus, Edit3, Trash2, Check, Zap, ZapOff, Pin, PinOff, Download, Upload, BookOpen } from 'lucide-react'
 import type { Skill } from './types/skill'
 import { BUILTIN_SKILLS } from './utils/skills'
+import { isDangerousFact } from './utils/memoryInduction'
 import { generateId } from './utils/formatting'
 
 interface Props {
@@ -77,7 +78,20 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
   // as demais na lista normal.
   const stagingSkills = skills.filter(s => s.status === 'staging')
   const regularSkills = skills.filter(s => s.status !== 'staging')
-  const approve = (id: string) => patch(id, { status: 'active', enabled: true })
+  // Revalida o CORPO da skill aprendida antes de ativar (v2.115.0): o usuário
+  // pode editar o rascunho em staging e injetar execução/injeção. Não valida
+  // allowed/disallowedTools (esses nomeiam tools de propósito).
+  const approve = (id: string) => {
+    const sk = skills.find(s => s.id === id)
+    const body = `${sk?.instructions || ''}\n${sk?.examples || ''}`
+    if (sk && isDangerousFact(body)) {
+      alert(pt
+        ? 'Esta skill contém instruções de execução de comando ou de injeção e não pode ser aprovada. Edite o corpo para remover antes.'
+        : 'This skill contains command-execution or injection instructions and cannot be approved. Edit the body to remove them first.')
+      return
+    }
+    patch(id, { status: 'active', enabled: true })
+  }
 
   const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid rgba(127,127,127,0.12)' }
   const iconBtn: React.CSSProperties = { background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 4, display: 'inline-flex' }
