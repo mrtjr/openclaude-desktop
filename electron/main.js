@@ -7,6 +7,7 @@ const https = require('https')
 const dns = require('dns')
 const { ipToBlockReason, hostnameBlockReason } = require('./ssrf-guard')
 const { sanitizeChildEnv } = require('./exec-env')
+const { formatMcpContent } = require('./mcp-format')
 
 const os = require('os')
 const { atomicWriteJSON, readJSONWithFallback } = require('./atomic-write')
@@ -560,6 +561,8 @@ ipcMain.handle('kill-background-command', async (event, { id } = {}) => {
 // Mata órfãos de background no encerramento (não deixar processos vazando).
 app.on('before-quit', () => {
   for (const e of bgCommands.values()) { try { killProcessTree(e.child?.pid) } catch { /* já saiu */ } }
+  // Servidores MCP também (v2.121.0): antes ficavam órfãos no quit.
+  for (const c of mcpConnections.values()) { try { c.proc.kill() } catch { /* já saiu */ } }
 })
 
 // ─── IPC: Git command (sandboxed to git only) ──────────────────────
@@ -2324,19 +2327,29 @@ ipcMain.handle('mcp-connect', async (event, { id, command, args, env }) => {
     let buffer = ''
     const pendingRequests = new Map()
     let requestId = 0
+    // Captura stderr do servidor (v2.121.0): diagnósticos de falha de
+    // handshake/plugin iam pro vazio. Mantém os últimos ~4KB.
+    let stderrBuf = ''
+    if (proc.stderr) {
+      proc.stderr.setEncoding('utf8')
+      proc.stderr.on('data', (d) => { stderrBuf = (stderrBuf + d).slice(-4096) })
+    }
 
-    const sendRequest = (method, params) => {
+    // Timeout POR MÉTODO (v2.121.0): 15s fixo travava tools/list em servidores
+    // grandes e tools/call de rede. discovery/handshake = 30s; tools/call
+    // configurável (default 60s). Inclui o stderr recente no erro de timeout.
+    const sendRequest = (method, params, timeoutMs = 30000) => {
       return new Promise((resolve, reject) => {
         const rid = ++requestId
         const msg = JSON.stringify({ jsonrpc: '2.0', id: rid, method, params }) + '\n'
         pendingRequests.set(rid, { resolve, reject })
-        proc.stdin.write(msg)
+        try { proc.stdin.write(msg) } catch (e) { pendingRequests.delete(rid); return reject(new Error('MCP stdin closed: ' + e.message)) }
         setTimeout(() => {
           if (pendingRequests.has(rid)) {
             pendingRequests.delete(rid)
-            reject(new Error('MCP request timeout'))
+            reject(new Error(`MCP timeout (${method}, ${timeoutMs}ms)` + (stderrBuf.trim() ? ` — stderr: ${stderrBuf.trim().slice(0, 500)}` : '')))
           }
-        }, 15000)
+        }, Math.max(1000, timeoutMs))
       })
     }
 
@@ -2372,36 +2385,46 @@ ipcMain.handle('mcp-connect', async (event, { id, command, args, env }) => {
     proc.on('error', notifyExit)
     proc.on('exit', notifyExit)
 
-    mcpConnections.set(id, { proc, sendRequest })
+    mcpConnections.set(id, { proc, sendRequest, getStderr: () => stderrBuf })
 
-    // Initialize
-    const initResult = await sendRequest('initialize', {
-      protocolVersion: '2024-11-05',
-      capabilities: {},
-      clientInfo: { name: 'OpenClaude Desktop', version: '1.4.0' }
-    })
+    try {
+      // Initialize (handshake = 30s)
+      const initResult = await sendRequest('initialize', {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'OpenClaude Desktop', version: '1.4.0' }
+      }, 30000)
 
-    // Handshake MCP: o cliente DEVE notificar 'initialized' após o initialize
-    // antes de chamar tools/list — sem isso, servidores estritos travam.
-    sendNotification('notifications/initialized', {})
+      // Handshake MCP: o cliente DEVE notificar 'initialized' após o initialize
+      // antes de chamar tools/list — sem isso, servidores estritos travam.
+      sendNotification('notifications/initialized', {})
 
-    // List tools
-    const toolsResult = await sendRequest('tools/list', {})
+      // List tools (discovery pode ser lenta em FS grande → 30s)
+      const toolsResult = await sendRequest('tools/list', {}, 30000)
 
-    return { success: true, serverInfo: initResult, tools: toolsResult?.tools || [] }
+      return { success: true, serverInfo: initResult, tools: toolsResult?.tools || [] }
+    } catch (initErr) {
+      // Falha no handshake (v2.121.0): NÃO deixa o processo órfão rodando.
+      try { proc.kill() } catch (e) { /* best-effort */ }
+      mcpConnections.delete(id)
+      const tail = stderrBuf.trim() ? ` — stderr: ${stderrBuf.trim().slice(0, 500)}` : ''
+      return { error: (initErr.message || 'MCP init falhou') + tail }
+    }
   } catch (e) {
     return { error: e.message }
   }
 })
 
-ipcMain.handle('mcp-call-tool', async (event, { connectionId, toolName, args }) => {
+ipcMain.handle('mcp-call-tool', async (event, { connectionId, toolName, args, timeoutMs }) => {
   const conn = mcpConnections.get(connectionId)
   if (!conn) return { error: 'MCP server not connected' }
   try {
-    const result = await conn.sendRequest('tools/call', { name: toolName, arguments: args || {} })
-    const text = result?.content?.map(c => c.text || '').join('') || JSON.stringify(result)
-    return { success: true, result: text }
-  } catch (e) { return { error: e.message } }
+    const result = await conn.sendRequest('tools/call', { name: toolName, arguments: args || {} }, Math.min(Math.max(Number(timeoutMs) || 60000, 1000), 300000))
+    return { success: !result?.isError, isError: !!result?.isError, result: formatMcpContent(result) }
+  } catch (e) {
+    const tail = conn.getStderr && conn.getStderr().trim() ? ` — stderr: ${conn.getStderr().trim().slice(0, 300)}` : ''
+    return { error: (e.message || 'MCP error') + tail }
+  }
 })
 
 ipcMain.handle('mcp-disconnect', async (event, id) => {
