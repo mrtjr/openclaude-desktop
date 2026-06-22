@@ -664,6 +664,21 @@ export default function App() {
       }
     },
     onUsage: (inputTokens, outputTokens) => usageTracking.recordUsage(effectiveSettings.provider, providerConfig.model, inputTokens, outputTokens),
+    // Episódio de memória (v2.117.0): grava o resumo do turno no agent-memory
+    // que o memory-dreaming consome — revive o auto-aprendizado (appendEpisode
+    // nunca era chamado). Fire-and-forget; respeita o toggle de memória.
+    onTurnComplete: (convId, summary) => {
+      if (settings.memoryEnabled === false) return
+      const elx = (window as any).electron
+      if (!elx?.loadAgentMemory || !elx?.saveAgentMemory) return
+      ;(async () => {
+        try {
+          const mem = (await elx.loadAgentMemory()) || { workingMemory: [], episodic: [], pinned: [], version: 1 }
+          mem.episodic = [...(mem.episodic || []), { summary, conversationId: convId, timestamp: Date.now() }].slice(-200)
+          await elx.saveAgentMemory(mem)
+        } catch { /* fire-and-forget */ }
+      })()
+    },
     skills: activeSkills,
     extraTools: mcp.mcpTools,
     semanticMatch: semantic.matchSemantic,

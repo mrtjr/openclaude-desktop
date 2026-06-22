@@ -33,6 +33,7 @@ import { mergeFact, normalizeMemory } from '../utils/persistentMemory'
 import { recallFreshFacts, renderFreshFactsBlock } from '../utils/freshFacts'
 import { extractPreferenceCandidates, recordCandidates, selectPromotable, removeCandidates } from '../utils/preferenceLearning'
 import { logInsight, beginInsightTurn, bumpInsightStep, endInsightTurn } from '../services/devInsights'
+import { buildEpisodeSummary } from '../utils/episodeMemory'
 import { createContextEngine, getModelContextLimit, effectiveContextLimit, countToolSchemas, computeMessageBudget, AUTOCOMPACT_BUFFER_RATIO } from '../services/contextEngine'
 import type { ProviderConfig } from './useProviderConfig'
 
@@ -63,6 +64,10 @@ interface UseChatOptions {
   onProviderSuccess?: () => void
   onProviderError?: (error: string) => void
   onUsage?: (inputTokens: number, outputTokens: number) => void
+  /** v2.117.0 — turno concluído com sucesso: o App grava um EPISÓDIO de memória
+   *  (revive o auto-aprendizado, que estava morto por appendEpisode nunca ser
+   *  chamado). Fire-and-forget. */
+  onTurnComplete?: (convId: string, summary: string) => void
   /** Skills disponíveis — manifesto + pinned injetados no system prompt (v2.27.0). */
   skills?: Skill[]
   /** Tools extras (ex.: MCP) mescladas às TOOLS estáticas e enviadas ao modelo (v2.35.0). */
@@ -101,6 +106,7 @@ export function useChat({
   onProviderSuccess,
   onProviderError,
   onUsage,
+  onTurnComplete,
   skills,
   extraTools,
   semanticMatch,
@@ -130,6 +136,8 @@ export function useChat({
   onProviderErrorRef.current = onProviderError
   const onUsageRef = useRef(onUsage)
   onUsageRef.current = onUsage
+  const onTurnCompleteRef = useRef(onTurnComplete)
+  onTurnCompleteRef.current = onTurnComplete
   const activeConvIdRef = useRef(activeConvId)
   activeConvIdRef.current = activeConvId
   const [isLoading, setIsLoading] = useState(false)
@@ -1477,6 +1485,13 @@ export function useChat({
       if (stopRequestedRef.current) turnOutcome = 'aborted'
       logInsight('chat', 'complete', { ms: avgRT, totalMs: Date.now() - sessionTracker.startTime, steps: sessionTracker.agentSteps, outcome: turnOutcome })
       endInsightTurn()
+
+      // Episódio de memória (v2.117.0): turno OK e substantivo vira um episódio
+      // que alimenta o memory-dreaming (antes morto). Fire-and-forget no App.
+      if (turnOutcome === 'ok' && onTurnCompleteRef.current) {
+        const summary = buildEpisodeSummary(inputText, turnFinalAnswer)
+        if (summary) onTurnCompleteRef.current(convId, summary)
+      }
 
       // Relatório .md da conversa (v2.85.0): acrescenta o passo a passo DESTE
       // turno (pedido + ações + entrega) e persiste — registro fiel e completo
