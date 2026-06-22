@@ -62,3 +62,43 @@ export function toToolDef(serverId: string, mcpTool: any): McpToolDef {
 export function serverToolsToDefs(serverId: string, tools: any[]): McpToolDef[] {
   return (Array.isArray(tools) ? tools : []).map(t => toToolDef(serverId, t))
 }
+
+/** Um valor casa o(s) tipo(s) JSON-Schema declarado(s)? Tipo desconhecido não
+ *  bloqueia (permissivo por design). */
+function matchesJsonType(v: any, type: any): boolean {
+  const types = Array.isArray(type) ? type : [type]
+  return types.some((t) => {
+    switch (t) {
+      case 'string': return typeof v === 'string'
+      case 'number': return typeof v === 'number'
+      case 'integer': return typeof v === 'number' && Number.isInteger(v)
+      case 'boolean': return typeof v === 'boolean'
+      case 'array': return Array.isArray(v)
+      case 'object': return !!v && typeof v === 'object' && !Array.isArray(v)
+      case 'null': return v === null
+      default: return true
+    }
+  })
+}
+
+/** Validação LEVE de args contra o inputSchema MCP (v2.122.0, sem dependência
+ *  nova): checa obrigatórios presentes e o tipo dos fornecidos. Evita mandar
+ *  args ruins ao servidor externo — devolve erro acionável para o modelo
+ *  corrigir. Permissivo: schema ausente/não-objeto ou tipo desconhecido passa. */
+export function validateToolArgs(args: any, schema: any): { valid: boolean; errors: string[] } {
+  const errors: string[] = []
+  if (!schema || typeof schema !== 'object' || schema.type !== 'object') return { valid: true, errors }
+  const a = args && typeof args === 'object' && !Array.isArray(args) ? args : {}
+  const props = schema.properties && typeof schema.properties === 'object' ? schema.properties : {}
+  for (const req of Array.isArray(schema.required) ? schema.required : []) {
+    if (!(req in a) || a[req] === undefined) errors.push(`faltou o argumento obrigatório "${req}"`)
+  }
+  for (const [k, v] of Object.entries(a)) {
+    const def: any = props[k]
+    if (!def || !def.type || v === undefined || v === null) continue
+    if (!matchesJsonType(v, def.type)) {
+      errors.push(`argumento "${k}" deveria ser ${Array.isArray(def.type) ? def.type.join('/') : def.type}`)
+    }
+  }
+  return { valid: errors.length === 0, errors }
+}

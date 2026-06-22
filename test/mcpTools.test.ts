@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   sanitizeServerId, parseCommand, mcpToolName, isMcpToolName,
   parseMcpToolName, toToolDef, serverToolsToDefs,
+  validateToolArgs,
 } from '../src/utils/mcpTools'
 
 describe('sanitizeServerId', () => {
@@ -58,5 +59,35 @@ describe('toToolDef / serverToolsToDefs', () => {
   it('mapeia a lista inteira', () => {
     const defs = serverToolsToDefs('db', [{ name: 'query' }, { name: 'exec' }])
     expect(defs.map(d => d.function.name)).toEqual(['mcp__db__query', 'mcp__db__exec'])
+  })
+})
+
+describe('validateToolArgs (v2.122.0)', () => {
+  const schema = {
+    type: 'object',
+    required: ['query'],
+    properties: { query: { type: 'string' }, limit: { type: 'integer' }, deep: { type: 'boolean' } },
+  }
+  it('aceita args válidos', () => {
+    expect(validateToolArgs({ query: 'x', limit: 5, deep: true }, schema)).toEqual({ valid: true, errors: [] })
+  })
+  it('reprova obrigatório ausente', () => {
+    const r = validateToolArgs({ limit: 5 }, schema)
+    expect(r.valid).toBe(false)
+    expect(r.errors[0]).toMatch(/query/)
+  })
+  it('reprova tipo errado', () => {
+    const r = validateToolArgs({ query: 'x', limit: 'cinco' }, schema)
+    expect(r.valid).toBe(false)
+    expect(r.errors.some(e => /limit/.test(e))).toBe(true)
+  })
+  it('permissivo: sem schema/objeto, ou tipo desconhecido → válido', () => {
+    expect(validateToolArgs({ a: 1 }, undefined).valid).toBe(true)
+    expect(validateToolArgs({ a: 1 }, { type: 'object', properties: { a: { type: 'weird' } } }).valid).toBe(true)
+  })
+  it('aceita union de tipos e null', () => {
+    const s = { type: 'object', properties: { x: { type: ['string', 'null'] } } }
+    expect(validateToolArgs({ x: null }, s).valid).toBe(true)
+    expect(validateToolArgs({ x: 'a' }, s).valid).toBe(true)
   })
 })
