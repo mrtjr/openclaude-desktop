@@ -332,7 +332,7 @@ ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, tem
       // Check HTTP status for Ollama errors
       if (res.statusCode && res.statusCode >= 400) {
         let errorBody = ''
-        res.on('data', (chunk) => { errorBody += chunk.toString() })
+        res.on('data', (chunk) => { if (errorBody.length < 65536) errorBody += chunk.toString() })
         res.on('end', () => {
           let errMsg = `Ollama HTTP ${res.statusCode}`
           try { const parsed = JSON.parse(errorBody); errMsg = parsed.error || errMsg } catch (e) { /* non-JSON error body */ }
@@ -1618,7 +1618,7 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
       // Check HTTP status
       if (res.statusCode && res.statusCode >= 400) {
         let errorBody = ''
-        res.on('data', (chunk) => { errorBody += chunk.toString() })
+        res.on('data', (chunk) => { if (errorBody.length < 65536) errorBody += chunk.toString() })
         res.on('end', () => {
           let errMsg = `HTTP ${res.statusCode}`
           try { const parsed = JSON.parse(errorBody); errMsg = parsed.error?.message || parsed.error || errMsg } catch (e) { /* non-JSON error body */ }
