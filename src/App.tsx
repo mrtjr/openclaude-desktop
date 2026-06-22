@@ -75,6 +75,7 @@ import { parseSlashInput } from './utils/slashCommands'
 import { applyConfigCommand, CONFIG_KEYS } from './utils/configCommand'
 import { buildStatusSegments } from './utils/statusLine'
 import { buildRecap } from './utils/recap'
+import { filterValidRecords, validApiKey, SYNC_REQUIRED_FIELDS } from './utils/syncValidation'
 import { useSpeechInput } from './hooks/useSpeechInput'
 import { appendTranscript } from './utils/speech'
 import { RegenSplit } from './components/RegenSplit'
@@ -314,26 +315,37 @@ export default function App() {
       }
       if (snap.apiKeys) {
         const keys = snap.apiKeys.data || {}
+        // Validação (v2.123.0): só aplica chave que veio como STRING (uma chave
+        // corrompida como objeto/array é descartada → mantém a local).
+        const k = (v: any, fallback: any) => validApiKey(v) ?? fallback
         const next: AppSettings = {
           ...settings,
-          openaiApiKey: keys.openai ?? settings.openaiApiKey,
-          anthropicApiKey: keys.anthropic ?? settings.anthropicApiKey,
-          geminiApiKey: keys.gemini ?? settings.geminiApiKey,
-          openrouterApiKey: keys.openrouter ?? settings.openrouterApiKey,
-          modalApiKey: keys.modal ?? settings.modalApiKey,
-          ...(keys.customApiKey ? { customApiKey: keys.customApiKey } : {}),
+          openaiApiKey: k(keys.openai, settings.openaiApiKey),
+          anthropicApiKey: k(keys.anthropic, settings.anthropicApiKey),
+          geminiApiKey: k(keys.gemini, settings.geminiApiKey),
+          openrouterApiKey: k(keys.openrouter, settings.openrouterApiKey),
+          modalApiKey: k(keys.modal, settings.modalApiKey),
+          ...(validApiKey(keys.customApiKey) ? { customApiKey: keys.customApiKey } : {}),
         } as any
         setSettings(next); localStorage.setItem('openclaude-settings', JSON.stringify(next))
       }
-      if (snap.profiles?.data && Array.isArray(snap.profiles.data)) {
-        profilesRef.current?.replaceAll?.(snap.profiles.data)
+      // Arrays de registros: valida a SHAPE de cada elemento antes de aplicar
+      // (v2.123.0) — descarta corrompidos e avisa o que caiu.
+      if (snap.profiles?.data) {
+        const { valid, dropped } = filterValidRecords(snap.profiles.data, SYNC_REQUIRED_FIELDS.profiles)
+        profilesRef.current?.replaceAll?.(valid)
+        if (dropped) showToast(settings.language === 'en' ? `Sync: ${dropped} corrupted profile(s) skipped` : `Sync: ${dropped} perfil(s) corrompido(s) descartado(s)`, 'warn')
       }
-      if (snap.scheduledTasks?.data && Array.isArray(snap.scheduledTasks.data)) {
-        scheduledTasksRef.current?.replaceAll?.(snap.scheduledTasks.data)
+      if (snap.scheduledTasks?.data) {
+        const { valid, dropped } = filterValidRecords(snap.scheduledTasks.data, SYNC_REQUIRED_FIELDS.scheduledTasks)
+        scheduledTasksRef.current?.replaceAll?.(valid)
+        if (dropped) showToast(settings.language === 'en' ? `Sync: ${dropped} corrupted task(s) skipped` : `Sync: ${dropped} tarefa(s) corrompida(s) descartada(s)`, 'warn')
       }
-      if (snap.personas?.data && Array.isArray(snap.personas.data)) {
-        try { await window.electron.personaSave?.(snap.personas.data) }
+      if (snap.personas?.data) {
+        const { valid, dropped } = filterValidRecords(snap.personas.data, SYNC_REQUIRED_FIELDS.personas)
+        try { await window.electron.personaSave?.(valid) }
         catch (e) { console.warn('[sync] persona apply failed:', e) }
+        if (dropped) showToast(settings.language === 'en' ? `Sync: ${dropped} corrupted persona(s) skipped` : `Sync: ${dropped} persona(s) corrompida(s) descartada(s)`, 'warn')
       }
     },
   })
