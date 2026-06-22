@@ -22,8 +22,14 @@ export function nextFallbackModel(
 }
 
 /** O erro é do tipo que um OUTRO modelo pode resolver? Overload/timeout/
- *  instabilidade/desconhecido sim; estouro de contexto e stall NÃO (trocar de
- *  modelo não conserta — são tratados pelos seus próprios caminhos). */
+ *  instabilidade/desconhecido/not_found sim; estouro de contexto, stall, tools e
+ *  AUTH NÃO. auth (credencial inválida) afeta todos os modelos do provedor →
+ *  trocar de modelo não conserta (fast-fail). context/stall têm caminhos
+ *  próprios. (v2.118.0) */
 export function isModelSwappableError(kind: string | undefined): boolean {
-  return kind !== 'context' && kind !== 'stall' && kind !== 'tools'
+  return kind !== 'context' && kind !== 'stall' && kind !== 'tools' && kind !== 'auth'
 }
+
+/** Teto de trocas de modelo por turno — evita o usuário esperar uma cadeia
+ *  longa/duplicada de fallbacks antes da falha final. (v2.118.0) */
+export const MAX_FALLBACK_ATTEMPTS = 3

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { nextFallbackModel, isModelSwappableError } from '../src/utils/fallbackChain'
+import { nextFallbackModel, isModelSwappableError, MAX_FALLBACK_ATTEMPTS } from '../src/utils/fallbackChain'
 
 describe('nextFallbackModel', () => {
   it('devolve o primeiro fallback ainda não tentado, pulando o atual', () => {
@@ -36,5 +36,19 @@ describe('isModelSwappableError', () => {
     expect(isModelSwappableError('network')).toBe(true)
     expect(isModelSwappableError('unknown')).toBe(true)
     expect(isModelSwappableError(undefined)).toBe(true)
+  })
+})
+
+describe('isModelSwappableError — fast-fail auth (v2.118.0)', () => {
+  it('auth NÃO é swappable (mesma credencial p/ todos os modelos)', () => {
+    expect(isModelSwappableError('auth')).toBe(false)
+  })
+  it('not_found/overloaded/timeout continuam swappable', () => {
+    expect(isModelSwappableError('not_found')).toBe(true)
+    expect(isModelSwappableError('overloaded')).toBe(true)
+  })
+  it('MAX_FALLBACK_ATTEMPTS é um teto pequeno', () => {
+    expect(MAX_FALLBACK_ATTEMPTS).toBeGreaterThanOrEqual(1)
+    expect(MAX_FALLBACK_ATTEMPTS).toBeLessThanOrEqual(5)
   })
 })

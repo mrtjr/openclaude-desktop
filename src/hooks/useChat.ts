@@ -11,7 +11,7 @@ import { generateId, isSmallModel } from '../utils/formatting'
 import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice, extractThinking } from '../utils/sanitizers'
 import { classifyProviderError, humanizeProviderError, isColdStartTimeout } from '../utils/providerErrors'
 import { initStallState, decideStallRetry } from '../utils/stallRecovery'
-import { nextFallbackModel, isModelSwappableError } from '../utils/fallbackChain'
+import { nextFallbackModel, isModelSwappableError, MAX_FALLBACK_ATTEMPTS } from '../utils/fallbackChain'
 import { renderSkillManifest, renderPinnedSkills, renderSkillBody, matchSkillsByText, collectDisallowedTools, collectAllowedTools, activeSkillsForTools, findSkill, findActiveSkills, renderActiveSkillReminder } from '../utils/skills'
 import type { Skill } from '../types/skill'
 import { resolveTurnUsage } from '../utils/usage'
@@ -704,14 +704,18 @@ export function useChat({
       // Cadeia de modelos de fallback (v2.91.0): modelos já tentados neste turno,
       // para nunca repetir um que já falhou ao percorrer settings.fallbackModels.
       const triedModels = new Set<string>()
+      let fallbackAttempts = 0
       // Troca o modelo ativo p/ o próximo fallback (mesmo provedor) ao esgotar os
       // retries de um erro recuperável. Recomputa o limite de contexto, zera os
       // orçamentos de retry (o novo modelo merece os seus) e refaz o passo.
-      // Retorna true se trocou (caller deve `steps--; continue`).
+      // Retorna true se trocou (caller deve `steps--; continue`). Cap por turno
+      // + fast-fail em auth (v2.118.0).
       const tryFallbackModel = (kind: string | undefined, hasPartial: boolean): boolean => {
         if (hasPartial || stopRequestedRef.current || !isModelSwappableError(kind)) return false
+        if (fallbackAttempts >= MAX_FALLBACK_ATTEMPTS) return false
         const fb = nextFallbackModel(finalModel, settings.fallbackModels, triedModels)
         if (!fb) return false
+        fallbackAttempts++
         triedModels.add(finalModel)
         finalModel = fb
         modelLimit = effectiveContextLimit(finalProvider, finalModel, settings.ollamaNumCtx)
@@ -1061,6 +1065,17 @@ export function useChat({
                 showToast(humanizeProviderError(err?.message, lang) + (lang === 'en' ? ' (retrying…)' : ' (tentando de novo…)'))
                 await new Promise(r => setTimeout(r, 1200))
                 steps-- // rewind: re-roda ESTE passo com a mesma entrada
+                continue
+              }
+              // Stall ESGOTADO (v2.118.0): antes de desistir, tenta um modelo de
+              // fallback — um stream travado costuma ser do modelo/endpoint, e
+              // outro modelo pode responder. (passa 'overloaded' p/ liberar o
+              // swap, já que stall não é "swappable" no fluxo normal.)
+              if (!accumulated && tryFallbackModel('overloaded', false)) {
+                setIsStreaming(false); setStreamingText(''); setStreamingPhase(null)
+                showToast(lang === 'en' ? `Stalled — switching to fallback model ${finalModel}…` : `Travou — trocando para o modelo de fallback ${finalModel}…`)
+                await new Promise(r => setTimeout(r, 600))
+                steps--
                 continue
               }
             }
@@ -1621,6 +1636,11 @@ export function useChat({
         setRunningTool({ name: tc.function.name, detail: toolCallSummary(tc.function.name, args) })
         try {
           result = await executeTool(tc.function.name, args)
+        } catch (e: any) {
+          // Guard (v2.118.0): uma exceção inesperada do executeTool NÃO pode
+          // derrubar o turno — vira um [SYSTEM INTERCEPT] e o loop continua.
+          result = `[SYSTEM INTERCEPT]: erro ao executar "${tc.function.name}": ${e?.message || e}. Tente outra abordagem ou ferramenta.`
+          tracker.errors++
         } finally {
           setRunningTool(null)
         }
