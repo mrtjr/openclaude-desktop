@@ -1808,7 +1808,8 @@ export default function App() {
             configurações, dashboard do agente) migrou para o
             UserMenu ancorado na sidebar — evita duplicação. */}
         <div className="titlebar-actions">
-          <button className="titlebar-action-btn" onClick={() => setSidebarOpen(p => !p)} title="Toggle sidebar">
+          <button className="titlebar-action-btn" onClick={() => setSidebarOpen(p => !p)} title="Toggle sidebar"
+            aria-label={settings.language === 'en' ? (sidebarOpen ? 'Hide sidebar' : 'Show sidebar') : (sidebarOpen ? 'Ocultar barra lateral' : 'Mostrar barra lateral')} aria-expanded={sidebarOpen}>
             {sidebarOpen ? <PanelLeftClose size={14} /> : <PanelLeft size={14} />}
           </button>
           {activeConv && activeConv.messages.length > 0 && (
@@ -2108,7 +2109,7 @@ export default function App() {
             )}
             {/* Streaming text — only show in the conversation that is actively streaming */}
             {chat.isStreaming && chat.streamingText && isActiveConvLoading && (
-              <div className="message message-assistant">
+              <div className="message message-assistant" aria-live="polite" aria-busy="true">
                 <div className="message-avatar"><div className="oc-logo">OC</div></div>
                 <div className="message-content">
                   <div className="message-text" dangerouslySetInnerHTML={{ __html: formatMarkdown(chat.streamingText, false) }} />
@@ -2346,16 +2347,21 @@ export default function App() {
               )}
               <div className="input-pill" onClick={e => e.stopPropagation()}>
                 <div className="input-left-actions">
-                  <button className="input-icon-btn" onClick={() => setShowCommandPalette(true)} title="Ferramentas e recursos (Ctrl+K)"><Plus size={18} /></button>
+                  <button className="input-icon-btn" onClick={() => setShowCommandPalette(true)} title="Ferramentas e recursos (Ctrl+K)" aria-label={settings.language === 'en' ? 'Tools and features' : 'Ferramentas e recursos'}><Plus size={18} /></button>
                 </div>
                 <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown}
+                  aria-label={settings.language === 'en' ? 'Message input' : 'Campo de mensagem'}
                   placeholder={isActiveConvLoading ? (settings.language === 'en' ? 'Type the next message — Enter queues it' : 'Digite a próxima mensagem — Enter coloca na fila') : PLACEHOLDER_HINTS[placeholderIdx]} className="message-input" rows={1} />
                 <div className="input-right-actions">
-                  {input.length > 0 && <button className="input-icon-btn" onClick={() => { setInput(''); textareaRef.current?.focus() }} title="Limpar"><XCircle size={14} /></button>}
+                  {input.length > 0 && <button className="input-icon-btn" onClick={() => { setInput(''); textareaRef.current?.focus() }} title="Limpar" aria-label={settings.language === 'en' ? 'Clear input' : 'Limpar campo'}><XCircle size={14} /></button>}
                   {speechInput.supported && settings.voiceInputEnabled !== false && (
                     <button
                       className="input-icon-btn"
                       onClick={speechInput.toggle}
+                      aria-label={speechInput.listening
+                        ? (settings.language === 'en' ? 'Stop dictation' : 'Parar ditado')
+                        : (settings.language === 'en' ? 'Dictate (voice input)' : 'Ditar (entrada por voz)')}
+                      aria-pressed={speechInput.listening}
                       title={speechInput.listening
                         ? (settings.language === 'en' ? 'Stop dictation' : 'Parar ditado')
                         : (settings.language === 'en' ? 'Dictate (voice input)' : 'Ditar (entrada por voz)')}
@@ -2365,13 +2371,14 @@ export default function App() {
                     </button>
                   )}
                   <button className={`mode-toggle ${isAgentMode ? 'agent-on' : ''}`} onClick={() => setIsAgentMode(!isAgentMode)}
+                    aria-label={settings.language === 'en' ? 'Toggle autonomous Agent mode' : 'Alternar modo Agente autônomo'} aria-pressed={isAgentMode}
                     title={isAgentMode ? 'Chat normal' : 'Modo Agente autônomo'}>
                     <Zap size={13} /><span>{isAgentMode ? 'Agente' : 'Chat'}</span>
                   </button>
                   {isActiveConvLoading ? (
-                    <button className="send-circle stop" onClick={chat.stopAgent} title="Parar"><Square size={14} fill="currentColor" /></button>
+                    <button className="send-circle stop" onClick={chat.stopAgent} title="Parar" aria-label={settings.language === 'en' ? 'Stop' : 'Parar'}><Square size={14} fill="currentColor" /></button>
                   ) : (
-                    <button className={`send-circle ${!input.trim() ? 'disabled' : ''}`} onClick={handleSend} disabled={!input.trim()} title="Enviar (Enter)">
+                    <button className={`send-circle ${!input.trim() ? 'disabled' : ''}`} onClick={handleSend} disabled={!input.trim()} title="Enviar (Enter)" aria-label={settings.language === 'en' ? 'Send message' : 'Enviar mensagem'}>
                       <Send size={14} />
                     </button>
                   )}

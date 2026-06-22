@@ -104,7 +104,7 @@ function ChatMessageInner({
             >
               <GitBranch size={12} />
             </button>
-            <button className="msg-action-btn" onClick={() => onDelete(msg.id)} title={language === 'en' ? 'Delete message' : 'Excluir mensagem'}><Trash size={12} /></button>
+            <button className="msg-action-btn" onClick={() => onDelete(msg.id)} title={language === 'en' ? 'Delete message' : 'Excluir mensagem'} aria-label={language === 'en' ? 'Delete message' : 'Excluir mensagem'}><Trash size={12} /></button>
           </div>
         </div>
       </div>
