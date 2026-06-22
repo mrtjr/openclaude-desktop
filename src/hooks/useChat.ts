@@ -747,8 +747,25 @@ export function useChat({
       // original throw, so worst case equals today's behavior.
       let contextCompactionsUsed = 0
       const MAX_CONTEXT_COMPACTIONS = 1
+      // Última linha de defesa (v2.118.1): truncação LOCAL sem LLM — dropa o
+      // miolo (mantém prefixo system/memória/priming + cauda recente) para o
+      // turno não morrer em HTTP 400 quando a compactação por LLM falha/esgota.
+      const localTruncate = (): boolean => {
+        const plan = planEmergencyCompaction(allMessages.length, basePrefixLen)
+        if (!plan) return false
+        allMessages = [
+          ...allMessages.slice(0, plan.regionStart),
+          { role: 'system', content: lang === 'en'
+            ? '[Older messages were truncated locally to fit the context window.]'
+            : '[Mensagens antigas foram truncadas localmente para caber na janela de contexto.]' },
+          ...allMessages.slice(plan.tailStart),
+        ]
+        logInsight('context', 'compaction', { emergency: true, local: true })
+        return true
+      }
       const emergencyContextCompact = async (): Promise<boolean> => {
-        if (contextCompactionsUsed >= MAX_CONTEXT_COMPACTIONS) return false
+        // Esgotou a compactação por LLM → cai na truncação local.
+        if (contextCompactionsUsed >= MAX_CONTEXT_COMPACTIONS) return localTruncate()
         const plan = planEmergencyCompaction(allMessages.length, basePrefixLen)
         if (!plan) return false
         const region = allMessages.slice(plan.regionStart, plan.regionEnd)
@@ -759,8 +776,8 @@ export function useChat({
             region as any, lang,
           )
           summary = r.summary || ''
-        } catch { return false }
-        if (!summary) return false
+        } catch { return localTruncate() } // compactação por LLM falhou → trunca local
+        if (!summary) return localTruncate()
         contextCompactionsUsed++
         contextSummary = mergeSummary(contextSummary, summary, undefined, lang)
         setConversations(prev => prev.map(c => c.id !== convId ? c : { ...c, contextSummary }))
@@ -794,6 +811,17 @@ export function useChat({
       // guard de ociosidade (IDLE_STEP_THRESHOLD). `steps` segue contando para
       // telemetria/nudges, mas não limita mais o loop. NÃO reintroduza um cap
       // numérico sem alinhar — foi uma decisão deliberada do usuário.
+      // Teto por blob injetado mid-turn (v2.118.1): scout/background podem trazer
+      // muito texto; sem limite, allMessages crescia sem controle e estourava a
+      // janela DEPOIS da compactação inicial (que só roda 1×/turno). Trunca cada
+      // blob com marcador.
+      const MAX_INJECTION_CHARS = 12000
+      const clampInjection = (s: string): string => {
+        const t = String(s || '')
+        return t.length > MAX_INJECTION_CHARS
+          ? t.slice(0, MAX_INJECTION_CHARS) + (lang === 'en' ? '\n…[injected context truncated]' : '\n…[contexto injetado truncado]')
+          : t
+      }
       // Injeta resultados de subagentes em background como contexto (v2.65.0).
       const injectBg = (entries: BgEntry[]) => {
         for (const e of entries) {
@@ -801,7 +829,7 @@ export function useChat({
             role: 'system',
             content: (lang === 'en'
               ? `[BACKGROUND SUBAGENT RESULT — batch ${e.id}]\n`
-              : `[RESULTADO DO SUBAGENTE EM BACKGROUND — lote ${e.id}]\n`) + (e.result || ''),
+              : `[RESULTADO DO SUBAGENTE EM BACKGROUND — lote ${e.id}]\n`) + clampInjection(e.result || ''),
           })
         }
       }
@@ -822,7 +850,7 @@ export function useChat({
               role: 'system',
               content: (lang === 'en'
                 ? `[PROACTIVE RESEARCH — current info (today) / alternative paths for: ${sr.topic}]\n`
-                : `[PESQUISA PROATIVA — info de hoje / caminhos alternativos para: ${sr.topic}]\n`) + sr.text,
+                : `[PESQUISA PROATIVA — info de hoje / caminhos alternativos para: ${sr.topic}]\n`) + clampInjection(sr.text),
             })
           }
           // Atividade = o que a IA está FAZENDO agora = a última ferramenta
