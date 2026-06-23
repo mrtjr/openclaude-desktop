@@ -63,7 +63,7 @@ interface UseChatOptions {
   showToast: (message: string) => void
   onProviderSuccess?: () => void
   onProviderError?: (error: string) => void
-  onUsage?: (inputTokens: number, outputTokens: number) => void
+  onUsage?: (inputTokens: number, outputTokens: number, durationMs?: number) => void
   /** v2.117.0 — turno concluído com sucesso: o App grava um EPISÓDIO de memória
    *  (revive o auto-aprendizado, que estava morto por appendEpisode nunca ser
    *  chamado). Fire-and-forget. */
@@ -1209,7 +1209,7 @@ export function useChat({
             const usageFn = onUsageRef.current
             if (usageFn) {
               const u = resolveTurnUsage(streamUsage, requestMessages, accumulated)
-              usageFn(u.inputTokens, u.outputTokens)
+              usageFn(u.inputTokens, u.outputTokens, Date.now() - stepStartTime)
             }
           } catch (e) { console.warn('[useChat] usage report error:', e) }
 
@@ -1401,7 +1401,7 @@ export function useChat({
             const usageFn = onUsageRef.current
             if (usageFn) {
               const u = resolveTurnUsage(response.usage, requestMessages, assistantMsg.content || '')
-              usageFn(u.inputTokens, u.outputTokens)
+              usageFn(u.inputTokens, u.outputTokens, Date.now() - stepStartTime)
             }
           } catch (e) { console.warn('[useChat] usage report error (non-stream):', e) }
 

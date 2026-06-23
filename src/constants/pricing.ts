@@ -129,6 +129,22 @@ export function calculateCost(inputTokens: number, outputTokens: number, model: 
   return (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000
 }
 
+// ─── Modal (faturamento por GPU-segundo) — v2.125.0 ─────────────────
+// Modal NÃO cobra por token: cobra o tempo de GPU ativo. A aba Custos mostrava
+// $0 porque a tabela é por-token. Aqui estimamos por DURAÇÃO (wall-clock do
+// passo ≈ tempo de GPU, incluindo cold-start, que é faturado). É ESTIMATIVA — a
+// fatura real está no console do Modal e varia pelo tipo de GPU.
+
+/** Rate padrão em $/segundo de GPU (~A100, $2.10/h). Ajustável em Settings. */
+export const MODAL_DEFAULT_GPU_RATE = 0.000583
+
+/** Custo estimado de uma chamada Modal pela duração (ms) × rate ($/s de GPU). */
+export function modalGpuCost(durationMs: number, ratePerSec: number = MODAL_DEFAULT_GPU_RATE): number {
+  const sec = Math.max(0, Number(durationMs) || 0) / 1000
+  const rate = Math.max(0, Number(ratePerSec) || 0)
+  return sec * rate
+}
+
 /** Format cost for display */
 export function formatCost(cost: number): string {
   if (cost === 0) return '$0.00'

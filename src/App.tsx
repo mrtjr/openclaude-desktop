@@ -675,7 +675,7 @@ export default function App() {
         })
       }
     },
-    onUsage: (inputTokens, outputTokens) => usageTracking.recordUsage(effectiveSettings.provider, providerConfig.model, inputTokens, outputTokens),
+    onUsage: (inputTokens, outputTokens, durationMs) => usageTracking.recordUsage(effectiveSettings.provider, providerConfig.model, inputTokens, outputTokens, { durationMs, gpuRate: settings.modalGpuRatePerSec }),
     // Episódio de memória (v2.117.0): grava o resumo do turno no agent-memory
     // que o memory-dreaming consome — revive o auto-aprendizado (appendEpisode
     // nunca era chamado). Fire-and-forget; respeita o toggle de memória.

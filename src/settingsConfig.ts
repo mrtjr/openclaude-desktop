@@ -179,6 +179,10 @@ export interface AppSettings {
   /** v2.103.0 — botão de ENTRADA por voz (push-to-talk) no composer. Só aparece
    *  se a Web Speech API existir. Default on. Ver hooks/useSpeechInput.ts. */
   voiceInputEnabled?: boolean
+  /** v2.125.0 — taxa de GPU do Modal em $/segundo para ESTIMAR custo (Modal cobra
+   *  GPU-segundo, não token). Default ~A100 ($0.000583/s). A fatura real está no
+   *  console do Modal e varia pelo tipo de GPU. Ver constants/pricing.modalGpuCost. */
+  modalGpuRatePerSec?: number
   /** v2.69.0 — SCOUT proativo (opt-in, default off): em turnos agênticos com
    *  subagentes ociosos, um worker pesquisa por conta própria dados ATUAIS (data
    *  de hoje) + caminhos alternativos sobre o que a IA principal está fazendo, e
@@ -254,6 +258,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   statusLineItems: [],
   commandSandbox: DEFAULT_SANDBOX,
   voiceInputEnabled: true,
+  modalGpuRatePerSec: 0.000583,
   scoutEnabled: false,
   compressToolOutputs: true,
 }

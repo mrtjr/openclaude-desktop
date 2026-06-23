@@ -231,6 +231,13 @@ export default function AnalyticsDashboard({ isOpen, onClose, language }: Analyt
                   </div>
                 </div>
 
+                {costSummary.byProvider['modal'] && (
+                  <div style={{ fontSize: 12, opacity: 0.7, margin: '8px 0', padding: '8px 10px', borderRadius: 6, background: 'rgba(127,127,127,0.08)', border: '1px solid rgba(127,127,127,0.18)' }}>
+                    {language === 'en'
+                      ? 'ℹ️ Modal cost is ESTIMATED by GPU-seconds (Modal bills GPU time, not tokens) — the real bill is on modal.com and varies by GPU type. Adjust the $/sec rate in Settings.'
+                      : 'ℹ️ O custo do Modal é ESTIMADO por GPU-segundo (o Modal cobra tempo de GPU, não tokens) — a fatura real está no modal.com e varia pelo tipo de GPU. Ajuste a taxa $/s em Configurações.'}
+                  </div>
+                )}
                 {providerRows.length > 0 && (
                   <>
                     <div className="analytics-section-title">{l.costByProvider}</div>

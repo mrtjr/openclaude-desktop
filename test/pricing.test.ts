@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { PRICING, getModelPricing, calculateCost, formatCost } from '../src/constants/pricing'
+import { PRICING, getModelPricing, calculateCost, formatCost, modalGpuCost, MODAL_DEFAULT_GPU_RATE } from '../src/constants/pricing'
 
 describe('getModelPricing', () => {
   it('returns exact match for known models', () => {
@@ -105,5 +105,20 @@ describe('formatCost', () => {
   it('uses 2 decimals for dollar amounts', () => {
     expect(formatCost(1.2345)).toBe('$1.23')
     expect(formatCost(99.999)).toBe('$100.00')
+  })
+})
+
+describe('modalGpuCost (v2.125.0)', () => {
+  it('custo = segundos × rate', () => {
+    expect(modalGpuCost(10000, 0.000583)).toBeCloseTo(0.00583, 6) // 10s × $0.000583
+    expect(modalGpuCost(60000, 0.001)).toBeCloseTo(0.06, 6)       // 60s × $0.001
+  })
+  it('usa o rate padrão quando omitido', () => {
+    expect(modalGpuCost(1000)).toBeCloseTo(MODAL_DEFAULT_GPU_RATE, 6)
+  })
+  it('robusto a entrada inválida (não-negativo)', () => {
+    expect(modalGpuCost(NaN as any, 0.001)).toBe(0)
+    expect(modalGpuCost(-5000, 0.001)).toBe(0)
+    expect(modalGpuCost(1000, -1)).toBe(0)
   })
 })

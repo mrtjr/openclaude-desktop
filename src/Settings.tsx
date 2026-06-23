@@ -412,6 +412,27 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                 </p>
               </div>
 
+              {/* Taxa de GPU do Modal p/ estimativa de custo (v2.125.0) */}
+              <div className="settings-group">
+                <label className="settings-label">
+                  <span>{local.language === 'pt' ? 'Modal: custo por segundo de GPU ($)' : 'Modal: cost per GPU-second ($)'}</span>
+                </label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  min={0}
+                  className="settings-input"
+                  value={local.modalGpuRatePerSec ?? 0.000583}
+                  onChange={(e) => setLocal(s => ({ ...s, modalGpuRatePerSec: Math.max(0, Number(e.target.value) || 0) }))}
+                  style={{ width: '160px' }}
+                />
+                <p style={{ fontSize: '0.74rem', color: 'var(--color-text-muted, #888)', margin: '4px 0 0' }}>
+                  {local.language === 'pt'
+                    ? 'O Modal cobra TEMPO DE GPU, não tokens — a aba Custos estima o gasto pela duração das chamadas × esta taxa. Padrão ~A100 (0.000583 $/s ≈ $2,10/h). Ajuste ao seu tipo de GPU; a fatura real fica no modal.com.'
+                    : 'Modal bills GPU TIME, not tokens — the Costs tab estimates spend from call duration × this rate. Default ~A100 (0.000583 $/s ≈ $2.10/h). Tune to your GPU type; the real bill is on modal.com.'}
+                </p>
+              </div>
+
               {/* Regras de permissão por parâmetro (v2.93.0) */}
               <div className="settings-group">
                 <label className="settings-label">

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getModelPricing, formatCost, calculateCost } from '../constants/pricing'
+import { getModelPricing, formatCost, calculateCost, modalGpuCost, MODAL_DEFAULT_GPU_RATE } from '../constants/pricing'
 
 export interface UsageEntry {
   timestamp: number
@@ -8,6 +8,10 @@ export interface UsageEntry {
   inputTokens: number
   outputTokens: number
   cost: number
+  /** v2.125.0 — segundos de GPU faturados (Modal); custo = gpuSeconds × rate. */
+  gpuSeconds?: number
+  /** v2.125.0 — true quando o custo é ESTIMADO por duração (Modal), não por token. */
+  estimated?: boolean
 }
 
 export interface UsageSummary {
@@ -41,9 +45,14 @@ function saveUsage(entries: UsageEntry[]) {
 export function useUsageTracking() {
   const [entries, setEntries] = useState<UsageEntry[]>(loadUsage)
 
-  // Record a new usage entry
-  const recordUsage = useCallback((provider: string, model: string, inputTokens: number, outputTokens: number) => {
-    const cost = calculateCost(inputTokens, outputTokens, model)
+  // Record a new usage entry. `opts.durationMs`/`opts.gpuRate` ligam o custo por
+  // GPU-segundo do Modal (v2.125.0) — provedor que NÃO cobra por token.
+  const recordUsage = useCallback((provider: string, model: string, inputTokens: number, outputTokens: number, opts?: { durationMs?: number; gpuRate?: number }) => {
+    const isModal = provider === 'modal'
+    const gpuSeconds = isModal && opts?.durationMs ? Math.max(0, opts.durationMs) / 1000 : undefined
+    const cost = isModal && opts?.durationMs
+      ? modalGpuCost(opts.durationMs, opts.gpuRate ?? MODAL_DEFAULT_GPU_RATE)
+      : calculateCost(inputTokens, outputTokens, model)
     const entry: UsageEntry = {
       timestamp: Date.now(),
       provider,
@@ -51,6 +60,7 @@ export function useUsageTracking() {
       inputTokens,
       outputTokens,
       cost,
+      ...(gpuSeconds !== undefined ? { gpuSeconds, estimated: true } : {}),
     }
     setEntries(prev => {
       // Trim in-memory too — otherwise the React state grows unbounded
