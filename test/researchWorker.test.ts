@@ -314,3 +314,21 @@ describe('runWithConcurrency', () => {
     expect(await runWithConcurrency([], 4)).toEqual([])
   })
 })
+
+describe('isStopped — interrompe ENTRE passos (base do Parar dos subagentes, v2.126.0)', () => {
+  it('para no meio do loop após o 1º passo, sem chamar o modelo de novo', async () => {
+    let stopped = false
+    let calls = 0
+    const chat: WorkerChat = async () => {
+      calls++
+      return { content: '', toolCalls: [{ id: String(calls), name: 'web_search', args: {} }] }
+    }
+    const exec: WorkerExec = async () => { stopped = true; return 'dados' } // simula o Parar durante a 1ª tool
+    const out = await runResearchWorker({
+      messages: [{ role: 'user', content: 'x' }], tools: [], chat, exec,
+      isStopped: () => stopped, maxSteps: 5,
+    })
+    expect(calls).toBe(1)               // só o 1º passo rodou
+    expect(out.text).toContain('cancelado')
+  })
+})

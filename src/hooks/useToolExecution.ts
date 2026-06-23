@@ -71,9 +71,12 @@ interface UseToolExecutionOptions {
   /** Lê TODAS as conversas (cross-sessão) para a ferramenta search_conversations
    *  (recall, ideia do Hermes — v2.82.2). Vem do conversationsRef do App. */
   getConversations?: () => Conversation[]
+  /** v2.126.0 — lê o estado de Parar do chat para abortar os workers de
+   *  delegate_subtasks (top-level e aninhados) quando o usuário clica Parar. */
+  getStopped?: () => boolean
 }
 
-export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool, backgroundTasks, subagentActivity, subagentLimiter, personas, onSetPersona, getConversations }: UseToolExecutionOptions) {
+export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool, backgroundTasks, subagentActivity, subagentLimiter, personas, onSetPersona, getConversations, getStopped }: UseToolExecutionOptions) {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
   const scoutSeqRef = useRef(0) // ids únicos + rodízio de modelo do scout
   const worktreeSeqRef = useRef(0) // sufixo único dos worktrees (v2.102.0)
@@ -744,6 +747,7 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
           try {
             let out = await runResearchWorker({
               messages: buildMessages(st, depth), tools: myTools, chat, exec: myExec, finalNudge,
+              isStopped: getStopped, // v2.126.0: Parar aborta o worker (e os aninhados via runOne)
               onProgress: (p) => subagentActivity?.progress(runId, p.step, p.toolsUsed, p.lastTool),
             })
             // Retry-com-fallback (v2.83.1): se o worker Ollama falhou no modelo
@@ -756,6 +760,7 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
                 subagentActivity?.start(runId, taskLabel, `${retryModel} (fallback)`, Date.now(), depth, parentRunId)
                 const out2 = await runResearchWorker({
                   messages: buildMessages(st, depth), tools: myTools, chat: makeOllamaChat(retryModel), exec: myExec, finalNudge,
+                  isStopped: getStopped,
                   onProgress: (p) => subagentActivity?.progress(runId, p.step, p.toolsUsed, p.lastTool),
                 })
                 if (!out2.error) { out = out2; modelUsed = `${retryModel} (fallback)` }

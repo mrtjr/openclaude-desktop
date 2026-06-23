@@ -613,6 +613,10 @@ export default function App() {
   // Fora isso, escopa as skills ao projeto da conversa ativa (v2.107.0): skills
   // de outro projeto ficam ocultas; as globais (sem projectId) sempre valem.
   const activeSkills = safeMode ? [] : scopeSkillsToProject(skills, convManager.activeConv?.projectId)
+  // Ref-box p/ propagar o Parar do chat aos workers de subagente (v2.126.0): o
+  // toolExec é criado ANTES do chat, então lê o stop via este ref (preenchido
+  // após o chat existir, abaixo).
+  const chatStopRef = useRef<() => boolean>(() => false)
   const toolExec = useToolExecution({
     settings: effectiveSettingsSafe,
     activeConvId: convManager.activeConvId,
@@ -625,6 +629,7 @@ export default function App() {
     backgroundTasks,
     subagentActivity,
     subagentLimiter,
+    getStopped: () => chatStopRef.current(),
     personas: personaList,
     onSetPersona: (p) => { setActivePersona(p as any); setActivePersonaId((p as any)?.id ?? null) },
     getConversations: () => convManager.conversationsRef.current,
@@ -699,6 +704,9 @@ export default function App() {
     personaList,
     activePersonaName: activePersona?.name ?? null,
   })
+  // Liga o ref-box ao stop do chat (v2.126.0) — agora o toolExec.getStopped
+  // reflete o Parar, propagando aos workers de subagente (inclui aninhados).
+  chatStopRef.current = chat.isStopped
 
   const activeConv = convManager.activeConv
   // True only when the currently visible conversation is the one loading

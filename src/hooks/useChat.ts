@@ -1714,5 +1714,7 @@ export function useChat({
     activeSkillNames,
     stopAgent,
     sendMessage,
+    /** v2.126.0 — leitura do stop p/ propagar Parar aos workers de subagente. */
+    isStopped: () => stopRequestedRef.current,
   }
 }
