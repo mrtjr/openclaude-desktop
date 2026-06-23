@@ -182,3 +182,19 @@ describe('computeMessageBudget', () => {
     expect(com).toBeLessThanOrEqual(Math.floor(200_000 * 0.85))
   })
 })
+
+import { getModelContextLimitInfo, isKnownModelLimit } from '../src/services/contextEngine'
+describe('getModelContextLimitInfo / isKnownModelLimit (v2.127.0)', () => {
+  it('reconhece modelo da tabela (known:true)', () => {
+    const r = getModelContextLimitInfo('claude-opus-4-8')
+    expect(r.known).toBe(true)
+    expect(r.limit).toBeGreaterThan(8192)
+  })
+  it('modelo desconhecido cai no default 8192 com known:false', () => {
+    expect(getModelContextLimitInfo('modelo-inexistente-xyz')).toEqual({ limit: 8192, known: false })
+  })
+  it('Ollama é sempre "conhecido" (num_ctx do usuário)', () => {
+    expect(isKnownModelLimit('ollama', 'qualquer-coisa')).toBe(true)
+    expect(isKnownModelLimit('modal', 'modelo-inexistente-xyz')).toBe(false)
+  })
+})

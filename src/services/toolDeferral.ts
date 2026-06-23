@@ -87,10 +87,18 @@ export function decideDeferral(
   mode: DeferralMode | undefined,
   contextLimit: number,
   toolTokens: number,
+  knownLimit: boolean = true,
 ): DeferralDecision {
   const m: DeferralMode = mode ?? 'auto'
   if (m === 'on') return { enabled: true, mode: m, reason: 'forced on' }
   if (m === 'off') return { enabled: false, mode: m, reason: 'forced off' }
+
+  // Modelo DESCONHECIDO (caiu no default 8192) — não defere no auto (v2.127.0):
+  // pode ser um modelo grande (200k) que só não está na tabela; deferir forçaria
+  // um tool_search lento e desnecessário (a classe do bug v2.12.39 no Modal/GLM).
+  if (!knownLimit) {
+    return { enabled: false, mode: m, reason: 'auto: modelo desconhecido — não defere (evita tool_search à toa)' }
+  }
 
   const ratio = contextLimit > 0 ? toolTokens / contextLimit : 0
   const pct = Math.round(ratio * 100)

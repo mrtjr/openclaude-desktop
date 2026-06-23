@@ -34,7 +34,7 @@ import { recallFreshFacts, renderFreshFactsBlock } from '../utils/freshFacts'
 import { extractPreferenceCandidates, recordCandidates, selectPromotable, removeCandidates } from '../utils/preferenceLearning'
 import { logInsight, beginInsightTurn, bumpInsightStep, endInsightTurn } from '../services/devInsights'
 import { buildEpisodeSummary } from '../utils/episodeMemory'
-import { createContextEngine, getModelContextLimit, effectiveContextLimit, countToolSchemas, computeMessageBudget, AUTOCOMPACT_BUFFER_RATIO } from '../services/contextEngine'
+import { createContextEngine, getModelContextLimit, effectiveContextLimit, isKnownModelLimit, countToolSchemas, computeMessageBudget, AUTOCOMPACT_BUFFER_RATIO } from '../services/contextEngine'
 import type { ProviderConfig } from './useProviderConfig'
 
 // The engine is pure and stateless — create once at module load.
@@ -476,6 +476,7 @@ export function useChat({
         settings.toolDeferralMode,
         effectiveContextLimit(finalProvider, finalModel, settings.ollamaNumCtx),
         countToolSchemas(allTools),
+        isKnownModelLimit(finalProvider, finalModel), // v2.127.0: não defere modelo desconhecido
       )
       const deferralEnabled = deferral.enabled
       const toolPartition = partitionTools(allTools, deferralEnabled)

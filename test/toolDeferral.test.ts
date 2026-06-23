@@ -48,3 +48,20 @@ describe('decideDeferral', () => {
     expect(d.reason.length).toBeGreaterThan(0)
   })
 })
+
+describe('decideDeferral — modelo desconhecido (v2.127.0)', () => {
+  it('NÃO defere quando o limite é desconhecido, mesmo com tools "grandes" no default 8k', () => {
+    // 2200 tokens / 8192 = 27% ≥ 15% → DEFERIRIA se conhecido; mas desconhecido não defere.
+    const d = decideDeferral('auto', 8192, 2200, false)
+    expect(d.enabled).toBe(false)
+    expect(d.reason).toMatch(/desconhecido/)
+  })
+  it('modelo conhecido segue a regra de ratio normalmente', () => {
+    expect(decideDeferral('auto', 8192, 2200, true).enabled).toBe(true)   // 27% ≥ 15%
+    expect(decideDeferral('auto', 200000, 2200, true).enabled).toBe(false) // ~1% < 15%
+  })
+  it('forced on/off ignoram o knownLimit', () => {
+    expect(decideDeferral('on', 8192, 100, false).enabled).toBe(true)
+    expect(decideDeferral('off', 8192, 9999, true).enabled).toBe(false)
+  })
+})

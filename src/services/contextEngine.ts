@@ -249,18 +249,33 @@ export function effectiveContextLimit(provider: string, model: string, ollamaNum
   return getModelContextLimit(model)
 }
 
-/** Get approximate context limit for a model. Returns 8192 as safe default. */
-export function getModelContextLimit(model: string): number {
+/** Limite de contexto + se o modelo foi RECONHECIDO na tabela (v2.127.0). Um
+ *  modelo desconhecido cai no default 8192, mas `known:false` sinaliza isso para
+ *  o caller NÃO tratar como "modelo pequeno de verdade" (ex.: não disparar
+ *  deferral de tool à toa — um GLM/modelo novo de 200k que só não está na tabela
+ *  era forçado a um tool_search desnecessário, a classe do bug v2.12.39). */
+export function getModelContextLimitInfo(model: string): { limit: number; known: boolean } {
   // Exact match first
-  if (MODEL_CONTEXT_LIMITS[model]) return MODEL_CONTEXT_LIMITS[model]
+  if (MODEL_CONTEXT_LIMITS[model]) return { limit: MODEL_CONTEXT_LIMITS[model], known: true }
   // Partial match (e.g., "gpt-4o-2024-08-06" matches "gpt-4o")
   const modelLower = model.toLowerCase()
   for (const [key, limit] of Object.entries(MODEL_CONTEXT_LIMITS)) {
     if (modelLower.startsWith(key.toLowerCase()) || modelLower.includes(key.toLowerCase())) {
-      return limit
+      return { limit, known: true }
     }
   }
-  return 8_192 // safe default
+  return { limit: 8_192, known: false } // safe default, mas NÃO reconhecido
+}
+
+/** Get approximate context limit for a model. Returns 8192 as safe default. */
+export function getModelContextLimit(model: string): number {
+  return getModelContextLimitInfo(model).limit
+}
+
+/** O modelo está na tabela de limites (exato/parcial)? Ollama (num_ctx do
+ *  usuário) é sempre "conhecido". */
+export function isKnownModelLimit(provider: string, model: string): boolean {
+  return provider === 'ollama' || getModelContextLimitInfo(model).known
 }
 
 // ─── Message budget ──────────────────────────────────────────────
