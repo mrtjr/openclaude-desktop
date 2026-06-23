@@ -769,13 +769,17 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
             errored = !!out.error
             if (errored) subagentActivity?.fail(runId, out.text, Date.now())
             else subagentActivity?.finish(runId, out.text, out.steps, out.toolsUsed, Date.now())
+            // Telemetria de subagente (v2.128.0): o digest passa a ver a taxa de
+            // falha por modelo/profundidade (antes só o painel mostrava erro).
+            logInsight('subagent', 'run', { ok: !errored, depth, model: modelUsed, steps: out.steps })
             const bits = [`${out.steps}↻`, modelUsed]
             if (out.toolsUsed.length) bits.push(summarizeToolsUsed(out.toolsUsed))
             return `[Agent ${st.id ?? '?'}]: _(${bits.join(' · ')})_\n${out.text}`
           } catch (e: any) {
             errored = true
             subagentActivity?.fail(runId, `[erro: ${e?.message || e}]`, Date.now())
-            return `[Agent ${st.id ?? '?'}]: [erro: ${e?.message || e}]`
+            logInsight('subagent', 'run', { ok: false, depth, model: modelUsed, crash: true })
+            return `[Agent ${st.id ?? '?'}]: [erro (depth ${depth}, ${modelUsed}): ${e?.message || e}]`
           } finally {
             if (slot) errored ? modalKeyPool!.markError(slot.key, 'worker error') : modalKeyPool!.release(slot.key)
           }

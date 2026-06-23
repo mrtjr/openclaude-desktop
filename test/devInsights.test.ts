@@ -732,3 +732,26 @@ describe('Onda C — inteligência (v2.110.0)', () => {
     expect(md).toContain('Tendência (1ª metade')
   })
 })
+
+describe('telemetria de subagente (v2.128.0)', () => {
+  const now = 1_700_000_000_000
+  const ev = (c: InsightCategory, a: string, m?: Record<string, string | number | boolean>, daysOld = 0): InsightEvent =>
+    ({ t: now - daysOld * 86_400_000, c, a, m })
+
+  it('agrega runs/erros por modelo e gera failing-subagent', () => {
+    const events: InsightEvent[] = []
+    // glm: 5 runs, 2 falhas (40%)
+    for (let i = 0; i < 3; i++) events.push(ev('subagent', 'run', { ok: true, model: 'glm', depth: 1 }))
+    for (let i = 0; i < 2; i++) events.push(ev('subagent', 'run', { ok: false, model: 'glm', depth: 1 }))
+    const d = summarizeInsights(events, 30, now)
+    expect(d.subagents.runs).toBe(5)
+    expect(d.subagents.errors).toBe(2)
+    expect(d.subagents.errorRate).toBe(0.4)
+    expect(d.subagents.byModel['glm']).toEqual({ runs: 5, errors: 2 })
+    expect(d.findings.some(f => f.id === 'failing-subagent' && f.evidence.includes('glm'))).toBe(true)
+  })
+  it('o relatório mostra a seção Subagentes', () => {
+    const md = formatInsightsReport(summarizeInsights([ev('subagent', 'run', { ok: false, model: 'm' })], 30, now))
+    expect(md).toContain('## Subagentes')
+  })
+})

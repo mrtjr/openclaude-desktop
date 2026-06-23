@@ -12,7 +12,7 @@
 // Errors are logged as their *category* (classifyProviderError kind), never
 // the raw text. Honors the existing `analyticsEnabled` setting.
 
-export type InsightCategory = 'chat' | 'error' | 'tool' | 'feature' | 'context' | 'provider' | 'agent' | 'skill'
+export type InsightCategory = 'chat' | 'error' | 'tool' | 'feature' | 'context' | 'provider' | 'agent' | 'skill' | 'subagent'
 
 export interface InsightEvent {
   t: number   // timestamp (ms)
@@ -46,6 +46,9 @@ export interface InsightsDigest {
   /** Carregamentos por skill (v2.109.0): o skill/load (logado desde a v2.106)
    *  finalmente agregado — quais skills são realmente usadas. */
   skillUsage: Record<string, number>
+  /** Execuções de subagente (v2.128.0): taxa de falha total e por modelo — o
+   *  digest enxerga falhas que antes só apareciam no painel ao vivo. */
+  subagents: { runs: number; errors: number; errorRate: number; byModel: Record<string, { runs: number; errors: number }> }
   friction: {
     circuitBreaks: number
     retries: number
@@ -674,6 +677,19 @@ export function buildFindings(d: Omit<InsightsDigest, 'notes' | 'findings' | 'to
         Math.round((negative / completed) * 20), { type: 'action', c: 'chat', a: 'regenerate' })
     }
   }
+  // Subagente que mais falha (v2.128.0): taxa de erro por modelo de worker.
+  {
+    const worst = Object.entries(d.subagents.byModel)
+      .map(([model, st]) => ({ model, ...st, rate: st.runs > 0 ? st.errors / st.runs : 0 }))
+      .filter(s => s.model !== 'unknown' && s.runs >= 3 && s.rate >= 0.3)
+      .sort((a, b) => b.errors - a.errors)[0]
+    if (worst) {
+      add('failing-subagent', 'warning', `Subagente falhando muito: "${worst.model}"`,
+        `${worst.model}: ${worst.errors} de ${worst.runs} execuções falharam (${Math.round(worst.rate * 100)}%)`,
+        'Modelo de worker instável (VRAM/OOM, offline ou prompt). Trocar o modelo dos subagentes ou reduzir a concorrência.',
+        worst.errors * 3, { type: 'action', c: 'subagent', a: 'run' })
+    }
+  }
   const topError = Object.entries(d.errorsByKind).sort((a, b) => b[1] - a[1])[0]
   if (topError && topError[1] >= 3) {
     add('frequent-error', 'warning', `Erro mais frequente: "${topError[0]}"`,
@@ -793,6 +809,8 @@ export function summarizeInsights(
   const friction = { circuitBreaks: 0, retries: 0, toolDenials: 0, emptyReplies: 0, contextCompactions: 0, rewriteExisting: 0 }
   const turnQuality = { regenerated: 0, quickFollowups: 0, copies: 0, branches: 0 }
   const skillUsage: Record<string, number> = {}
+  // Subagentes (v2.128.0): runs/erros total e por modelo.
+  const subAgg = { runs: 0, errors: 0, byModel: {} as Record<string, { runs: number; errors: number }> }
   const latencies: number[] = []
   // turnos com id → ciclo de vida; sem id (eventos legados) → só contagens.
   const turnMap = new Map<string, { startT: number; outcome: string | null }>()
@@ -900,6 +918,17 @@ export function summarizeInsights(
       case 'skill':
         if (e.a === 'load') bump(skillUsage, String(e.m?.name ?? 'unknown'))
         break
+      case 'subagent':
+        if (e.a === 'run') {
+          subAgg.runs++
+          const failed = e.m?.ok === false
+          if (failed) subAgg.errors++
+          const m = String(e.m?.model ?? 'unknown')
+          const slot = subAgg.byModel[m] || (subAgg.byModel[m] = { runs: 0, errors: 0 })
+          slot.runs++
+          if (failed) slot.errors++
+        }
+        break
     }
   }
 
@@ -949,6 +978,12 @@ export function summarizeInsights(
     dataQuality,
     turnQuality,
     skillUsage,
+    subagents: {
+      runs: subAgg.runs,
+      errors: subAgg.errors,
+      errorRate: subAgg.runs > 0 ? Math.round((subAgg.errors / subAgg.runs) * 100) / 100 : 0,
+      byModel: subAgg.byModel,
+    },
     friction,
     latency: computeLatency(latencies),
     turns,
@@ -1085,6 +1120,14 @@ export function formatInsightsReport(d: InsightsDigest): string {
       `- regenerações: ${tq.regenerated} · re-perguntas rápidas: ${tq.quickFollowups} · cópias: ${tq.copies} · bifurcações: ${tq.branches}`, ``)
   }
   section('Skills carregadas', d.skillUsage)
+  // Subagentes (v2.128.0).
+  if (d.subagents.runs > 0) {
+    const byModel = Object.entries(d.subagents.byModel).sort((a, b) => b[1].runs - a[1].runs)
+    lines.push(`## Subagentes`,
+      `- execuções: ${d.subagents.runs} · falhas: ${d.subagents.errors} (${Math.round(d.subagents.errorRate * 100)}%)`)
+    if (byModel.length) lines.push(`- por modelo: ${byModel.map(([m, st]) => `${m} ${st.errors}/${st.runs}`).join(' · ')}`)
+    lines.push(``)
+  }
   if (d.latency.count > 0) {
     lines.push(`## Latência`, `- amostras: ${d.latency.count} · média: ${d.latency.avgMs}ms · p95: ${d.latency.p95Ms}ms`, ``)
   }
