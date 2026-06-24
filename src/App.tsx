@@ -18,6 +18,7 @@ import AgentStepsGroup from './components/AgentStepsGroup'
 import { groupMessages } from './utils/messageGroups'
 import { sliceBeforeMessage, classifyEdit } from './utils/conversationEdit'
 import { continuationPrompt } from './utils/continuation'
+import { starterPrompts } from './utils/starterPrompts'
 import { useStableCallback } from './hooks/useStableCallback'
 import { ThinkingTimer } from './components/ThinkingTimer'
 import ProjectsBar from './components/ProjectsBar'
@@ -1491,6 +1492,17 @@ export default function App() {
     setInput('')
   }, [input, slash, slashIdx, executeSlash, isActiveConvLoading, convManager.activeConvId, convManager.newConversation])
 
+  // Clique num starter prompt do empty-state (v2.131.0): envia direto, criando
+  // a conversa lazy se preciso (mesmo padrão do handleSend).
+  const handleStarterPrompt = useCallback((text: string) => {
+    if (isActiveConvLoading) return
+    let cid = convManager.activeConvId
+    if (!cid) cid = convManager.newConversation()
+    logInsight('chat', 'starter_prompt')
+    sendMessageRef.current(text, cid)
+    setInput('')
+  }, [isActiveConvLoading, convManager.activeConvId, convManager.newConversation])
+
   // Fire the queued message once ITS conversation goes idle (switching to
   // another conversation keeps it parked until the user returns).
   useEffect(() => {
@@ -2117,6 +2129,23 @@ export default function App() {
                       ? (settings.language === 'en' ? 'Loading context…' : 'Carregando contexto…')
                       : (settings.language === 'en' ? 'Continue from a previous conversation' : 'Continuar de uma conversa anterior')}
                   </button>
+                )}
+                {/* Starter prompts (v2.131.0, estilo ChatGPT/Perplexity): some ao
+                    enviar a 1ª mensagem; clicar envia direto. */}
+                {!isActiveConvLoading && (
+                  <div className="starter-prompts">
+                    {starterPrompts(settings.language).map(sp => (
+                      <button
+                        key={sp.label}
+                        className="starter-prompt"
+                        onClick={() => handleStarterPrompt(sp.text)}
+                        title={sp.text}
+                      >
+                        <span className="starter-emoji">{sp.emoji}</span>
+                        <span className="starter-label">{sp.label}</span>
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
             ) : (

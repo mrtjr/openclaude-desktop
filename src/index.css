@@ -415,6 +415,25 @@ body {
 }
 .continue-from-btn:hover:not(:disabled) { border-color: var(--accent-border); color: var(--text-primary); background: var(--accent-dim); }
 .continue-from-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* ── Starter prompts no empty-state (estilo ChatGPT/Perplexity, v2.131.0) ── */
+.starter-prompts {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
+  max-width: 520px; margin-top: 22px;
+}
+.starter-prompt {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 13px; border-radius: 999px;
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  color: var(--text-secondary); cursor: pointer; font-size: 12.5px;
+  font-family: inherit; transition: all 0.18s; max-width: 100%;
+}
+.starter-prompt:hover {
+  border-color: var(--accent-border); background: var(--accent-dim);
+  color: var(--text-primary); transform: translateY(-1px); box-shadow: var(--shadow-sm);
+}
+.starter-emoji { font-size: 14px; line-height: 1; }
+.starter-label { white-space: nowrap; }
 .imported-context-chip {
   display: inline-flex; align-items: center; gap: 7px;
   margin-top: 16px; padding: 6px 12px;
