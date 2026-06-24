@@ -228,7 +228,7 @@ export function useChat({
     showToast('Agente interrompido pelo usuário.')
   }, [showToast, backgroundTasks, scoutController])
 
-  const sendMessage = useCallback(async (inputText: string, overrideConvId?: string, opts?: { hidden?: boolean }) => {
+  const sendMessage = useCallback(async (inputText: string, overrideConvId?: string, opts?: { hidden?: boolean; edited?: boolean }) => {
     // Prefer an explicit conversation id when provided (e.g. scheduled
     // tasks firing in batch, where several `newConversation()` calls
     // landed before the React state flushed — without an override the
@@ -253,6 +253,8 @@ export function useChat({
       content: inputText.trim(),
       // Turno de continuação (v2.130.0): vai ao provedor mas não vira bolha.
       ...(opts?.hidden ? { hidden: true } : {}),
+      // Reenvio após edição (v2.136.0): mostra o selo "editado".
+      ...(opts?.edited ? { edited: true } : {}),
       timestamp: new Date()
     }
 

@@ -139,6 +139,7 @@ function ChatMessageInner({
         {!editing && (
         <div className="message-footer">
           <span className="message-timestamp">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          {msg.edited && <span className="message-edited" title={en ? 'This message was edited and resent' : 'Esta mensagem foi editada e reenviada'}>{en ? 'edited' : 'editado'}</span>}
           <div className="message-actions">
             {msg.content && <CopyButton text={msg.content} title={language === 'en' ? 'Copy as Markdown' : 'Copiar como Markdown'} onCopied={() => { if (msg.role === 'assistant') logInsight('chat', 'copy'); showToast(language === 'en' ? 'Copied as Markdown' : 'Copiado como Markdown') }} />}
             {editable && (

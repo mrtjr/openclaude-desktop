@@ -492,6 +492,9 @@ body {
 }
 
 .message-timestamp { font-size: 10px; color: var(--text-muted); text-align: right; margin-top: 6px; }
+/* Selo "editado" em mensagens reenviadas após edição (v2.136.0) */
+.message-edited { font-size: 10px; color: var(--text-muted); font-style: italic; opacity: 0.8; }
+.message-edited::before { content: '· '; }
 .message-content { flex: 1; min-width: 0; padding-top: 4px; }
 .message-text { font-size: 14.5px; line-height: 1.65; color: var(--text-primary); }
 .message-text p { margin-bottom: 8px; }

@@ -23,6 +23,9 @@ export interface Message {
   /** v2.133.0 — perguntas de acompanhamento (chips estilo Perplexity) que o
    *  modelo sugeriu no fim da resposta. Já separadas do texto visível. */
   followups?: string[]
+  /** v2.136.0 — mensagem do usuário reenviada após edição (lápis ou ↑).
+   *  Mostra o selo "editado" na bolha, estilo ChatGPT. */
+  edited?: boolean
   timestamp: Date
 }
 

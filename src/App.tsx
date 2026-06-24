@@ -903,7 +903,7 @@ export default function App() {
   }, [showSettings, showAnalytics, showParliament, showVault, showPersona, showArena, showRAG, showWorkflow, showOrion, showVision, showCodeWorkspace, showProfiles, showScheduler, showAgentDashboard, showDevInsights])
 
   // Forward ref for sendMessage — declared early so scheduledTasks can use it
-  const sendMessageRef = useRef<(text: string, convId?: string, opts?: { hidden?: boolean }) => void>(() => {})
+  const sendMessageRef = useRef<(text: string, convId?: string, opts?: { hidden?: boolean; edited?: boolean }) => void>(() => {})
 
   const scheduledTasks = useScheduledTasks({
     enabled: true,
@@ -1316,7 +1316,7 @@ export default function App() {
     convManager.setConversations(prev => prev.map(c =>
       c.id === activeConv.id ? { ...c, messages: before } : c
     ))
-    setTimeout(() => sendMessageRef.current(decision.text), 80)
+    setTimeout(() => sendMessageRef.current(decision.text, undefined, { edited: true }), 80)
   })
   const handleBranchFrom = useStableCallback((msgId: string) => {
     if (!activeConv) return

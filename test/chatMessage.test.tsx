@@ -160,6 +160,14 @@ describe('ChatMessage - rendering (behavior preserved from the inline App map)',
     expect(props.onFollowup).toHaveBeenCalledWith('E o Y?')
   })
 
+  it('shows the "edited" badge only on edited messages', () => {
+    const props = baseProps()
+    const plain = render(<ChatMessage msg={msg({ role: 'user', content: 'oi' })} {...props} />)
+    expect(plain.container.querySelector('.message-edited')).toBeNull()
+    const edited = render(<ChatMessage msg={msg({ role: 'user', content: 'oi', edited: true })} {...props} />)
+    expect(edited.container.querySelector('.message-edited')?.textContent).toBe('editado')
+  })
+
   it('shows no follow-up chips for user messages or when the list is empty', () => {
     const props = baseProps()
     const userMsg = render(<ChatMessage msg={msg({ role: 'user', content: 'oi', followups: ['x?'] })} {...props} />)
