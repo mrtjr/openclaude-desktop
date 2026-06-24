@@ -980,6 +980,14 @@ body .update-banner {
   background: transparent; color: var(--text-secondary); padding: 2px; border-radius: 4px;
 }
 .queued-pill-cancel:hover { color: var(--text-primary); background: rgba(255,255,255,0.08); }
+/* Editando a mensagem anterior via ↑ (v2.132.0) — variação accent da pill. */
+.editing-pill {
+  display: flex; align-items: center; gap: 7px; margin: 0 4px 6px;
+  padding: 5px 12px; border-radius: 10px; font-size: 12px;
+  color: var(--accent, #6366f1); background: var(--accent-dim, rgba(99,102,241,0.1));
+  border: 1px solid var(--accent-border, rgba(99,102,241,0.4));
+}
+.editing-pill-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-badge {
   display: flex; align-items: center; gap: 6px; padding: 3px 10px;
   background: var(--accent-dim); border: 1px solid var(--accent-border);

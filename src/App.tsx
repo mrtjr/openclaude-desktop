@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore, Suspense, lazy } from 'react'
 import 'highlight.js/styles/github-dark.css'
-import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, ArrowDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, MicOff, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder, Wrench, BrainCircuit, Check } from 'lucide-react'
+import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, ArrowDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, MicOff, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder, Wrench, BrainCircuit, Check, Pencil } from 'lucide-react'
 import { loadSettings, type AppSettings } from './settingsConfig'
 import { BackgroundSubagentRegistry } from './utils/backgroundSubagents'
 import { SubagentActivityStore } from './utils/subagentActivity'
@@ -16,7 +16,7 @@ import OnboardingModal from './components/OnboardingModal'
 import ChatMessage from './components/ChatMessage'
 import AgentStepsGroup from './components/AgentStepsGroup'
 import { groupMessages } from './utils/messageGroups'
-import { sliceBeforeMessage, classifyEdit } from './utils/conversationEdit'
+import { sliceBeforeMessage, classifyEdit, lastUserMessage } from './utils/conversationEdit'
 import { continuationPrompt } from './utils/continuation'
 import { starterPrompts } from './utils/starterPrompts'
 import { useStableCallback } from './hooks/useStableCallback'
@@ -143,6 +143,9 @@ export default function App() {
   // the composer no longer locks for the whole 3–10 min turn). convId pins
   // the queue to the conversation it was typed in.
   const [queuedMessage, setQueuedMessage] = useState<{ text: string; convId: string | null } | null>(null)
+  // Editando a última mensagem via ↑ no composer vazio (v2.132.0, estilo
+  // ChatGPT): quando setado, o próximo envio faz edit-resend em vez de anexar.
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null)
   const [taskPlanCollapsed, setTaskPlanCollapsed] = useState(false)
   const [updateAvailable, setUpdateAvailable] = useState<{available: boolean, releaseUrl: string, latestVersion: string} | null>(null)
   // Auto-update (electron-updater): set once a new version finished downloading
@@ -1461,6 +1464,15 @@ export default function App() {
 
   const handleSend = useCallback(() => {
     if (!input.trim()) return
+    // Editando a última mensagem (↑): re-roda a conversa a partir dela com o
+    // texto novo, em vez de anexar um turno (v2.132.0).
+    if (editingMsgId) {
+      const id = editingMsgId
+      setEditingMsgId(null)
+      handleEditResend(id, input)
+      setInput('')
+      return
+    }
     // If the input is a complete, unambiguous slash command, route it
     // through the executor instead of sending to the model.
     if (slash && slash.matches.length > 0) {
@@ -1490,7 +1502,7 @@ export default function App() {
     lastTurnCompleteAtRef.current = 0
     sendMessageRef.current(payload.trim(), cid)
     setInput('')
-  }, [input, slash, slashIdx, executeSlash, isActiveConvLoading, convManager.activeConvId, convManager.newConversation])
+  }, [input, slash, slashIdx, executeSlash, isActiveConvLoading, convManager.activeConvId, convManager.newConversation, editingMsgId, handleEditResend])
 
   // Clique num starter prompt do empty-state (v2.131.0): envia direto, criando
   // a conversa lazy se preciso (mesmo padrão do handleSend).
@@ -1529,6 +1541,19 @@ export default function App() {
       }
       if (e.key === 'Escape') { e.preventDefault(); setInput(''); return }
     }
+    // ↑ no composer VAZIO: recupera a última mensagem do usuário para editar e
+    // re-rodar (estilo ChatGPT). Só quando vazio, p/ não atrapalhar a navegação
+    // do cursor em texto multilinha. Esc cancela a edição.
+    if (e.key === 'ArrowUp' && !input && !editingMsgId && !isActiveConvLoading && activeConv) {
+      const last = lastUserMessage(activeConv.messages)
+      if (last) {
+        e.preventDefault()
+        setEditingMsgId(last.id)
+        setInput(last.content)
+        return
+      }
+    }
+    if (e.key === 'Escape' && editingMsgId) { e.preventDefault(); setEditingMsgId(null); setInput(''); return }
     // Enter sends; Shift+Enter inserts newline. Ctrl/Cmd+Enter also sends
     // (ChatGPT/Claude.ai muscle memory — some users disable plain Enter via
     // IME or accessibility tools and rely on the modifier variant).
@@ -2421,6 +2446,16 @@ export default function App() {
                   </button>
                 </div>
               )}
+              {editingMsgId && (
+                <div className="editing-pill" title={settings.language === 'en' ? 'Editing your previous message — send to re-run from here' : 'Editando sua mensagem anterior — envie para re-rodar a partir dela'}>
+                  <Pencil size={11} />
+                  <span className="editing-pill-text">{settings.language === 'en' ? 'Editing previous message · Esc to cancel' : 'Editando mensagem anterior · Esc cancela'}</span>
+                  <button className="queued-pill-cancel" title={settings.language === 'en' ? 'Cancel edit' : 'Cancelar edição'}
+                    onClick={() => { setEditingMsgId(null); setInput(''); textareaRef.current?.focus() }}>
+                    <X size={11} />
+                  </button>
+                </div>
+              )}
               <div className="input-pill" onClick={e => e.stopPropagation()}>
                 <div className="input-left-actions">
                   <button className="input-icon-btn" onClick={() => setShowCommandPalette(true)} title="Ferramentas e recursos (Ctrl+K)" aria-label={settings.language === 'en' ? 'Tools and features' : 'Ferramentas e recursos'}><Plus size={18} /></button>
@@ -2429,7 +2464,7 @@ export default function App() {
                   aria-label={settings.language === 'en' ? 'Message input' : 'Campo de mensagem'}
                   placeholder={isActiveConvLoading ? (settings.language === 'en' ? 'Type the next message — Enter queues it' : 'Digite a próxima mensagem — Enter coloca na fila') : PLACEHOLDER_HINTS[placeholderIdx]} className="message-input" rows={1} />
                 <div className="input-right-actions">
-                  {input.length > 0 && <button className="input-icon-btn" onClick={() => { setInput(''); textareaRef.current?.focus() }} title="Limpar" aria-label={settings.language === 'en' ? 'Clear input' : 'Limpar campo'}><XCircle size={14} /></button>}
+                  {input.length > 0 && <button className="input-icon-btn" onClick={() => { setInput(''); setEditingMsgId(null); textareaRef.current?.focus() }} title="Limpar" aria-label={settings.language === 'en' ? 'Clear input' : 'Limpar campo'}><XCircle size={14} /></button>}
                   {speechInput.supported && settings.voiceInputEnabled !== false && (
                     <button
                       className="input-icon-btn"

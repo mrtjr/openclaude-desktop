@@ -32,6 +32,19 @@ export function canEditMessage(msg: Message): boolean {
 }
 
 /**
+ * The most recent editable user message (skips hidden continuation turns).
+ * Powers the ChatGPT "press ↑ on an empty composer to edit your last message"
+ * shortcut. Returns null when there's nothing to recall.
+ */
+export function lastUserMessage(messages: Message[]): Message | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (!m.hidden && canEditMessage(m)) return m
+  }
+  return null
+}
+
+/**
  * Decide what an edit should do once the user commits the textarea:
  *  - 'noop'   — the text is unchanged (ignoring surrounding whitespace);
  *               just close the editor, don't churn the conversation.

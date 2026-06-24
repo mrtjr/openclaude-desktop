@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sliceBeforeMessage, canEditMessage, classifyEdit } from '../src/utils/conversationEdit'
+import { sliceBeforeMessage, canEditMessage, classifyEdit, lastUserMessage } from '../src/utils/conversationEdit'
 import type { Message } from '../src/types'
 
 let seq = 0
@@ -47,6 +47,27 @@ describe('canEditMessage', () => {
     expect(canEditMessage(msg({ role: 'user', content: '   ' }))).toBe(false)
     expect(canEditMessage(msg({ role: 'assistant', content: 'oi' }))).toBe(false)
     expect(canEditMessage(msg({ role: 'tool', content: 'oi' }))).toBe(false)
+  })
+})
+
+describe('lastUserMessage', () => {
+  it('returns the most recent editable user message', () => {
+    const u1 = msg({ id: 'u1', content: 'primeira' })
+    const a1 = msg({ id: 'a1', role: 'assistant', content: 'resposta' })
+    const u2 = msg({ id: 'u2', content: 'segunda' })
+    expect(lastUserMessage([u1, a1, u2])?.id).toBe('u2')
+  })
+
+  it('skips hidden continuation turns and assistant messages', () => {
+    const u1 = msg({ id: 'u1', content: 'real' })
+    const hidden = msg({ id: 'h1', content: 'continue de onde parou', hidden: true })
+    const a1 = msg({ id: 'a1', role: 'assistant', content: 'resp' })
+    expect(lastUserMessage([u1, hidden, a1])?.id).toBe('u1')
+  })
+
+  it('returns null when there is no user message', () => {
+    expect(lastUserMessage([msg({ role: 'assistant', content: 'oi' })])).toBeNull()
+    expect(lastUserMessage([])).toBeNull()
   })
 })
 
