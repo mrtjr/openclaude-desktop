@@ -13,6 +13,13 @@ export interface Message {
   /** Captured reasoning/thinking blocks (Extended-Thinking display) when the
    *  model emitted any. Shown collapsibly; never sent back to the provider. */
   thinking?: string
+  /** v2.130.0 — o turno foi cortado pelo limite de tokens (finish_reason
+   *  length/max_tokens). Liga o botão "Continuar gerando" na bolha. */
+  truncated?: boolean
+  /** v2.130.0 — turno injetado pelo sistema (ex.: o "continue de onde parou"
+   *  da continuação) que vai no request ao provedor mas NÃO é renderizado como
+   *  bolha no chat. */
+  hidden?: boolean
   timestamp: Date
 }
 

@@ -1,5 +1,5 @@
 import { memo, useState } from 'react'
-import { User, RefreshCw, GitBranch, Trash, Pencil, Check } from 'lucide-react'
+import { User, RefreshCw, GitBranch, Trash, Pencil, Check, CornerDownRight } from 'lucide-react'
 import type { Message } from '../types'
 import { formatMarkdown } from '../utils/formatting'
 import { applyDisplayTransforms, type DisplayTransform } from '../utils/outputHooks'
@@ -40,6 +40,9 @@ interface ChatMessageProps {
    *  from that point (ChatGPT-style). Optional: when absent, the pencil is
    *  hidden. Must be identity-stable (App uses useStableCallback). */
   onEditResend?: (msgId: string, newText: string) => void
+  /** v2.130.0 — resume a response that the provider cut off at the token
+   *  limit (ChatGPT "Continue generating"). Shown only when msg.truncated. */
+  onContinue?: (msgId: string) => void
   showToast: (message: string) => void
   /** v2.94.0 — transformações de exibição (MessageDisplay): aplicadas ao texto
    *  do assistente antes de renderizar. Identidade estável (memoizado no App). */
@@ -48,7 +51,7 @@ interface ChatMessageProps {
 
 function ChatMessageInner({
   msg, language, showThinking, collapsedTools,
-  onToggleCollapse, onOpenArtifact, onRegenerate, onBranch, onDelete, onEditResend, showToast, displayTransforms,
+  onToggleCollapse, onOpenArtifact, onRegenerate, onBranch, onDelete, onEditResend, onContinue, showToast, displayTransforms,
 }: ChatMessageProps) {
   const en = language === 'en'
   // In-place edit state (ChatGPT-style). Local so toggling it never touches
@@ -108,6 +111,16 @@ function ChatMessageInner({
           >
             🎨 {language === 'pt' ? 'Visualizar artefato' : 'Open artifact'}
           </button>
+        )}
+        {!editing && msg.role === 'assistant' && msg.truncated && onContinue && (
+          <div className="truncated-row">
+            <span className="truncated-hint" title={en ? 'The provider stopped at the token limit' : 'O provedor parou no limite de tokens'}>
+              {en ? 'Response cut off at the token limit' : 'Resposta cortada no limite de tokens'}
+            </span>
+            <button className="continue-gen-btn" onClick={() => onContinue(msg.id)} title={en ? 'Continue generating from where it stopped' : 'Continuar gerando de onde parou'}>
+              <CornerDownRight size={12} /> {en ? 'Continue generating' : 'Continuar gerando'}
+            </button>
+          </div>
         )}
         {msg.toolCalls && msg.toolCalls.map((tc, i) => (
           <ToolCallBlock

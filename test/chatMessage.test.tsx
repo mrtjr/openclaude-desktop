@@ -35,6 +35,7 @@ function baseProps() {
     onBranch: vi.fn(),
     onDelete: vi.fn(),
     onEditResend: vi.fn(),
+    onContinue: vi.fn(),
     showToast: vi.fn(),
   }
 }
@@ -129,6 +130,23 @@ describe('ChatMessage - rendering (behavior preserved from the inline App map)',
     fireEvent.click(container.querySelector('.message-edit-cancel')!)
     expect(props.onEditResend).not.toHaveBeenCalled()
     expect(container.querySelector('.message-edit-area')).toBeNull()
+  })
+
+  it('shows "Continue generating" only on truncated assistant messages and wires the id', () => {
+    const props = baseProps()
+    const normal = render(<ChatMessage msg={msg({ role: 'assistant', content: 'completa' })} {...props} />)
+    expect(normal.container.querySelector('.continue-gen-btn')).toBeNull()
+    const cut = render(<ChatMessage msg={msg({ id: 'a7', role: 'assistant', content: 'cortada no meio', truncated: true })} {...props} />)
+    const btn = cut.container.querySelector('.continue-gen-btn')!
+    expect(btn).toBeTruthy()
+    fireEvent.click(btn)
+    expect(props.onContinue).toHaveBeenCalledWith('a7')
+  })
+
+  it('does not show "Continue generating" when no onContinue handler is given', () => {
+    const props = baseProps()
+    const { container } = render(<ChatMessage msg={msg({ role: 'assistant', truncated: true })} {...props} onContinue={undefined} />)
+    expect(container.querySelector('.continue-gen-btn')).toBeNull()
   })
 
   it('shows the main argument in the tool-call header (v2.12.52)', () => {

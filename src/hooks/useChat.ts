@@ -15,6 +15,7 @@ import { nextFallbackModel, isModelSwappableError, MAX_FALLBACK_ATTEMPTS } from 
 import { renderSkillManifest, renderPinnedSkills, renderSkillBody, matchSkillsByText, collectDisallowedTools, collectAllowedTools, activeSkillsForTools, findSkill, findActiveSkills, renderActiveSkillReminder } from '../utils/skills'
 import type { Skill } from '../types/skill'
 import { resolveTurnUsage } from '../utils/usage'
+import { isLengthTruncated } from '../utils/continuation'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
 import { applyPlanToolCalls, planIsIncomplete, type LocalTask } from '../utils/planTracker'
 import { resolveAdaptiveEffort } from '../utils/adaptiveEffort'
@@ -226,7 +227,7 @@ export function useChat({
     showToast('Agente interrompido pelo usuário.')
   }, [showToast, backgroundTasks, scoutController])
 
-  const sendMessage = useCallback(async (inputText: string, overrideConvId?: string) => {
+  const sendMessage = useCallback(async (inputText: string, overrideConvId?: string, opts?: { hidden?: boolean }) => {
     // Prefer an explicit conversation id when provided (e.g. scheduled
     // tasks firing in batch, where several `newConversation()` calls
     // landed before the React state flushed — without an override the
@@ -249,6 +250,8 @@ export function useChat({
       id: generateId(),
       role: 'user',
       content: inputText.trim(),
+      // Turno de continuação (v2.130.0): vai ao provedor mas não vira bolha.
+      ...(opts?.hidden ? { hidden: true } : {}),
       timestamp: new Date()
     }
 
@@ -1273,6 +1276,8 @@ export function useChat({
             const finalMsg: Message = {
               id: generateId(), role: 'assistant', content: safeContent,
               ...(turnThinking ? { thinking: turnThinking } : {}),
+              // Cortado pelo limite de tokens? Liga o "Continuar gerando" (v2.130.0).
+              ...(isLengthTruncated(finishReason) ? { truncated: true } : {}),
               timestamp: new Date()
             }
             turnFinalAnswer = safeContent || turnFinalAnswer // p/ o relatório .md
@@ -1456,6 +1461,8 @@ export function useChat({
               id: generateId(), role: 'assistant',
               content: safeContent,
               ...(turnThinking ? { thinking: turnThinking } : {}),
+              // Cortado pelo limite de tokens? Liga o "Continuar gerando" (v2.130.0).
+              ...(isLengthTruncated(choice.finish_reason) ? { truncated: true } : {}),
               timestamp: new Date()
             }
             turnFinalAnswer = safeContent || turnFinalAnswer // p/ o relatório .md

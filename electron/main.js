@@ -1691,6 +1691,13 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
                   if (toolEntries.length > 0) {
                     const tool_calls = toolEntries.map(t => ({ id: t.id, type: 'function', function: { name: t.name, arguments: t.argsStr } }))
                     event.sender.send('ollama-stream-chunk', { choices: [{ delta: { tool_calls }, finish_reason: 'tool_calls' }] })
+                  } else {
+                    // Caso TEXTO: o Anthropic não emite finish_reason em SSE, então
+                    // o renderer nunca saberia que a resposta foi cortada por
+                    // max_tokens. Mapeia stop_reason → finish_reason OpenAI-shape
+                    // ('max_tokens'/'end_turn'→'stop') p/ ligar "Continuar gerando".
+                    const fr = parsed.delta.stop_reason === 'end_turn' ? 'stop' : parsed.delta.stop_reason
+                    event.sender.send('ollama-stream-chunk', { choices: [{ delta: {}, finish_reason: fr }] })
                   }
                   // Emit final usage in OpenAI-shape so the renderer has a single path.
                   event.sender.send('ollama-stream-chunk', { choices: [], usage: { ...anthropicUsage, total_tokens: anthropicUsage.prompt_tokens + anthropicUsage.completion_tokens } })

@@ -17,6 +17,7 @@ import ChatMessage from './components/ChatMessage'
 import AgentStepsGroup from './components/AgentStepsGroup'
 import { groupMessages } from './utils/messageGroups'
 import { sliceBeforeMessage, classifyEdit } from './utils/conversationEdit'
+import { continuationPrompt } from './utils/continuation'
 import { useStableCallback } from './hooks/useStableCallback'
 import { ThinkingTimer } from './components/ThinkingTimer'
 import ProjectsBar from './components/ProjectsBar'
@@ -891,7 +892,7 @@ export default function App() {
   }, [showSettings, showAnalytics, showParliament, showVault, showPersona, showArena, showRAG, showWorkflow, showOrion, showVision, showCodeWorkspace, showProfiles, showScheduler, showAgentDashboard, showDevInsights])
 
   // Forward ref for sendMessage — declared early so scheduledTasks can use it
-  const sendMessageRef = useRef<(text: string, convId?: string) => void>(() => {})
+  const sendMessageRef = useRef<(text: string, convId?: string, opts?: { hidden?: boolean }) => void>(() => {})
 
   const scheduledTasks = useScheduledTasks({
     enabled: true,
@@ -1311,6 +1312,20 @@ export default function App() {
     forkFrom(activeConv.id, idx)
     showToast(settings.language === 'en' ? 'Conversation branched' : 'Conversa bifurcada')
   })
+  // Continuar uma resposta truncada pelo limite de tokens (estilo ChatGPT,
+  // v2.130.0). Limpa a flag da bolha cortada (some o botão) e reenvia um turno
+  // OCULTO pedindo p/ retomar — a continuação aparece como uma nova bolha do
+  // assistente logo abaixo. Reusa todo o pipeline (retries/tools/usage).
+  const handleContinue = useStableCallback((msgId: string) => {
+    if (!activeConv || isActiveConvLoading) return
+    logInsight('chat', 'continue_generation')
+    convManager.setConversations(prev => prev.map(c =>
+      c.id === activeConv.id
+        ? { ...c, messages: c.messages.map(m => m.id === msgId ? { ...m, truncated: false } : m) }
+        : c
+    ))
+    setTimeout(() => sendMessageRef.current(continuationPrompt(settings.language), undefined, { hidden: true }), 80)
+  })
 
   // Slash command parse + execute. Memoised so the popover render
   // doesn't re-walk SLASH_COMMANDS on every unrelated state change.
@@ -1543,7 +1558,8 @@ export default function App() {
   // block instead of N full message rows. Memoized on the messages
   // array identity, so per-chunk streaming re-renders reuse it.
   const renderItems = useMemo(
-    () => (activeConv ? groupMessages(activeConv.messages) : []),
+    // Turnos OCULTOS (continuação v2.130.0) vão ao provedor mas não viram bolha.
+    () => (activeConv ? groupMessages(activeConv.messages.filter(m => !m.hidden)) : []),
     [activeConv?.messages],
   )
   // The tail group of a running turn stays open (live progress);
@@ -2132,6 +2148,7 @@ export default function App() {
                   onBranch={handleBranchFrom}
                   onDelete={handleDeleteMessage}
                   onEditResend={handleEditResend}
+                  onContinue={handleContinue}
                   showToast={showToast}
                   displayTransforms={displayTransforms}
                 />

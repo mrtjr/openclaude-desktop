@@ -1084,6 +1084,22 @@ body .update-banner {
 .message-edit-save { background: var(--accent, #6366f1); color: #fff; border-color: transparent; }
 .message-edit-save:hover { filter: brightness(1.08); }
 
+/* ── Continuar resposta truncada (estilo ChatGPT, v2.130.0) ── */
+.truncated-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px dashed rgba(127,127,127,0.25);
+}
+.truncated-hint { font-size: 12px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 5px; }
+.truncated-hint::before { content: '✂'; opacity: 0.7; }
+.continue-gen-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; padding: 5px 12px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--accent, #6366f1); background: transparent;
+  color: var(--accent, #6366f1); transition: all 0.15s;
+}
+.continue-gen-btn:hover { background: var(--accent, #6366f1); color: #fff; }
+
 /* ── Task Plan panel — checklist estilo Claude (estado claro + progresso) ── */
 .task-plan-panel {
   max-width: 820px; margin: 0 auto 12px;
