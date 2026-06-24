@@ -70,6 +70,12 @@ export interface Conversation {
    *  Code) — execute_command/run_command_background e ops de arquivo rodam aqui
    *  por padrão. Vence o cwd do projeto. Undefined = sem pasta apontada. */
   cwd?: string
+  /** v2.137.0 — o usuário renomeou manualmente; a auto-titulação da 1ª
+   *  mensagem NÃO deve sobrescrever. */
+  titleManual?: boolean
+  /** v2.138.0 — arquivada: some da lista principal (estilo ChatGPT), visível
+   *  só no filtro "Arquivadas". */
+  archived?: boolean
 }
 
 /** A Project groups related conversations into a workspace (Claude-style).

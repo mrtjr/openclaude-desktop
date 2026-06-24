@@ -251,6 +251,13 @@ body {
 .conv-title { font-size: 12.5px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.35; }
 .conv-item:hover .conv-title { color: var(--text-primary); }
 .conv-item.active .conv-title { color: var(--text-primary); font-weight: 500; }
+/* Renomear conversa inline (v2.137.0) */
+.conv-rename-input {
+  width: 100%; box-sizing: border-box; font-size: 12.5px; line-height: 1.35;
+  font-family: inherit; color: var(--text-primary);
+  background: var(--bg-tertiary); border: 1px solid var(--accent, #6366f1);
+  border-radius: 6px; padding: 2px 6px; outline: none;
+}
 .conv-date { font-size: 10px; color: var(--text-muted); margin-top: 2px; letter-spacing: 0.2px; }
 .conv-icon { color: var(--text-muted); flex-shrink: 0; opacity: 0.7; }
 .conv-item.active .conv-icon { color: var(--accent); opacity: 1; }

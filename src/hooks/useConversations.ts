@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type { Conversation } from '../types'
 import { generateId } from '../utils/formatting'
+import { sanitizeTitle } from '../utils/conversationTitle'
 
 export function useConversations() {
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -146,6 +147,14 @@ export function useConversations() {
     })
   }, [activeConvId])
 
+  // Renomear (estilo ChatGPT/Claude, v2.137.0): marca titleManual p/ a
+  // auto-titulação da 1ª mensagem não sobrescrever. Título vazio é ignorado.
+  const renameConversation = useCallback((id: string, rawTitle: string) => {
+    const title = sanitizeTitle(rawTitle)
+    if (!title) return
+    setConversations(prev => prev.map(c => c.id === id ? { ...c, title, titleManual: true } : c))
+  }, [])
+
   const togglePin = useCallback((convId: string) => {
     setPinnedConvs(prev => {
       const next = new Set(prev)
@@ -217,6 +226,7 @@ export function useConversations() {
     saveNow,
     newConversation,
     deleteConversation,
+    renameConversation,
     togglePin,
     exportConversation,
   }

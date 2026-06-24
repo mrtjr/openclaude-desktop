@@ -431,6 +431,13 @@ export default function App() {
   // ─── Projects (workspaces, v2.12.42) ───────────────────────────
   const projManager = useProjects()
   const [assigningConvId, setAssigningConvId] = useState<string | null>(null)
+  // Renomear conversa inline na sidebar (estilo ChatGPT/Claude, v2.137.0).
+  const [renamingConvId, setRenamingConvId] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
+  const commitRename = useStableCallback(() => {
+    if (renamingConvId) convManager.renameConversation(renamingConvId, renameDraft)
+    setRenamingConvId(null)
+  })
   const projectCounts = useMemo(() => countByProject(convManager.conversations), [convManager.conversations])
   const handleNewConversation = useCallback(() => {
     const id = convManager.newConversation()
@@ -2024,15 +2031,34 @@ export default function App() {
                   onClick={() => convManager.setActiveConvId(conv.id)}>
                   {convManager.pinnedConvs.has(conv.id) ? <Pin size={14} className="conv-icon pinned-icon" /> : <MessageSquare size={14} className="conv-icon" />}
                   <div className="conv-info">
-                    <span className="conv-title">
-                      {unreadConvIds.has(conv.id) && (
-                        <span title={settings.language === 'en' ? 'New reply' : 'Resposta nova'} style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#22c55e', marginRight: 6, verticalAlign: 'middle' }} />
-                      )}
-                      {conv.title}
-                    </span>
+                    {renamingConvId === conv.id ? (
+                      <input
+                        className="conv-rename-input"
+                        value={renameDraft}
+                        autoFocus
+                        onClick={e => e.stopPropagation()}
+                        onChange={e => setRenameDraft(e.target.value)}
+                        onBlur={commitRename}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') { e.preventDefault(); commitRename() }
+                          else if (e.key === 'Escape') { e.preventDefault(); setRenamingConvId(null) }
+                        }}
+                        aria-label={settings.language === 'en' ? 'Rename conversation' : 'Renomear conversa'}
+                      />
+                    ) : (
+                      <span className="conv-title" onDoubleClick={(e) => { e.stopPropagation(); setRenameDraft(conv.title); setRenamingConvId(conv.id) }}>
+                        {unreadConvIds.has(conv.id) && (
+                          <span title={settings.language === 'en' ? 'New reply' : 'Resposta nova'} style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#22c55e', marginRight: 6, verticalAlign: 'middle' }} />
+                        )}
+                        {conv.title}
+                      </span>
+                    )}
                     <span className="conv-date">{getRelativeTime(conv.createdAt)}</span>
                   </div>
                   <div className="conv-actions">
+                    <button className="conv-action-btn" onClick={(e) => { e.stopPropagation(); setRenameDraft(conv.title); setRenamingConvId(conv.id) }} title={settings.language === 'en' ? 'Rename' : 'Renomear'}>
+                      <Pencil size={12} />
+                    </button>
                     <button className="conv-action-btn" onClick={(e) => { e.stopPropagation(); setAssigningConvId(conv.id) }} title="Mover para projeto">
                       <Folder size={12} />
                     </button>

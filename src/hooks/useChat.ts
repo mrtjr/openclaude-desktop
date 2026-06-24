@@ -263,7 +263,9 @@ export function useChat({
       const messages = [...c.messages, userMsg]
       return {
         ...c,
-        title: c.messages.length === 0 ? inputText.trim().slice(0, 40) : c.title,
+        // Auto-título só na 1ª mensagem e se o usuário não renomeou manualmente
+        // (v2.137.0). Mensagens ocultas (continuação) não viram título.
+        title: (c.messages.length === 0 && !c.titleManual && !opts?.hidden) ? inputText.trim().slice(0, 40) : c.title,
         messages
       }
     }))

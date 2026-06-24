@@ -34,6 +34,22 @@ describe('useConversations — flush on beforeunload', () => {
     expect((window.electron.saveConversations as any).mock.calls[0][0][0].id).toBe('c1')
   })
 
+  it('renames a conversation and marks the title as manual', async () => {
+    const { result } = renderHook(() => useConversations())
+    await waitFor(() => expect(result.current.conversations.length).toBeGreaterThan(0))
+    act(() => { result.current.renameConversation('c1', '  Meu  título  ') })
+    const c = result.current.conversations.find(x => x.id === 'c1')!
+    expect(c.title).toBe('Meu título')
+    expect(c.titleManual).toBe(true)
+  })
+
+  it('ignores a blank rename (keeps the current title)', async () => {
+    const { result } = renderHook(() => useConversations())
+    await waitFor(() => expect(result.current.conversations.length).toBeGreaterThan(0))
+    act(() => { result.current.renameConversation('c1', '   ') })
+    expect(result.current.conversations.find(x => x.id === 'c1')!.title).toBe('X')
+  })
+
   it('saves the latest conversations via the ref, not a stale snapshot', async () => {
     const { result } = renderHook(() => useConversations())
     await waitFor(() => expect(result.current.conversations.length).toBeGreaterThan(0))
