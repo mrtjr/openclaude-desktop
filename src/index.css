@@ -1155,6 +1155,35 @@ body .update-banner {
 .followup-arrow { flex-shrink: 0; opacity: 0.5; }
 .followup-chip:hover .followup-arrow { opacity: 0.9; color: var(--accent, #6366f1); }
 
+/* ── Busca dentro da conversa (Ctrl+F, v2.135.0) ── */
+.find-bar {
+  display: flex; align-items: center; gap: 8px;
+  margin: 8px auto 0; max-width: 820px; width: calc(100% - 24px);
+  padding: 6px 10px; border-radius: 10px;
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.find-bar-icon { color: var(--text-muted); flex-shrink: 0; }
+.find-bar-input {
+  flex: 1; min-width: 0; border: none; background: transparent; outline: none;
+  color: var(--text-primary); font-size: 13.5px; font-family: inherit;
+}
+.find-bar-count { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.find-bar-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 6px; cursor: pointer;
+  background: transparent; border: none; color: var(--text-secondary); transition: all 0.15s;
+}
+.find-bar-btn:hover:not(:disabled) { background: rgba(127,127,127,0.14); color: var(--text-primary); }
+.find-bar-btn:disabled { opacity: 0.35; cursor: default; }
+.message.find-hit { border-radius: 10px; animation: findHitPulse 1.2s ease-out; }
+.message.find-hit .message-text { box-shadow: 0 0 0 9999px transparent; }
+@keyframes findHitPulse {
+  0% { background: var(--accent-dim, rgba(99,102,241,0.22)); }
+  100% { background: transparent; }
+}
+.message.find-hit { background: var(--accent-dim, rgba(99,102,241,0.12)); }
+
 /* ── Task Plan panel — checklist estilo Claude (estado claro + progresso) ── */
 .task-plan-panel {
   max-width: 820px; margin: 0 auto 12px;

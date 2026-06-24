@@ -71,7 +71,7 @@ function ChatMessageInner({
   const displayContent = msg.role === 'assistant' && displayTransforms?.length
     ? applyDisplayTransforms(msg.content, displayTransforms) : msg.content
   return (
-    <div className={`message message-${msg.role}`}>
+    <div className={`message message-${msg.role}`} data-mid={msg.id}>
       <div className="message-avatar">
         {msg.role === 'user' ? <User size={16} /> : <div className="oc-logo">OC</div>}
       </div>

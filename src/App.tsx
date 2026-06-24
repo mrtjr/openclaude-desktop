@@ -19,6 +19,7 @@ import { groupMessages } from './utils/messageGroups'
 import { sliceBeforeMessage, classifyEdit, lastUserMessage } from './utils/conversationEdit'
 import { continuationPrompt } from './utils/continuation'
 import { starterPrompts } from './utils/starterPrompts'
+import { findMessageMatches, totalOccurrences, stepHitIndex } from './utils/conversationFind'
 import { useStableCallback } from './hooks/useStableCallback'
 import { ThinkingTimer } from './components/ThinkingTimer'
 import { StreamRateMeter } from './components/StreamRateMeter'
@@ -147,6 +148,11 @@ export default function App() {
   // Editando a última mensagem via ↑ no composer vazio (v2.132.0, estilo
   // ChatGPT): quando setado, o próximo envio faz edit-resend em vez de anexar.
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null)
+  // Busca DENTRO da conversa (Ctrl+F, v2.135.0): barra + navegação por acertos.
+  const [findOpen, setFindOpen] = useState(false)
+  const [findQuery, setFindQuery] = useState('')
+  const [findIdx, setFindIdx] = useState(0)
+  const findInputRef = useRef<HTMLInputElement>(null)
   const [taskPlanCollapsed, setTaskPlanCollapsed] = useState(false)
   const [updateAvailable, setUpdateAvailable] = useState<{available: boolean, releaseUrl: string, latestVersion: string} | null>(null)
   // Auto-update (electron-updater): set once a new version finished downloading
@@ -1058,6 +1064,7 @@ export default function App() {
   // palette and small dropdowns come last so they close before big panels.
   useEffect(() => {
     const overlays: Array<[boolean, () => void]> = [
+      [findOpen, () => setFindOpen(false)],
       [showModelDropdown, () => setShowModelDropdown(false)],
       [showFeatureMenu, () => setShowFeatureMenu(false)],
       [showCommandPalette, () => setShowCommandPalette(false)],
@@ -1105,6 +1112,8 @@ export default function App() {
         return
       }
 
+      // Ctrl/Cmd+F: busca dentro da conversa (find in page, v2.135.0).
+      if (mod && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); setFindOpen(true); setTimeout(() => findInputRef.current?.select(), 0); return }
       if (mod && e.key === 'n') { e.preventDefault(); convManager.newConversation() }
       else if (mod && e.key === 'k') { e.preventDefault(); setShowCommandPalette(v => !v) }
       else if (mod && e.key === ',') { e.preventDefault(); setShowSettings(true) }
@@ -1124,7 +1133,7 @@ export default function App() {
     showAccentPicker, showRegenMenu,
     showAnalytics, showProfiles, showScheduler, showVault,
     showPersona, showArena, showRAG, showWorkflow, showOrion, showVision,
-    showCodeWorkspace, showParliament, showAgentDashboard, showShortcuts, convManager,
+    showCodeWorkspace, showParliament, showAgentDashboard, showShortcuts, convManager, findOpen,
   ])
 
   // ─── Drag & Drop ──────────────────────────────────────────────
@@ -1609,6 +1618,37 @@ export default function App() {
     () => (activeConv ? groupMessages(activeConv.messages.filter(m => !m.hidden)) : []),
     [activeConv?.messages],
   )
+
+  // ─── Busca dentro da conversa (Ctrl+F, v2.135.0) ────────────────
+  const findMatches = useMemo(
+    () => (findOpen && activeConv ? findMessageMatches(activeConv.messages, findQuery) : []),
+    [findOpen, activeConv?.messages, findQuery],
+  )
+  const findTotal = findMatches.length
+  const findSafeIdx = findTotal ? Math.min(findIdx, findTotal - 1) : 0
+  // Reset ao trocar de termo (novo conjunto de acertos começa do topo).
+  useEffect(() => { setFindIdx(0) }, [findQuery])
+  // Rola até o acerto atual e o destaca (DOM imperativo p/ não furar o memo das bolhas).
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+    container.querySelectorAll('.message.find-hit').forEach(el => el.classList.remove('find-hit'))
+    if (!findOpen || findTotal === 0) return
+    const hit = findMatches[findSafeIdx]
+    if (!hit) return
+    const node = container.querySelector<HTMLElement>(`[data-mid="${hit.id}"]`)
+    if (node) {
+      node.classList.add('find-hit')
+      node.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }
+  }, [findOpen, findMatches, findSafeIdx, findTotal])
+  const stepFind = useStableCallback((dir: 1 | -1) => {
+    if (findTotal > 0) setFindIdx(i => stepHitIndex(i, findTotal, dir))
+  })
+  const closeFind = useStableCallback(() => {
+    setFindOpen(false); setFindQuery('')
+    messagesContainerRef.current?.querySelectorAll('.message.find-hit').forEach(el => el.classList.remove('find-hit'))
+  })
   // The tail group of a running turn stays open (live progress);
   // finished groups collapse to the summary line.
   const lastRenderItem = renderItems[renderItems.length - 1]
@@ -2134,6 +2174,32 @@ export default function App() {
             <div className="ignore-warning-banner">
               <AlertCircle size={14} />
               <span>{settings.language === 'en' ? 'Bypass Mode Active: All tools will be auto-approved' : 'Modo Bypass Ativo: Ferramentas serão aprovadas automaticamente'}</span>
+            </div>
+          )}
+          {/* Barra de busca dentro da conversa (Ctrl+F, v2.135.0) */}
+          {findOpen && (
+            <div className="find-bar">
+              <Search size={13} className="find-bar-icon" />
+              <input
+                ref={findInputRef}
+                className="find-bar-input"
+                value={findQuery}
+                onChange={e => setFindQuery(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1) }
+                  else if (e.key === 'Escape') { e.preventDefault(); closeFind() }
+                }}
+                placeholder={settings.language === 'en' ? 'Find in conversation…' : 'Buscar na conversa…'}
+                aria-label={settings.language === 'en' ? 'Find in conversation' : 'Buscar na conversa'}
+              />
+              <span className="find-bar-count">
+                {findQuery.trim().length < 2 ? '' : findTotal === 0
+                  ? (settings.language === 'en' ? 'No results' : 'Nenhum')
+                  : `${findSafeIdx + 1}/${findTotal}${(() => { const occ = totalOccurrences(findMatches); return occ > findTotal ? (settings.language === 'en' ? ` · ${occ} hits` : ` · ${occ} ocorr.`) : '' })()}`}
+              </span>
+              <button className="find-bar-btn" onClick={() => stepFind(-1)} disabled={findTotal === 0} title={settings.language === 'en' ? 'Previous (Shift+Enter)' : 'Anterior (Shift+Enter)'} aria-label="Previous match"><ChevronDown size={14} style={{ transform: 'rotate(180deg)' }} /></button>
+              <button className="find-bar-btn" onClick={() => stepFind(1)} disabled={findTotal === 0} title={settings.language === 'en' ? 'Next (Enter)' : 'Próximo (Enter)'} aria-label="Next match"><ChevronDown size={14} /></button>
+              <button className="find-bar-btn" onClick={closeFind} title={settings.language === 'en' ? 'Close (Esc)' : 'Fechar (Esc)'} aria-label="Close find"><X size={14} /></button>
             </div>
           )}
           <div className="messages-container" ref={messagesContainerRef}>
