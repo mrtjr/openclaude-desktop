@@ -258,6 +258,16 @@ body {
   background: var(--bg-tertiary); border: 1px solid var(--accent, #6366f1);
   border-radius: 6px; padding: 2px 6px; outline: none;
 }
+/* Vista "Arquivadas" (v2.138.0) */
+.archived-toggle {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  padding: 7px 10px; margin-bottom: 4px; border-radius: 8px; cursor: pointer;
+  background: transparent; border: 1px solid var(--border);
+  color: var(--text-secondary); font-size: 12px; font-family: inherit; transition: all 0.15s;
+}
+.archived-toggle:hover { background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--accent-border); }
+.archived-toggle.active { background: var(--accent-dim); color: var(--text-primary); border-color: var(--accent-border); }
+.conv-archived-empty { padding: 18px 12px; text-align: center; font-size: 12px; color: var(--text-muted); }
 .conv-date { font-size: 10px; color: var(--text-muted); margin-top: 2px; letter-spacing: 0.2px; }
 .conv-icon { color: var(--text-muted); flex-shrink: 0; opacity: 0.7; }
 .conv-item.active .conv-icon { color: var(--accent); opacity: 1; }

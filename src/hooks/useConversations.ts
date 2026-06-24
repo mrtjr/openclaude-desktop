@@ -116,20 +116,30 @@ export function useConversations() {
   }, [searchQuery])
 
   // ─── Filtered & sorted conversations ───────────────────────────
+  const matchesSearch = useCallback((c: Conversation, q: string) =>
+    (c.title || '').toLowerCase().includes(q) || (c.messages || []).some(m => (m.content || '').toLowerCase().includes(q)),
+  [])
+  // Lista PADRÃO: exclui as arquivadas (v2.138.0). Busca + pin no topo.
   const filteredConversations = useMemo(() => {
-    let list = conversations
+    let list = conversations.filter(c => !c.archived)
     if (debouncedSearch.trim()) {
       const q = debouncedSearch.toLowerCase()
       // (c.title/m.content podem ser undefined em dados legados — guarda p/ a
       // busca não derrubar o render ao digitar.)
-      list = list.filter(c => (c.title || '').toLowerCase().includes(q) || (c.messages || []).some(m => (m.content || '').toLowerCase().includes(q)))
+      list = list.filter(c => matchesSearch(c, q))
     }
     return [...list].sort((a, b) => {
       const ap = pinnedConvs.has(a.id) ? 1 : 0
       const bp = pinnedConvs.has(b.id) ? 1 : 0
       return bp - ap
     })
-  }, [conversations, debouncedSearch, pinnedConvs])
+  }, [conversations, debouncedSearch, pinnedConvs, matchesSearch])
+  // Vista "Arquivadas" (v2.138.0): só as arquivadas, com a mesma busca.
+  const archivedConversations = useMemo(() => {
+    let list = conversations.filter(c => c.archived)
+    if (debouncedSearch.trim()) list = list.filter(c => matchesSearch(c, debouncedSearch.toLowerCase()))
+    return list
+  }, [conversations, debouncedSearch, matchesSearch])
 
   const deleteConversation = useCallback((id: string) => {
     // Apaga o relatório .md vinculado a esta conversa (v2.85.0) — o registro
@@ -153,6 +163,13 @@ export function useConversations() {
     const title = sanitizeTitle(rawTitle)
     if (!title) return
     setConversations(prev => prev.map(c => c.id === id ? { ...c, title, titleManual: true } : c))
+  }, [])
+
+  // Arquivar / desarquivar (estilo ChatGPT, v2.138.0). Ao arquivar a conversa
+  // ativa, sai dela (cai na tela "Como posso ajudar?").
+  const setArchived = useCallback((id: string, archived: boolean) => {
+    setConversations(prev => prev.map(c => c.id === id ? { ...c, archived } : c))
+    if (archived) setActiveConvId(prev => (prev === id ? null : prev))
   }, [])
 
   const togglePin = useCallback((convId: string) => {
@@ -223,10 +240,12 @@ export function useConversations() {
     searchQuery,
     setSearchQuery,
     filteredConversations,
+    archivedConversations,
     saveNow,
     newConversation,
     deleteConversation,
     renameConversation,
+    setArchived,
     togglePin,
     exportConversation,
   }

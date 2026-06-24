@@ -50,6 +50,19 @@ describe('useConversations — flush on beforeunload', () => {
     expect(result.current.conversations.find(x => x.id === 'c1')!.title).toBe('X')
   })
 
+  it('archives a conversation: out of the default list, into the archived list', async () => {
+    const { result } = renderHook(() => useConversations())
+    await waitFor(() => expect(result.current.conversations.length).toBeGreaterThan(0))
+    expect(result.current.filteredConversations.some(c => c.id === 'c1')).toBe(true)
+    act(() => { result.current.setArchived('c1', true) })
+    expect(result.current.filteredConversations.some(c => c.id === 'c1')).toBe(false)
+    expect(result.current.archivedConversations.some(c => c.id === 'c1')).toBe(true)
+    expect(result.current.activeConvId).not.toBe('c1') // saiu da conversa arquivada
+    act(() => { result.current.setArchived('c1', false) })
+    expect(result.current.filteredConversations.some(c => c.id === 'c1')).toBe(true)
+    expect(result.current.archivedConversations.length).toBe(0)
+  })
+
   it('saves the latest conversations via the ref, not a stale snapshot', async () => {
     const { result } = renderHook(() => useConversations())
     await waitFor(() => expect(result.current.conversations.length).toBeGreaterThan(0))

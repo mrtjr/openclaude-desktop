@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore, Suspense, lazy } from 'react'
 import 'highlight.js/styles/github-dark.css'
-import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, ArrowDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, MicOff, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder, Wrench, BrainCircuit, Check, Pencil } from 'lucide-react'
+import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, ArrowDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, MicOff, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder, Wrench, BrainCircuit, Check, Pencil, Archive, ArchiveRestore, ChevronLeft } from 'lucide-react'
 import { loadSettings, type AppSettings } from './settingsConfig'
 import { BackgroundSubagentRegistry } from './utils/backgroundSubagents'
 import { SubagentActivityStore } from './utils/subagentActivity'
@@ -434,6 +434,8 @@ export default function App() {
   // Renomear conversa inline na sidebar (estilo ChatGPT/Claude, v2.137.0).
   const [renamingConvId, setRenamingConvId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
+  // Vista "Arquivadas" na sidebar (estilo ChatGPT, v2.138.0).
+  const [showArchived, setShowArchived] = useState(false)
   const commitRename = useStableCallback(() => {
     if (renamingConvId) convManager.renameConversation(renamingConvId, renameDraft)
     setRenamingConvId(null)
@@ -2015,9 +2017,47 @@ export default function App() {
           />
 
           <div className="conversations-list">
+            {(() => {
+              const archivedCount = convManager.conversations.filter(c => c.archived).length
+              if (!showArchived && archivedCount === 0) return null
+              return (
+                <button className={`archived-toggle ${showArchived ? 'active' : ''}`} onClick={() => setShowArchived(v => !v)}>
+                  {showArchived ? <ChevronLeft size={13} /> : <Archive size={13} />}
+                  <span>{showArchived
+                    ? (settings.language === 'en' ? 'Back to chats' : 'Voltar às conversas')
+                    : (settings.language === 'en' ? `Archived (${archivedCount})` : `Arquivadas (${archivedCount})`)}</span>
+                </button>
+              )
+            })()}
             {convManager.loadingConversations ? (
               <>{[1,2,3,4,5].map(i => <div key={i} className="conv-item skeleton"><div className="skeleton-bar" /></div>)}</>
-            ) : (() => {
+            ) : showArchived ? (() => {
+              const arch = convManager.archivedConversations
+              if (arch.length === 0) return <div className="conv-archived-empty">{settings.language === 'en' ? 'No archived conversations' : 'Nenhuma conversa arquivada'}</div>
+              return (
+                <>
+                  {arch.map(conv => (
+                    <div key={conv.id}
+                      className={`conv-item ${conv.id === convManager.activeConvId ? 'active' : ''}`}
+                      onClick={() => convManager.setActiveConvId(conv.id)}>
+                      <Archive size={14} className="conv-icon" />
+                      <div className="conv-info">
+                        <span className="conv-title">{conv.title}</span>
+                        <span className="conv-date">{getRelativeTime(conv.createdAt)}</span>
+                      </div>
+                      <div className="conv-actions">
+                        <button className="conv-action-btn" onClick={(e) => { e.stopPropagation(); convManager.setArchived(conv.id, false) }} title={settings.language === 'en' ? 'Unarchive' : 'Desarquivar'}>
+                          <ArchiveRestore size={12} />
+                        </button>
+                        <button className="conv-action-btn conv-delete" onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv) }}>
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )
+            })() : (() => {
               // ChatGPT/Claude-style sidebar: pinned first (no bucket header),
               // then temporal buckets ("Hoje", "Ontem", "7 dias"…). Buckets with
               // zero items are omitted by groupByBucket.
@@ -2064,6 +2104,9 @@ export default function App() {
                     </button>
                     <button className="conv-action-btn" onClick={(e) => { e.stopPropagation(); convManager.togglePin(conv.id) }} title={convManager.pinnedConvs.has(conv.id) ? 'Desafixar' : 'Fixar'}>
                       <Pin size={12} />
+                    </button>
+                    <button className="conv-action-btn" onClick={(e) => { e.stopPropagation(); convManager.setArchived(conv.id, true); if (renamingConvId === conv.id) setRenamingConvId(null) }} title={settings.language === 'en' ? 'Archive' : 'Arquivar'}>
+                      <Archive size={12} />
                     </button>
                     <button className="conv-action-btn conv-delete" onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv) }}>
                       <Trash2 size={12} />
