@@ -1063,6 +1063,27 @@ body .update-banner {
 .msg-action-btn:hover { background: rgba(255,255,255,0.06); color: var(--text-primary); }
 [data-theme="light"] .msg-action-btn:hover { background: rgba(0,0,0,0.06); }
 
+/* ── Editar mensagem in-place + reenviar (estilo ChatGPT, v2.129.0) ── */
+.message-edit { display: flex; flex-direction: column; gap: 8px; }
+.message-edit-area {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  font: inherit; font-size: 14.5px; line-height: 1.6;
+  color: var(--text-primary); background: var(--bg-tertiary);
+  border: 1px solid var(--accent, #6366f1); border-radius: 10px;
+  padding: 10px 12px; outline: none;
+}
+.message-edit-area:focus { box-shadow: 0 0 0 3px rgba(99,102,241,0.18); }
+.message-edit-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.message-edit-cancel, .message-edit-save {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12.5px; padding: 5px 12px; border-radius: 8px;
+  cursor: pointer; transition: all 0.15s; border: 1px solid var(--border);
+}
+.message-edit-cancel { background: transparent; color: var(--text-muted); }
+.message-edit-cancel:hover { background: rgba(127,127,127,0.1); color: var(--text-primary); }
+.message-edit-save { background: var(--accent, #6366f1); color: #fff; border-color: transparent; }
+.message-edit-save:hover { filter: brightness(1.08); }
+
 /* ── Task Plan panel — checklist estilo Claude (estado claro + progresso) ── */
 .task-plan-panel {
   max-width: 820px; margin: 0 auto 12px;

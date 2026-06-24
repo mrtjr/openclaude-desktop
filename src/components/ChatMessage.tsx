@@ -1,10 +1,11 @@
-import { memo } from 'react'
-import { User, RefreshCw, GitBranch, Trash } from 'lucide-react'
+import { memo, useState } from 'react'
+import { User, RefreshCw, GitBranch, Trash, Pencil, Check } from 'lucide-react'
 import type { Message } from '../types'
 import { formatMarkdown } from '../utils/formatting'
 import { applyDisplayTransforms, type DisplayTransform } from '../utils/outputHooks'
 import { logInsight } from '../services/devInsights'
 import { extractArtifacts, type Artifact } from '../utils/artifacts'
+import { canEditMessage } from '../utils/conversationEdit'
 import CopyButton from './CopyButton'
 import ToolCallBlock from './ToolCallBlock'
 
@@ -35,6 +36,10 @@ interface ChatMessageProps {
   onRegenerate: () => void
   onBranch: (msgId: string) => void
   onDelete: (msgId: string) => void
+  /** v2.129.0 — edit a user message in place and re-run the conversation
+   *  from that point (ChatGPT-style). Optional: when absent, the pencil is
+   *  hidden. Must be identity-stable (App uses useStableCallback). */
+  onEditResend?: (msgId: string, newText: string) => void
   showToast: (message: string) => void
   /** v2.94.0 — transformações de exibição (MessageDisplay): aplicadas ao texto
    *  do assistente antes de renderizar. Identidade estável (memoizado no App). */
@@ -43,8 +48,18 @@ interface ChatMessageProps {
 
 function ChatMessageInner({
   msg, language, showThinking, collapsedTools,
-  onToggleCollapse, onOpenArtifact, onRegenerate, onBranch, onDelete, showToast, displayTransforms,
+  onToggleCollapse, onOpenArtifact, onRegenerate, onBranch, onDelete, onEditResend, showToast, displayTransforms,
 }: ChatMessageProps) {
+  const en = language === 'en'
+  // In-place edit state (ChatGPT-style). Local so toggling it never touches
+  // the App/memo contract — past bubbles still bail out during streaming.
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const editable = !!onEditResend && canEditMessage(msg)
+  const beginEdit = () => { setDraft(msg.content); setEditing(true) }
+  const commitEdit = () => { setEditing(false); onEditResend?.(msg.id, draft) }
+  const cancelEdit = () => { setEditing(false) }
+
   const artifacts = msg.role === 'assistant' && msg.content ? extractArtifacts(msg.content) : []
   // Só transforma a exibição do ASSISTENTE (mensagens do usuário ficam intactas).
   const displayContent = msg.role === 'assistant' && displayTransforms?.length
@@ -61,7 +76,30 @@ function ChatMessageInner({
             <div className="thinking-content" style={{ marginTop: 6, padding: '8px 12px', borderLeft: '2px solid rgba(127,127,127,0.3)', opacity: 0.8, fontSize: 13 }} dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.thinking) }} />
           </details>
         )}
-        {msg.content && <div className="message-text" dangerouslySetInnerHTML={{ __html: formatMarkdown(displayContent) }} />}
+        {editing ? (
+          <div className="message-edit">
+            <textarea
+              className="message-edit-area"
+              value={draft}
+              autoFocus
+              rows={Math.min(10, Math.max(2, draft.split('\n').length))}
+              onChange={e => setDraft(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); commitEdit() }
+                else if (e.key === 'Escape') { e.preventDefault(); cancelEdit() }
+              }}
+              aria-label={en ? 'Edit message' : 'Editar mensagem'}
+            />
+            <div className="message-edit-actions">
+              <button className="message-edit-cancel" onClick={cancelEdit}>{en ? 'Cancel' : 'Cancelar'}</button>
+              <button className="message-edit-save" onClick={commitEdit} title={en ? 'Save & resend (Ctrl+Enter)' : 'Salvar e reenviar (Ctrl+Enter)'}>
+                <Check size={12} /> {en ? 'Save & resend' : 'Salvar e reenviar'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          msg.content && <div className="message-text" dangerouslySetInnerHTML={{ __html: formatMarkdown(displayContent) }} />
+        )}
         {artifacts.length > 0 && (
           <button
             onClick={() => onOpenArtifact(artifacts[0])}
@@ -82,10 +120,21 @@ function ChatMessageInner({
             onToggleCollapse={onToggleCollapse}
           />
         ))}
+        {!editing && (
         <div className="message-footer">
           <span className="message-timestamp">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
           <div className="message-actions">
             {msg.content && <CopyButton text={msg.content} title={language === 'en' ? 'Copy as Markdown' : 'Copiar como Markdown'} onCopied={() => { if (msg.role === 'assistant') logInsight('chat', 'copy'); showToast(language === 'en' ? 'Copied as Markdown' : 'Copiado como Markdown') }} />}
+            {editable && (
+              <button
+                className="msg-action-btn msg-edit-btn"
+                onClick={beginEdit}
+                title={en ? 'Edit & resend' : 'Editar e reenviar'}
+                aria-label={en ? 'Edit message' : 'Editar mensagem'}
+              >
+                <Pencil size={12} />
+              </button>
+            )}
             {msg.role === 'assistant' && (
               <button
                 className="msg-action-btn msg-regen-btn"
@@ -107,6 +156,7 @@ function ChatMessageInner({
             <button className="msg-action-btn" onClick={() => onDelete(msg.id)} title={language === 'en' ? 'Delete message' : 'Excluir mensagem'} aria-label={language === 'en' ? 'Delete message' : 'Excluir mensagem'}><Trash size={12} /></button>
           </div>
         </div>
+        )}
       </div>
     </div>
   )

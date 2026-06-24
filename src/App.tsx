@@ -16,6 +16,7 @@ import OnboardingModal from './components/OnboardingModal'
 import ChatMessage from './components/ChatMessage'
 import AgentStepsGroup from './components/AgentStepsGroup'
 import { groupMessages } from './utils/messageGroups'
+import { sliceBeforeMessage, classifyEdit } from './utils/conversationEdit'
 import { useStableCallback } from './hooks/useStableCallback'
 import { ThinkingTimer } from './components/ThinkingTimer'
 import ProjectsBar from './components/ProjectsBar'
@@ -1282,6 +1283,26 @@ export default function App() {
   }, settings.language), [settings.statusLineItems, providerConfig.model, settings.provider, gitBranch, activeCwd, activePersona?.name, tokenInfo.percentage, settings.language])
   const handleRegenerate = useStableCallback(() => regenerateResponse())
   const handleDeleteMessage = useStableCallback(deleteMessage)
+  // Editar a própria mensagem e re-rodar a conversa a partir dela (estilo
+  // ChatGPT, v2.129.0). Reaproveita o encanamento do "regenerar": fatia o
+  // histórico ANTES da mensagem editada e reenvia o texto novo como um turno
+  // fresco. `useStableCallback` lê sempre o estado atual (activeConv/loading).
+  const handleEditResend = useStableCallback((msgId: string, newText: string) => {
+    if (!activeConv) return
+    if (isActiveConvLoading) {
+      showToast(settings.language === 'en' ? 'Wait for the current response to finish' : 'Aguarde a resposta atual terminar', 'info')
+      return
+    }
+    const decision = classifyEdit(activeConv.messages.find(m => m.id === msgId)?.content ?? '', newText)
+    if (decision.action !== 'resend') return // noop/empty → editor já fechou, nada a fazer
+    const before = sliceBeforeMessage(activeConv.messages, msgId)
+    if (!before) return
+    logInsight('chat', 'edit_resend')
+    convManager.setConversations(prev => prev.map(c =>
+      c.id === activeConv.id ? { ...c, messages: before } : c
+    ))
+    setTimeout(() => sendMessageRef.current(decision.text), 80)
+  })
   const handleBranchFrom = useStableCallback((msgId: string) => {
     if (!activeConv) return
     const idx = activeConv.messages.findIndex(m => m.id === msgId)
@@ -2110,6 +2131,7 @@ export default function App() {
                   onRegenerate={handleRegenerate}
                   onBranch={handleBranchFrom}
                   onDelete={handleDeleteMessage}
+                  onEditResend={handleEditResend}
                   showToast={showToast}
                   displayTransforms={displayTransforms}
                 />

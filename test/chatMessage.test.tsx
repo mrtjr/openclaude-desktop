@@ -34,6 +34,7 @@ function baseProps() {
     onRegenerate: vi.fn(),
     onBranch: vi.fn(),
     onDelete: vi.fn(),
+    onEditResend: vi.fn(),
     showToast: vi.fn(),
   }
 }
@@ -92,6 +93,42 @@ describe('ChatMessage - rendering (behavior preserved from the inline App map)',
   it('does not offer Regenerate on user messages', () => {
     const { queryByLabelText } = render(<ChatMessage msg={msg({ role: 'user' })} {...baseProps()} />)
     expect(queryByLabelText('Regenerate')).toBeNull()
+  })
+
+  it('offers Edit only on user messages, never on assistant ones', () => {
+    const userView = render(<ChatMessage msg={msg({ role: 'user', content: 'pergunta' })} {...baseProps()} />)
+    expect(userView.container.querySelector('.msg-edit-btn')).toBeTruthy()
+    const asstView = render(<ChatMessage msg={msg({ role: 'assistant', content: 'resposta' })} {...baseProps()} />)
+    expect(asstView.container.querySelector('.msg-edit-btn')).toBeNull()
+  })
+
+  it('hides Edit when no onEditResend handler is provided', () => {
+    const props = baseProps()
+    const { queryByLabelText } = render(<ChatMessage msg={msg({ role: 'user', content: 'oi' })} {...props} onEditResend={undefined} />)
+    expect(queryByLabelText('Editar mensagem')).toBeNull()
+  })
+
+  it('opens an in-place editor and saves the edited text upward', () => {
+    const props = baseProps()
+    const { container, getByLabelText } = render(<ChatMessage msg={msg({ id: 'u9', role: 'user', content: 'texto antigo' })} {...props} />)
+    fireEvent.click(getByLabelText('Editar mensagem'))
+    const area = container.querySelector('.message-edit-area') as HTMLTextAreaElement
+    expect(area).toBeTruthy()
+    expect(area.value).toBe('texto antigo')
+    fireEvent.change(area, { target: { value: 'texto novo' } })
+    fireEvent.click(container.querySelector('.message-edit-save')!)
+    expect(props.onEditResend).toHaveBeenCalledWith('u9', 'texto novo')
+    // editor closes back to the rendered bubble
+    expect(container.querySelector('.message-edit-area')).toBeNull()
+  })
+
+  it('cancels the editor without calling onEditResend', () => {
+    const props = baseProps()
+    const { container, getByLabelText } = render(<ChatMessage msg={msg({ role: 'user', content: 'oi' })} {...props} />)
+    fireEvent.click(getByLabelText('Editar mensagem'))
+    fireEvent.click(container.querySelector('.message-edit-cancel')!)
+    expect(props.onEditResend).not.toHaveBeenCalled()
+    expect(container.querySelector('.message-edit-area')).toBeNull()
   })
 
   it('shows the main argument in the tool-call header (v2.12.52)', () => {
