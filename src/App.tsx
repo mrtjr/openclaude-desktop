@@ -21,6 +21,7 @@ import { continuationPrompt } from './utils/continuation'
 import { starterPrompts } from './utils/starterPrompts'
 import { useStableCallback } from './hooks/useStableCallback'
 import { ThinkingTimer } from './components/ThinkingTimer'
+import { StreamRateMeter } from './components/StreamRateMeter'
 import ProjectsBar from './components/ProjectsBar'
 import ProjectEditModal from './components/ProjectEditModal'
 import { useProjects } from './hooks/useProjects'
@@ -2228,11 +2229,15 @@ export default function App() {
                   {/* Fase invisível (raciocínio/tool args): sem isto o cursor fica
                       parado por MINUTOS em modelos de raciocínio e o usuário acha
                       que travou. O contador subindo é o sinal de vida. */}
-                  {chat.streamingPhase && (
-                    <div className="streaming-phase">
-                      <BrainCircuit size={11} className="pulse" /> {streamPhaseLabel(chat.streamingPhase)}
-                    </div>
-                  )}
+                  <div className="streaming-meta">
+                    {chat.streamingPhase && (
+                      <span className="streaming-phase">
+                        <BrainCircuit size={11} className="pulse" /> {streamPhaseLabel(chat.streamingPhase)}
+                      </span>
+                    )}
+                    {/* Velocidade ~tok/s (estilo Codex, v2.134.0). */}
+                    <StreamRateMeter text={chat.streamingText} />
+                  </div>
                 </div>
               </div>
             )}

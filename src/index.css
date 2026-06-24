@@ -967,6 +967,13 @@ body .update-banner {
   font-variant-numeric: tabular-nums; /* contador não "dança" ao subir */
 }
 .streaming-phase .pulse { color: var(--accent); }
+/* Linha de metadados do streaming: fase + taxa tok/s (v2.134.0) */
+.streaming-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.streaming-meta .streaming-phase { margin-top: 0; }
+.stream-rate {
+  font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums;
+  opacity: 0.75; letter-spacing: 0.02em;
+}
 /* Queued-message pill above the composer (v2.12.52) */
 .queued-pill {
   display: flex; align-items: center; gap: 7px; margin: 0 4px 6px;
