@@ -1515,6 +1515,15 @@ export default function App() {
     setInput('')
   }, [isActiveConvLoading, convManager.activeConvId, convManager.newConversation])
 
+  // Clique num chip de pergunta relacionada (v2.133.0, estilo Perplexity):
+  // envia a pergunta sugerida como nova mensagem. Identidade estável p/ o memo.
+  const handleFollowup = useStableCallback((text: string) => {
+    if (isActiveConvLoading) return
+    logInsight('chat', 'followup_click')
+    sendMessageRef.current(text, convManager.activeConvId ?? undefined)
+    setInput('')
+  })
+
   // Fire the queued message once ITS conversation goes idle (switching to
   // another conversation keeps it parked until the user returns).
   useEffect(() => {
@@ -2203,6 +2212,7 @@ export default function App() {
                   onDelete={handleDeleteMessage}
                   onEditResend={handleEditResend}
                   onContinue={handleContinue}
+                  onFollowup={handleFollowup}
                   showToast={showToast}
                   displayTransforms={displayTransforms}
                 />

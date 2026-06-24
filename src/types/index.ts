@@ -20,6 +20,9 @@ export interface Message {
    *  da continuação) que vai no request ao provedor mas NÃO é renderizado como
    *  bolha no chat. */
   hidden?: boolean
+  /** v2.133.0 — perguntas de acompanhamento (chips estilo Perplexity) que o
+   *  modelo sugeriu no fim da resposta. Já separadas do texto visível. */
+  followups?: string[]
   timestamp: Date
 }
 

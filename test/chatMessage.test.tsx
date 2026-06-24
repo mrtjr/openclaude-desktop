@@ -36,6 +36,7 @@ function baseProps() {
     onDelete: vi.fn(),
     onEditResend: vi.fn(),
     onContinue: vi.fn(),
+    onFollowup: vi.fn(),
     showToast: vi.fn(),
   }
 }
@@ -147,6 +148,24 @@ describe('ChatMessage - rendering (behavior preserved from the inline App map)',
     const props = baseProps()
     const { container } = render(<ChatMessage msg={msg({ role: 'assistant', truncated: true })} {...props} onContinue={undefined} />)
     expect(container.querySelector('.continue-gen-btn')).toBeNull()
+  })
+
+  it('renders model-suggested follow-up chips and sends the clicked one', () => {
+    const props = baseProps()
+    const m = msg({ role: 'assistant', content: 'resposta', followups: ['Como faço X?', 'E o Y?'] })
+    const { container } = render(<ChatMessage msg={m} {...props} />)
+    const chips = container.querySelectorAll('.followup-chip')
+    expect(chips.length).toBe(2)
+    fireEvent.click(chips[1])
+    expect(props.onFollowup).toHaveBeenCalledWith('E o Y?')
+  })
+
+  it('shows no follow-up chips for user messages or when the list is empty', () => {
+    const props = baseProps()
+    const userMsg = render(<ChatMessage msg={msg({ role: 'user', content: 'oi', followups: ['x?'] })} {...props} />)
+    expect(userMsg.container.querySelector('.followup-chip')).toBeNull()
+    const noFu = render(<ChatMessage msg={msg({ role: 'assistant', content: 'r' })} {...props} />)
+    expect(noFu.container.querySelector('.followup-chip')).toBeNull()
   })
 
   it('shows the main argument in the tool-call header (v2.12.52)', () => {

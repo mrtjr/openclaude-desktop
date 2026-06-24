@@ -43,6 +43,9 @@ interface ChatMessageProps {
   /** v2.130.0 — resume a response that the provider cut off at the token
    *  limit (ChatGPT "Continue generating"). Shown only when msg.truncated. */
   onContinue?: (msgId: string) => void
+  /** v2.133.0 — click a model-suggested follow-up question (Perplexity-style
+   *  chips). Sends it as a new message. */
+  onFollowup?: (text: string) => void
   showToast: (message: string) => void
   /** v2.94.0 — transformações de exibição (MessageDisplay): aplicadas ao texto
    *  do assistente antes de renderizar. Identidade estável (memoizado no App). */
@@ -51,7 +54,7 @@ interface ChatMessageProps {
 
 function ChatMessageInner({
   msg, language, showThinking, collapsedTools,
-  onToggleCollapse, onOpenArtifact, onRegenerate, onBranch, onDelete, onEditResend, onContinue, showToast, displayTransforms,
+  onToggleCollapse, onOpenArtifact, onRegenerate, onBranch, onDelete, onEditResend, onContinue, onFollowup, showToast, displayTransforms,
 }: ChatMessageProps) {
   const en = language === 'en'
   // In-place edit state (ChatGPT-style). Local so toggling it never touches
@@ -169,6 +172,19 @@ function ChatMessageInner({
             <button className="msg-action-btn" onClick={() => onDelete(msg.id)} title={language === 'en' ? 'Delete message' : 'Excluir mensagem'} aria-label={language === 'en' ? 'Delete message' : 'Excluir mensagem'}><Trash size={12} /></button>
           </div>
         </div>
+        )}
+        {/* Perguntas de acompanhamento sugeridas pelo modelo (chips estilo
+            Perplexity, v2.133.0). Clicar envia como nova mensagem. */}
+        {!editing && msg.role === 'assistant' && msg.followups && msg.followups.length > 0 && onFollowup && (
+          <div className="followups">
+            <div className="followups-label">{en ? 'Related' : 'Perguntas relacionadas'}</div>
+            {msg.followups.map((q, i) => (
+              <button key={i} className="followup-chip" onClick={() => onFollowup(q)} title={q}>
+                <span className="followup-q">{q}</span>
+                <CornerDownRight size={12} className="followup-arrow" />
+              </button>
+            ))}
+          </div>
         )}
       </div>
     </div>

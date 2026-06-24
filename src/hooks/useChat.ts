@@ -16,6 +16,7 @@ import { renderSkillManifest, renderPinnedSkills, renderSkillBody, matchSkillsBy
 import type { Skill } from '../types/skill'
 import { resolveTurnUsage } from '../utils/usage'
 import { isLengthTruncated } from '../utils/continuation'
+import { parseFollowups, hideFollowupTrailer, followupInstruction } from '../utils/followups'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
 import { applyPlanToolCalls, planIsIncomplete, type LocalTask } from '../utils/planTracker'
 import { resolveAdaptiveEffort } from '../utils/adaptiveEffort'
@@ -380,6 +381,12 @@ export function useChat({
         systemPrompt = AGENT_SYSTEM_PROMPT[lang] + (systemPrompt ? (lang === 'pt' ? "\n\nInstruções Adicionais:\n" : "\n\nAdditional Instructions:\n") + systemPrompt : "")
       }
       systemPrompt += LANGUAGE_RULE[lang]
+
+      // Perguntas de acompanhamento (chips estilo Perplexity, v2.133.0): SÓ no
+      // chat normal (no modo agente o turno termina em tool/loop, não cabe). O
+      // modelo emite um trailer marcado que parseFollowups separa do texto.
+      const wantFollowups = !isAgentMode && settings.suggestFollowups !== false
+      if (wantFollowups) systemPrompt += `\n\n${followupInstruction(lang)}`
 
       // Consciência de data + frescor de conhecimento (v2.61.0): o modelo
       // precisa saber a data de hoje e que sua memória PODE estar velha — senão
@@ -962,7 +969,10 @@ export function useChat({
           const STREAM_TEXT_THROTTLE_MS = 50
           let lastTextPush = 0
           let textTimer: ReturnType<typeof setTimeout> | null = null
-          const flushText = () => { lastTextPush = Date.now(); textTimer = null; setStreamingText(displayText) }
+          // Esconde o trailer de follow-ups (mesmo parcial) p/ o marcador não
+          // piscar no fim da bolha durante o streaming (v2.133.0).
+          const shownText = () => wantFollowups ? hideFollowupTrailer(displayText) : displayText
+          const flushText = () => { lastTextPush = Date.now(); textTimer = null; setStreamingText(shownText()) }
           const pushText = () => {
             const elapsed = Date.now() - lastTextPush
             if (elapsed >= STREAM_TEXT_THROTTLE_MS) { if (textTimer) { clearTimeout(textTimer); textTimer = null } flushText() }
@@ -984,7 +994,7 @@ export function useChat({
                 if (chunk.error) {
                   reject(new Error(chunk.error))
                 } else {
-                  setStreamingText(displayText) // flush de borda: bolha mostra o texto completo no handoff
+                  setStreamingText(shownText()) // flush de borda: bolha mostra o texto completo no handoff
                   resolve()
                 }
                 return
@@ -1273,18 +1283,23 @@ export function useChat({
               logInsight('chat', 'empty_reply', { provider: finalProvider, model: finalModel })
               safeContent = emptyReplyNotice(lang)
             }
+            // Separa as perguntas de acompanhamento do texto visível (v2.133.0).
+            // Só troca o conteúdo se sobrar algo visível (nunca esvazia a bolha).
+            const fu = wantFollowups ? parseFollowups(safeContent) : { visible: safeContent, followups: [] }
+            if (fu.visible.trim().length > 0) safeContent = fu.visible
             const finalMsg: Message = {
               id: generateId(), role: 'assistant', content: safeContent,
               ...(turnThinking ? { thinking: turnThinking } : {}),
               // Cortado pelo limite de tokens? Liga o "Continuar gerando" (v2.130.0).
               ...(isLengthTruncated(finishReason) ? { truncated: true } : {}),
+              ...(fu.followups.length ? { followups: fu.followups } : {}),
               timestamp: new Date()
             }
             turnFinalAnswer = safeContent || turnFinalAnswer // p/ o relatório .md
             setConversations(prev => prev.map(c =>
               c.id !== convId ? c : { ...c, messages: [...c.messages, finalMsg] }
             ))
-            if (accumulated) speakText(accumulated)
+            if (safeContent) speakText(safeContent)
             // Plano incompleto? Mantém o loop e injeta o nudge de conclusão (capado).
             if (keepGoingToFinishPlan()) {
               allMessages = [...allMessages, { role: 'assistant', content: safeContent }]
@@ -1457,19 +1472,23 @@ export function useChat({
               logInsight('chat', 'empty_reply', { provider: finalProvider, model: finalModel })
               safeContent = emptyReplyNotice(lang)
             }
+            // Separa as perguntas de acompanhamento do texto visível (v2.133.0).
+            const fu = wantFollowups ? parseFollowups(safeContent) : { visible: safeContent, followups: [] }
+            if (fu.visible.trim().length > 0) safeContent = fu.visible
             const finalMsg: Message = {
               id: generateId(), role: 'assistant',
               content: safeContent,
               ...(turnThinking ? { thinking: turnThinking } : {}),
               // Cortado pelo limite de tokens? Liga o "Continuar gerando" (v2.130.0).
               ...(isLengthTruncated(choice.finish_reason) ? { truncated: true } : {}),
+              ...(fu.followups.length ? { followups: fu.followups } : {}),
               timestamp: new Date()
             }
             turnFinalAnswer = safeContent || turnFinalAnswer // p/ o relatório .md
             setConversations(prev => prev.map(c =>
               c.id !== convId ? c : { ...c, messages: [...c.messages, finalMsg] }
             ))
-            if (assistantMsg.content) speakText(assistantMsg.content)
+            if (safeContent) speakText(safeContent)
             // Plano incompleto? Mantém o loop e injeta o nudge de conclusão (capado).
             if (keepGoingToFinishPlan()) {
               allMessages = [...allMessages, { role: 'assistant', content: safeContent || '' }]

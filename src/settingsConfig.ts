@@ -194,6 +194,11 @@ export interface AppSettings {
    *  tokens. Conservador (só repetição óbvia). Default on. Ver
    *  outputCompression.ts. */
   compressToolOutputs?: boolean
+  /** v2.133.0 — sugerir perguntas de acompanhamento (chips estilo Perplexity)
+   *  ao fim das respostas do chat normal. O modelo emite até 3 follow-ups num
+   *  trailer marcado que é parseado e removido do texto. Só no chat (não no
+   *  modo agente). Default on. Ver followups.ts. */
+  suggestFollowups?: boolean
   /** v2.73.0 — modelo de embedding usado pela ferramenta rag_search do chat
    *  (fusão do RAGPanel). DEVE ser o mesmo com que o índice foi gerado, senão os
    *  vetores ficam em espaços diferentes e o score é lixo. Ausente → o default
@@ -261,6 +266,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   modalGpuRatePerSec: 0.000583,
   scoutEnabled: false,
   compressToolOutputs: true,
+  suggestFollowups: true,
 }
 
 export function loadSettings(): AppSettings {

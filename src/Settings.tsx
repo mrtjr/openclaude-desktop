@@ -200,6 +200,17 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                 </label>
               </div>
 
+              {/* Perguntas relacionadas / follow-ups (estilo Perplexity, v2.133.0) */}
+              <div className="settings-group">
+                <label className="settings-label">
+                  <span>Sugerir perguntas relacionadas (chips de acompanhamento no chat normal)</span>
+                  <div className={`toggle ${local.suggestFollowups !== false ? 'on' : ''}`}
+                    onClick={() => setLocal(s => ({ ...s, suggestFollowups: s.suggestFollowups === false }))}>
+                    <div className="toggle-knob" />
+                  </div>
+                </label>
+              </div>
+
               {/* Memory */}
               <div className="settings-group">
                 <label className="settings-label">
