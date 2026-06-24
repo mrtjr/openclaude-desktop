@@ -16,6 +16,7 @@ import { renderSkillManifest, renderPinnedSkills, renderSkillBody, matchSkillsBy
 import type { Skill } from '../types/skill'
 import { resolveTurnUsage } from '../utils/usage'
 import { isLengthTruncated } from '../utils/continuation'
+import { deriveTitleFromMessage } from '../utils/conversationTitle'
 import { parseFollowups, hideFollowupTrailer, followupInstruction } from '../utils/followups'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
 import { applyPlanToolCalls, planIsIncomplete, type LocalTask } from '../utils/planTracker'
@@ -264,8 +265,10 @@ export function useChat({
       return {
         ...c,
         // Auto-título só na 1ª mensagem e se o usuário não renomeou manualmente
-        // (v2.137.0). Mensagens ocultas (continuação) não viram título.
-        title: (c.messages.length === 0 && !c.titleManual && !opts?.hidden) ? inputText.trim().slice(0, 40) : c.title,
+        // (v2.137.0). Mensagens ocultas (continuação) não viram título. Título
+        // derivado da 1ª mensagem (frase/fronteira de palavra, sem markdown) em
+        // vez do corte cego em 40 chars (v2.139.0, estilo ChatGPT/Claude).
+        title: (c.messages.length === 0 && !c.titleManual && !opts?.hidden) ? deriveTitleFromMessage(inputText) : c.title,
         messages
       }
     }))
