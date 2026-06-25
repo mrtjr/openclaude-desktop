@@ -3,7 +3,7 @@ import {
   findSkill, renderSkillManifest, renderPinnedSkills, renderSkillBody, scopeSkillsToProject, skillManifestHeaders,
   matchSkillsByText, formatLoadSkillResult, mergeSkills, BUILTIN_SKILLS,
   collectDisallowedTools, collectAllowedTools, activeSkillsForTools, findActiveSkills, renderActiveSkillReminder, suggestSkill,
-  renderActiveSkillsFull, scopeToolsForStep,
+  renderActiveSkillsFull, scopeToolsForStep, renderSkillsForWorker,
 } from '../src/utils/skills'
 import type { Skill } from '../src/types/skill'
 
@@ -190,6 +190,24 @@ describe('skill ATIVA por load_skill (v2.104.0)', () => {
     expect(out).not.toContain('TAMBEM NAO')             // desativada fora
     expect(renderActiveSkillsFull([], 'pt')).toBe('')
     expect(renderActiveSkillsFull([mk({ name: 'c' })], 'en')).toContain('ACTIVE SKILLS')
+  })
+})
+
+describe('renderSkillsForWorker (v2.159.0 — subagentes herdam o playbook)', () => {
+  it('inclui o corpo de TODAS as ativas (até fixadas) p/ o worker', () => {
+    const out = renderSkillsForWorker([
+      mk({ name: 'pinned-one', pinned: true, instructions: 'CORPO FIXA' }),
+      mk({ name: 'loaded-one', instructions: 'CORPO CARREGADA' }),
+      mk({ name: 'off-one', enabled: false, instructions: 'NAO ENTRA' }),
+    ], 'pt')
+    expect(out).toContain('PLAYBOOK DE SKILL ATIVA')
+    expect(out).toContain('CORPO FIXA')       // fixada ENTRA no worker (sem outra via)
+    expect(out).toContain('CORPO CARREGADA')
+    expect(out).not.toContain('NAO ENTRA')    // desativada fora
+  })
+  it('vazio quando não há skills', () => {
+    expect(renderSkillsForWorker([], 'pt')).toBe('')
+    expect(renderSkillsForWorker([mk({ name: 'x' })], 'en')).toContain('ACTIVE SKILL PLAYBOOK')
   })
 })
 

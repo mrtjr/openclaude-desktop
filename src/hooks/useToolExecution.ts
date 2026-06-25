@@ -16,7 +16,7 @@ import { isRiskyDesktopAction } from '../utils/desktopPolicy'
 import { paginateFileContent } from '../utils/readFile'
 import { formatClickResult, formatNavResult } from '../utils/browserResult'
 import { logInsight } from '../services/devInsights'
-import { findSkill, formatLoadSkillResult, suggestSkill } from '../utils/skills'
+import { findSkill, formatLoadSkillResult, suggestSkill, renderSkillsForWorker } from '../utils/skills'
 import { buildImportedSkills, parseRepoSpec, parseSkillIndex, parseSkillMarkdown, sanitizeSkillName, decideSkillImport } from '../utils/skillImport'
 import { generateId } from '../utils/formatting'
 import { matchHooks } from '../utils/hooks'
@@ -79,6 +79,9 @@ interface UseToolExecutionOptions {
   /** v2.155.0 — lista COMPLETA de skills (não só as ativas) p/ a ferramenta
    *  install_skills deduplicar pelos nomes já instalados. */
   getAllSkills?: () => Skill[]
+  /** v2.159.0 — skills EM VIGOR no turno (fixadas + carregadas via load_skill),
+   *  p/ os subagentes do delegate_subtasks herdarem o playbook. */
+  getActiveSkills?: () => Skill[]
   /** v2.155.0 — instala (persiste) as skills baixadas do GitHub via chat. */
   onInstallSkills?: (skills: Skill[]) => void
   /** v2.157.0 — substitui a lista COMPLETA de skills (usado pelo modo auto do
@@ -87,7 +90,7 @@ interface UseToolExecutionOptions {
   onPersistSkills?: (skills: Skill[]) => void
 }
 
-export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool, backgroundTasks, subagentActivity, subagentLimiter, personas, onSetPersona, getConversations, getStopped, getAllSkills, onInstallSkills, onPersistSkills }: UseToolExecutionOptions) {
+export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool, backgroundTasks, subagentActivity, subagentLimiter, personas, onSetPersona, getConversations, getStopped, getAllSkills, getActiveSkills, onInstallSkills, onPersistSkills }: UseToolExecutionOptions) {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
   const scoutSeqRef = useRef(0) // ids únicos + rodízio de modelo do scout
   const worktreeSeqRef = useRef(0) // sufixo único dos worktrees (v2.102.0)
@@ -99,6 +102,8 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
   getConversationsRef.current = getConversations
   const getAllSkillsRef = useRef(getAllSkills)
   getAllSkillsRef.current = getAllSkills
+  const getActiveSkillsRef = useRef(getActiveSkills)
+  getActiveSkillsRef.current = getActiveSkills
   const onInstallSkillsRef = useRef(onInstallSkills)
   onInstallSkillsRef.current = onInstallSkills
   const onPersistSkillsRef = useRef(onPersistSkills)
@@ -777,6 +782,12 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         const subtasks = (args.subtasks || []).filter((s: any) => s && s.prompt)
         if (!subtasks.length) return 'Nenhuma subtarefa válida fornecida.'
 
+        // Subagentes HERDAM as skills ativas (v2.159.0): o worker recebe um prompt
+        // próprio (sem o do orquestrador), então sem isto a parte delegada rodava
+        // FORA do playbook. Injeta as instruções das skills em vigor (fixadas +
+        // carregadas) no system prompt de cada worker.
+        const skillPlaybook = renderSkillsForWorker(getActiveSkillsRef.current?.() || [], lang)
+
         // Subagentes ANINHADOS (v2.88.0): teto de profundidade da árvore. 1 = sem
         // aninhamento (clássico); 2+ = um worker pode abrir sub-workers. Ver
         // researchWorker.canDelegateAtDepth / makeWorkerExec abaixo.
@@ -786,7 +797,7 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         // ainda dá para aninhar.
         const buildMessages = (st: any, depth: number): WorkerMessage[] => {
           const rolePrompt = resolveSubagentPrompt(st.agent)
-          const sys = [workerSystemPrompt(lang, canDelegateAtDepth(depth, maxDepth)), rolePrompt, systemMsg]
+          const sys = [workerSystemPrompt(lang, canDelegateAtDepth(depth, maxDepth)), rolePrompt, skillPlaybook, systemMsg]
             .filter(Boolean).join('\n\n') + langRule
           return [{ role: 'system', content: sys }, { role: 'user', content: String(st.prompt ?? '') }]
         }

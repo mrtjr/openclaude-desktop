@@ -332,6 +332,21 @@ export function renderActiveSkillsFull(activeSkills: Skill[], lang: string): str
   return `${header}\n\n${blocks}`
 }
 
+/** Playbook das skills em vigor, p/ injetar no system prompt de um SUBAGENTE
+ *  (v2.159.0): o worker herda as instruções das skills que o orquestrador segue
+ *  (fixadas + carregadas via load_skill), já que ele NÃO recebe o prompt do
+ *  orquestrador. Renderiza TODAS as skills dadas (sem excluir fixadas, pois o
+ *  worker não tem nenhuma injetada por outra via). '' se vazio. */
+export function renderSkillsForWorker(skills: Skill[], lang: string): string {
+  const list = (skills || []).filter(s => s && s.enabled)
+  if (!list.length) return ''
+  const header = lang === 'en'
+    ? '[ACTIVE SKILL PLAYBOOK — the main agent is following these skills; follow them in your subtask too]'
+    : '[PLAYBOOK DE SKILL ATIVA — o agente principal está seguindo estas skills; siga-as também na sua subtarefa]'
+  const blocks = list.map(s => `[SKILL: ${s.name}]\n${renderSkillBody(s)}`).join('\n\n')
+  return `${header}\n\n${blocks}`
+}
+
 /** Aplica o tool-scoping de uma skill ativa às ferramentas de UM passo
  *  (v2.158.0): allowlist positiva primeiro (só as permitidas + load_skill),
  *  depois remove as bloqueadas. load_skill é SEMPRE mantida (p/ o modelo poder

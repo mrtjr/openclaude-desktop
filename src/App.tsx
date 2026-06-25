@@ -63,7 +63,7 @@ import { PLACEHOLDER_HINTS } from './constants/prompts'
 import { formatMarkdown, getRelativeTime, groupByBucket, bucketLabel } from './utils/formatting'
 import { streamPhaseLabel } from './utils/streamPhase'
 import { buildSwitchOptions, groupSwitchOptions, type SwitchOption } from './utils/modelSwitcher'
-import { mergeSkills, skillManifestHeaders, scopeSkillsToProject } from './utils/skills'
+import { mergeSkills, skillManifestHeaders, scopeSkillsToProject, findActiveSkills, activeSkillsForTools } from './utils/skills'
 import type { Skill } from './types/skill'
 const SkillManager = lazy(() => import('./SkillManager'))
 
@@ -217,6 +217,10 @@ export default function App() {
   // rodam em background/closures — evita estado obsoleto).
   const skillsRef = useRef(skills)
   skillsRef.current = skills
+  // Skills EM VIGOR no turno (fixadas + carregadas via load_skill) — lido
+  // on-demand pelo delegate_subtasks p/ os subagentes herdarem o playbook
+  // (v2.159.0). Atualizado por efeito quando o conjunto ativo muda.
+  const activeSkillObjsRef = useRef<Skill[]>([])
   // Continuar a partir de outra conversa (v2.58.0)
   const [showConvPicker, setShowConvPicker] = useState(false)
   const [importingCtx, setImportingCtx] = useState(false)
@@ -664,6 +668,8 @@ export default function App() {
     getConversations: () => convManager.conversationsRef.current,
     // install_skills (v2.155.0): instala skills do GitHub "diretamente do chat".
     getAllSkills: () => skillsRef.current,
+    // Subagentes herdam o playbook das skills em vigor (v2.159.0).
+    getActiveSkills: () => activeSkillObjsRef.current,
     onInstallSkills: (built) => {
       if (!built.length) return
       const have = new Set(skillsRef.current.map(s => s.name))
@@ -1634,6 +1640,11 @@ export default function App() {
   useEffect(() => {
     if (isActiveConvLoading) for (const n of chat.activeSkillNames) turnSkillsRef.current.add(n)
   }, [chat.activeSkillNames, isActiveConvLoading])
+  // Mantém o conjunto de skills EM VIGOR (fixadas + carregadas) p/ os subagentes
+  // herdarem (v2.159.0). activeSkillsForTools = fixadas ∪ casadas/carregadas, dedup.
+  useEffect(() => {
+    activeSkillObjsRef.current = activeSkillsForTools(activeSkills, findActiveSkills(activeSkills, chat.activeSkillNames))
+  }, [chat.activeSkillNames, activeSkills])
   useEffect(() => {
     if (!isActiveConvLoading && turnSkillsRef.current.size) {
       const used = turnSkillsRef.current; turnSkillsRef.current = new Set()
