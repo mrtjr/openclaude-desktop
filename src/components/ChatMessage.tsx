@@ -80,6 +80,9 @@ function ChatMessageInner({
         {msg.role === 'user' ? <User size={16} /> : <div className="oc-logo">OC</div>}
       </div>
       <div className="message-content">
+        {msg.image && (
+          <img className="message-image" src={`data:${msg.image.mimeType};base64,${msg.image.base64}`} alt={msg.image.name} />
+        )}
         {msg.thinking && showThinking && (
           <details className="thinking-block" style={{ margin: '0 0 8px' }}>
             <summary style={{ cursor: 'pointer', opacity: 0.65, fontSize: 12, userSelect: 'none' }}>💭 Raciocínio</summary>

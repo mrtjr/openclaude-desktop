@@ -13,6 +13,7 @@ const os = require('os')
 const { atomicWriteJSON, readJSONWithFallback } = require('./atomic-write')
 const { providerTimeoutMs, createStallWatchdog } = require('./provider-timeouts')
 const { reasoningRequestParams, anthropicAcceptsTemperature } = require('./reasoning-control')
+const { toAnthropicContent, toGeminiParts } = require('./multimodal')
 const { cachedSystem, withCachedTools } = require('./anthropic-cache')
 const { resolveNavOutcome } = require('./browser-nav')
 const { buildOrionScript } = require('./orion-script')
@@ -1355,7 +1356,7 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
         if (m.role === 'assistant' && m.tool_calls?.length) {
           return { role: 'model', parts: m.tool_calls.map(tc => ({ functionCall: { name: tc.function.name, args: (() => { try { return JSON.parse(tc.function.arguments || '{}') } catch { return {} } })() } })) }
         }
-        return { role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content || '' }] }
+        return { role: m.role === 'assistant' ? 'model' : 'user', parts: toGeminiParts(m.content) }
       })
       const systemInstruction = messages.find(m => m.role === 'system')
       // Convert OpenAI tools to Gemini functionDeclarations
@@ -1385,7 +1386,7 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
         } else if (m.role === 'tool') {
           anthropicMsgs.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: m.tool_call_id || '', content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }] })
         } else {
-          anthropicMsgs.push({ role: m.role, content: m.content || '' })
+          anthropicMsgs.push({ role: m.role, content: toAnthropicContent(m.content) })
         }
       }
       // Convert OpenAI tools to Anthropic tools format
@@ -1557,7 +1558,7 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
         } else if (m.role === 'tool') {
           anthropicMsgs.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: m.tool_call_id || '', content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }] })
         } else {
-          anthropicMsgs.push({ role: m.role, content: m.content || '' })
+          anthropicMsgs.push({ role: m.role, content: toAnthropicContent(m.content) })
         }
       }
       const anthropicTools = tools?.length ? tools.map(t => ({ name: t.function.name, description: t.function.description || '', input_schema: t.function.parameters || { type: 'object', properties: {} } })) : undefined

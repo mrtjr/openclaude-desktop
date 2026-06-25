@@ -1014,6 +1014,20 @@ body .update-banner {
   background: transparent; color: var(--text-secondary); padding: 2px; border-radius: 4px;
 }
 .queued-pill-cancel:hover { color: var(--text-primary); background: rgba(255,255,255,0.08); }
+/* Anexo de imagem no composer + miniatura na bolha (v2.147.0) */
+.image-attach-pill {
+  display: flex; align-items: center; gap: 8px; margin: 0 4px 6px;
+  padding: 5px 10px 5px 6px; border-radius: 10px; font-size: 12px;
+  color: var(--text-secondary); background: rgba(255,255,255,0.04);
+  border: 1px dashed rgba(127,127,127,0.4); max-width: 100%;
+}
+.image-attach-thumb { width: 28px; height: 28px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
+.image-attach-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.message-image {
+  display: block; max-width: 280px; max-height: 280px; width: auto; height: auto;
+  border-radius: 10px; margin-bottom: 8px; border: 1px solid var(--border);
+}
+
 /* Editando a mensagem anterior via ↑ (v2.132.0) — variação accent da pill. */
 .editing-pill {
   display: flex; align-items: center; gap: 7px; margin: 0 4px 6px;

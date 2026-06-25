@@ -21,6 +21,7 @@ import { continuationPrompt } from './utils/continuation'
 import { nextToolChoiceMode, toolChoiceLabel } from './utils/toolChoice'
 import { verificationPrompt } from './utils/verification'
 import { ttsController } from './utils/speechOut'
+import type { ImageAttachment } from './utils/multimodal'
 import { starterPrompts } from './utils/starterPrompts'
 import { findMessageMatches, totalOccurrences, stepHitIndex } from './utils/conversationFind'
 import { useStableCallback } from './hooks/useStableCallback'
@@ -85,6 +86,7 @@ import { buildStatusSegments } from './utils/statusLine'
 import { buildRecap } from './utils/recap'
 import { filterValidRecords, validApiKey, SYNC_REQUIRED_FIELDS } from './utils/syncValidation'
 import { useSpeechInput } from './hooks/useSpeechInput'
+import { useImageAttachment } from './hooks/useImageAttachment'
 import { appendTranscript } from './utils/speech'
 import { RegenSplit } from './components/RegenSplit'
 import { AmbientOrb } from './components/AmbientOrb'
@@ -147,7 +149,7 @@ export default function App() {
   // Message typed mid-turn, waiting for the conversation to idle (v2.12.52 —
   // the composer no longer locks for the whole 3–10 min turn). convId pins
   // the queue to the conversation it was typed in.
-  const [queuedMessage, setQueuedMessage] = useState<{ text: string; convId: string | null } | null>(null)
+  const [queuedMessage, setQueuedMessage] = useState<{ text: string; convId: string | null; image?: ImageAttachment } | null>(null)
   // Editando a última mensagem via ↑ no composer vazio (v2.132.0, estilo
   // ChatGPT): quando setado, o próximo envio faz edit-resend em vez de anexar.
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null)
@@ -915,7 +917,7 @@ export default function App() {
   }, [showSettings, showAnalytics, showParliament, showVault, showPersona, showArena, showRAG, showWorkflow, showOrion, showVision, showCodeWorkspace, showProfiles, showScheduler, showAgentDashboard, showDevInsights])
 
   // Forward ref for sendMessage — declared early so scheduledTasks can use it
-  const sendMessageRef = useRef<(text: string, convId?: string, opts?: { hidden?: boolean; edited?: boolean }) => void>(() => {})
+  const sendMessageRef = useRef<(text: string, convId?: string, opts?: { hidden?: boolean; edited?: boolean; image?: ImageAttachment }) => void>(() => {})
 
   const scheduledTasks = useScheduledTasks({
     enabled: true,
@@ -1298,6 +1300,9 @@ export default function App() {
     language: settings.language,
     onTranscript: (text) => setInput(prev => appendTranscript(prev, text)),
   })
+  // Anexo de imagem multimodal no composer (v2.147.0). Substitui o placeholder
+  // de texto antigo: agora a imagem é enviada de verdade ao provedor.
+  const imageAttachment = useImageAttachment({ onToast: showToast })
 
   // Transforms de exibição (v2.94.0): identidade estável p/ não quebrar o memo
   // do ChatMessage a cada render (muda só quando as regras mudam).
@@ -1494,7 +1499,8 @@ export default function App() {
   }, [convManager, models, settings, regenerateResponse, showToast, input, cycleTheme, activeConv, providerConfig.model])
 
   const handleSend = useCallback(() => {
-    if (!input.trim()) return
+    const img = imageAttachment.attachedImage
+    if (!input.trim() && !img) return // permite enviar só a imagem (v2.147.0)
     // Editando a última mensagem (↑): re-roda a conversa a partir dela com o
     // texto novo, em vez de anexar um turno (v2.132.0).
     if (editingMsgId) {
@@ -1516,8 +1522,9 @@ export default function App() {
     // Mid-turn (turns run 3–10 min on Modal): queue instead of dropping the
     // user on a disabled composer. Auto-sends when this conversation idles.
     if (isActiveConvLoading) {
-      setQueuedMessage({ text: payload.trim(), convId: convManager.activeConvId })
+      setQueuedMessage({ text: payload.trim(), convId: convManager.activeConvId, image: img || undefined })
       setInput('')
+      imageAttachment.clearAttachment()
       return
     }
     // Cria a conversa SÓ agora (lazy) se não houver nenhuma ativa — ex.: logo
@@ -1531,9 +1538,10 @@ export default function App() {
     const since = lastTurnCompleteAtRef.current
     if (since && Date.now() - since < 20_000) logInsight('chat', 'quick_followup', { gapMs: Date.now() - since })
     lastTurnCompleteAtRef.current = 0
-    sendMessageRef.current(payload.trim(), cid)
+    sendMessageRef.current(payload.trim(), cid, { image: img || undefined })
     setInput('')
-  }, [input, slash, slashIdx, executeSlash, isActiveConvLoading, convManager.activeConvId, convManager.newConversation, editingMsgId, handleEditResend])
+    imageAttachment.clearAttachment()
+  }, [input, slash, slashIdx, executeSlash, isActiveConvLoading, convManager.activeConvId, convManager.newConversation, editingMsgId, handleEditResend, imageAttachment])
 
   // Clique num starter prompt do empty-state (v2.131.0): envia direto, criando
   // a conversa lazy se preciso (mesmo padrão do handleSend).
@@ -1570,10 +1578,11 @@ export default function App() {
   useEffect(() => {
     if (queuedMessage && !isActiveConvLoading && queuedMessage.convId === convManager.activeConvId) {
       const msg = queuedMessage.text
+      const img = queuedMessage.image
       setQueuedMessage(null)
       // Let the finished turn's state settle before re-entering sendMessage
       // (same pattern as regenerateResponse).
-      setTimeout(() => sendMessageRef.current(msg), 80)
+      setTimeout(() => sendMessageRef.current(msg, undefined, { image: img }), 80)
     }
   }, [queuedMessage, isActiveConvLoading, convManager.activeConvId])
 
@@ -2543,11 +2552,15 @@ export default function App() {
                       ? 'Nenhum subagente ativo agora. Eles aparecem aqui quando a IA delega pesquisas, ou quando o scout proativo pesquisa enquanto a IA trabalha.'
                       : 'Nenhum subagente ativo. Eles aparecem quando a IA delega pesquisas. Dica: ative a “Pesquisa proativa (scout)” nas Configurações para um subagente ocioso pesquisar dados atualizados enquanto a IA trabalha.')}</div>)}
             <div className="input-wrapper">
-              <input type="file" id="image-upload" accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
+              <input type="file" id="image-upload" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
                 const file = e.target.files?.[0]
                 if (!file) return
                 const reader = new FileReader()
-                reader.onload = () => { setInput(prev => prev + `\n[Imagem: ${file.name}]\n`); showToast(`Imagem ${file.name} anexada`) }
+                reader.onload = () => {
+                  const url = String(reader.result || '')
+                  const m = /^data:([^;]+);base64,(.*)$/.exec(url)
+                  if (m) imageAttachment.attachFromBase64(m[2], m[1], file.name)
+                }
                 reader.readAsDataURL(file)
                 e.target.value = ''
               }} />
@@ -2642,11 +2655,32 @@ export default function App() {
                   </button>
                 </div>
               )}
+              {imageAttachment.attachedImage && (
+                <div className="image-attach-pill">
+                  <img className="image-attach-thumb" src={`data:${imageAttachment.attachedImage.mimeType};base64,${imageAttachment.attachedImage.base64}`} alt={imageAttachment.attachedImage.name} />
+                  <span className="image-attach-name">{imageAttachment.attachedImage.name}</span>
+                  <button className="queued-pill-cancel" title={settings.language === 'en' ? 'Remove image' : 'Remover imagem'} onClick={() => imageAttachment.clearAttachment()}>
+                    <X size={11} />
+                  </button>
+                </div>
+              )}
               <div className="input-pill" onClick={e => e.stopPropagation()}>
                 <div className="input-left-actions">
                   <button className="input-icon-btn" onClick={() => setShowCommandPalette(true)} title="Ferramentas e recursos (Ctrl+K)" aria-label={settings.language === 'en' ? 'Tools and features' : 'Ferramentas e recursos'}><Plus size={18} /></button>
                 </div>
                 <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown}
+                  onPaste={(e) => {
+                    // Colar imagem da área de transferência → anexa (v2.147.0).
+                    const item = Array.from(e.clipboardData?.items || []).find(it => it.type.startsWith('image/'))
+                    const file = item?.getAsFile()
+                    if (!file) return
+                    const reader = new FileReader()
+                    reader.onload = () => {
+                      const m = /^data:([^;]+);base64,(.*)$/.exec(String(reader.result || ''))
+                      if (m) imageAttachment.attachFromBase64(m[2], m[1], file.name || 'colado.png')
+                    }
+                    reader.readAsDataURL(file)
+                  }}
                   aria-label={settings.language === 'en' ? 'Message input' : 'Campo de mensagem'}
                   placeholder={isActiveConvLoading ? (settings.language === 'en' ? 'Type the next message — Enter queues it' : 'Digite a próxima mensagem — Enter coloca na fila') : PLACEHOLDER_HINTS[placeholderIdx]} className="message-input" rows={1} />
                 <div className="input-right-actions">
@@ -2675,7 +2709,7 @@ export default function App() {
                   {isActiveConvLoading ? (
                     <button className="send-circle stop" onClick={chat.stopAgent} title="Parar" aria-label={settings.language === 'en' ? 'Stop' : 'Parar'}><Square size={14} fill="currentColor" /></button>
                   ) : (
-                    <button className={`send-circle ${!input.trim() ? 'disabled' : ''}`} onClick={handleSend} disabled={!input.trim()} title="Enviar (Enter)" aria-label={settings.language === 'en' ? 'Send message' : 'Enviar mensagem'}>
+                    <button className={`send-circle ${!input.trim() && !imageAttachment.attachedImage ? 'disabled' : ''}`} onClick={handleSend} disabled={!input.trim() && !imageAttachment.attachedImage} title="Enviar (Enter)" aria-label={settings.language === 'en' ? 'Send message' : 'Enviar mensagem'}>
                       <Send size={14} />
                     </button>
                   )}
