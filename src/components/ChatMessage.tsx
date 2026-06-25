@@ -8,6 +8,7 @@ import { extractArtifacts, type Artifact } from '../utils/artifacts'
 import { canEditMessage } from '../utils/conversationEdit'
 import CopyButton from './CopyButton'
 import ToolCallBlock from './ToolCallBlock'
+import ReadAloudButton from './ReadAloudButton'
 
 // One chat message, extracted from the inline map in App.tsx and memoized.
 // During streaming, App re-renders on EVERY chunk (chat.streamingText state),
@@ -174,6 +175,9 @@ function ChatMessageInner({
               >
                 <ShieldCheck size={12} />
               </button>
+            )}
+            {msg.role === 'assistant' && msg.content && (
+              <ReadAloudButton id={msg.id} text={msg.content} language={en ? 'en' : 'pt'} />
             )}
             <button
               className="msg-action-btn msg-branch-btn"

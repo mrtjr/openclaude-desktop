@@ -1123,6 +1123,8 @@ body .update-banner {
 .msg-action-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 3px 6px; border-radius: 5px; font-size: 11px; transition: all 0.15s; display: flex; align-items: center; gap: 4px; }
 .msg-action-btn:hover { background: rgba(255,255,255,0.06); color: var(--text-primary); }
 [data-theme="light"] .msg-action-btn:hover { background: rgba(0,0,0,0.06); }
+/* Botão "ler em voz alta" falando (v2.144.0) */
+.msg-tts-btn.speaking { color: var(--accent, #6366f1); }
 
 /* ── Editar mensagem in-place + reenviar (estilo ChatGPT, v2.129.0) ── */
 .message-edit { display: flex; flex-direction: column; gap: 8px; }
