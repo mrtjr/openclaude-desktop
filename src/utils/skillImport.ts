@@ -69,6 +69,34 @@ function stripQuotes(s: string): string {
   return s.replace(/^["']|["']$/g, '')
 }
 
+/** Campos da nossa Skill que viram SKILL.md (subset estável). */
+export interface ExportableSkill {
+  name: string
+  description: string
+  instructions: string
+  allowedTools?: string[]
+  disallowedTools?: string[]
+  triggers?: string[]
+  examples?: string
+}
+
+/** Serializa uma skill no padrão aberto SKILL.md (frontmatter + corpo). Inverso
+ *  do parseSkillMarkdown — torna nossas skills portáveis p/ Claude Code/Codex/
+ *  Cursor (v2.151.0). */
+export function toSkillMarkdown(s: ExportableSkill): string {
+  const fm: string[] = ['---']
+  fm.push(`name: ${sanitizeSkillName(s.name) || 'skill'}`)
+  const desc = String(s.description || '').replace(/\r?\n/g, ' ').slice(0, 1024)
+  fm.push(`description: ${desc}`)
+  if (s.allowedTools?.length) fm.push(`allowed-tools: [${s.allowedTools.join(', ')}]`)
+  if (s.disallowedTools?.length) fm.push(`disallowed-tools: [${s.disallowedTools.join(', ')}]`)
+  if (s.triggers?.length) fm.push(`triggers: [${s.triggers.join(', ')}]`)
+  fm.push('---')
+  let body = String(s.instructions || '').trim()
+  if (s.examples && s.examples.trim()) body += `\n\n## Exemplos\n\n${s.examples.trim()}`
+  return `${fm.join('\n')}\n\n${body}\n`
+}
+
 function asList(v: string[] | string | undefined): string[] | undefined {
   if (v === undefined) return undefined
   if (Array.isArray(v)) return v.filter(Boolean)

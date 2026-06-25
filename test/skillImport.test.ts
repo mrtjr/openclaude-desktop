@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseSkillMarkdown, splitFrontmatter, sanitizeSkillName } from '../src/utils/skillImport'
+import { parseSkillMarkdown, splitFrontmatter, sanitizeSkillName, toSkillMarkdown } from '../src/utils/skillImport'
 
 describe('sanitizeSkillName', () => {
   it('aplica as regras do padrão (minúsculas/números/hífen, ≤64)', () => {
@@ -69,5 +69,28 @@ describe('parseSkillMarkdown', () => {
     const r = parseSkillMarkdown(`---\nname: x\ndescription: ${'d'.repeat(1100)}\n---\ncorpo`)
     expect(r.skill?.description.length).toBe(1024)
     expect(r.warnings.join(' ')).toMatch(/truncada/i)
+  })
+})
+
+describe('toSkillMarkdown (export) — round-trip', () => {
+  it('serializa frontmatter + corpo e o parse recupera a skill', () => {
+    const md = toSkillMarkdown({
+      name: 'code-review', description: 'Revisa código',
+      instructions: 'Faça X.', allowedTools: ['read', 'bash'], triggers: ['revisar'],
+    })
+    expect(md).toMatch(/^---\nname: code-review\ndescription: Revisa código/)
+    expect(md).toContain('allowed-tools: [read, bash]')
+    const r = parseSkillMarkdown(md)
+    expect(r.errors).toEqual([])
+    expect(r.skill).toEqual({
+      name: 'code-review', description: 'Revisa código', instructions: 'Faça X.',
+      allowedTools: ['read', 'bash'], triggers: ['revisar'],
+    })
+  })
+
+  it('anexa exemplos ao corpo', () => {
+    const md = toSkillMarkdown({ name: 'x', description: 'd', instructions: 'corpo', examples: 'ex1' })
+    expect(md).toContain('## Exemplos')
+    expect(md).toContain('ex1')
   })
 })

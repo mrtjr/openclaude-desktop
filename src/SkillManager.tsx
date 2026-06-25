@@ -4,7 +4,7 @@ import type { Skill } from './types/skill'
 import { BUILTIN_SKILLS } from './utils/skills'
 import { isDangerousFact } from './utils/memoryInduction'
 import { generateId } from './utils/formatting'
-import { parseSkillMarkdown } from './utils/skillImport'
+import { parseSkillMarkdown, toSkillMarkdown, sanitizeSkillName } from './utils/skillImport'
 
 interface Props {
   isOpen: boolean
@@ -90,6 +90,15 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
     }
     reader.readAsText(file)
     e.target.value = ''
+  }
+  // Exporta UMA skill como SKILL.md (padrão aberto) — portável p/ Claude Code/
+  // Codex/Cursor (v2.151.0).
+  const downloadSkillMd = (s: Skill) => {
+    const blob = new Blob([toSkillMarkdown(s)], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `${sanitizeSkillName(s.name) || 'skill'}.md`; a.click()
+    URL.revokeObjectURL(url)
   }
 
   // Skills aprendidas em rascunho (Fase 4) ficam numa seção de revisão separada;
@@ -206,6 +215,7 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
                     {s.pinned ? <PinOff size={15} /> : <Pin size={15} />}
                   </button>
                   <button style={iconBtn} title={pt ? 'Editar' : 'Edit'} onClick={() => setEditing({ ...s, triggers: s.triggers || [] })}><Edit3 size={15} /></button>
+                  <button style={iconBtn} title={pt ? 'Baixar como SKILL.md (padrão aberto)' : 'Download as SKILL.md (open standard)'} onClick={() => downloadSkillMd(s)}><FileText size={15} /></button>
                   {s.isBuiltIn
                     ? <button style={iconBtn} title={pt ? 'Restaurar builtin' : 'Reset builtin'} onClick={() => resetBuiltin(s.id)}><Check size={15} /></button>
                     : <button style={iconBtn} title={pt ? 'Excluir' : 'Delete'} onClick={() => remove(s.id)}><Trash2 size={15} /></button>}
