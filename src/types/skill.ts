@@ -50,4 +50,8 @@ export interface Skill {
   status?: 'active' | 'staging'
   /** Proveniência de uma skill aprendida: de onde veio e quão reforçada. */
   provenance?: { sourceConvIds: string[]; confidence: number }
+  // ─── Auto-evolução (v2.154.0) ───────────────────────────────────────────
+  /** Quantas vezes a skill ficou ativa num turno — informa o "Evoluir com IA"
+   *  ("de acordo que for usada") e pode nudge a evolução. */
+  usageCount?: number
 }

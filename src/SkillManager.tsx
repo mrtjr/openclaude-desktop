@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, Plus, Edit3, Trash2, Check, Zap, ZapOff, Pin, PinOff, Download, Upload, BookOpen, FileText, AlertTriangle } from 'lucide-react'
+import { X, Plus, Edit3, Trash2, Check, Zap, ZapOff, Pin, PinOff, Download, Upload, BookOpen, FileText, AlertTriangle, Sparkles, Loader2 } from 'lucide-react'
 import type { Skill } from './types/skill'
 import { BUILTIN_SKILLS } from './utils/skills'
 import { isDangerousFact } from './utils/memoryInduction'
@@ -14,6 +14,9 @@ interface Props {
   language: 'pt' | 'en'
   /** v2.107.0 — projetos para o seletor de escopo da skill. */
   projects?: { id: string; name: string }[]
+  /** v2.154.0 — pede ao modelo uma versão melhorada da skill (auto-evolução).
+   *  Retorna a proposta (revisada no editor antes de salvar) ou um erro. */
+  onEvolve?: (skill: Skill) => Promise<{ description: string; instructions: string; examples?: string } | { error: string }>
 }
 
 const empty = (): Skill => ({
@@ -23,11 +26,24 @@ const empty = (): Skill => ({
 
 /** Gestão de skills — capacidades invocadas pelo modelo via load_skill, com pin
  *  manual e gatilhos por palavra-chave. Persistência via onSave (IPC no App). */
-export default function SkillManager({ isOpen, onClose, skills, onSave, language, projects }: Props) {
+export default function SkillManager({ isOpen, onClose, skills, onSave, language, projects, onEvolve }: Props) {
   const pt = language === 'pt'
   const [editing, setEditing] = useState<Skill | null>(null)
+  const [evolvingId, setEvolvingId] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const mdFileRef = useRef<HTMLInputElement>(null)
+  // Auto-evolução (v2.154.0): pede a proposta à IA e abre no editor p/ revisão.
+  const handleEvolve = async (s: Skill) => {
+    if (!onEvolve || evolvingId) return
+    setEvolvingId(s.id)
+    try {
+      const r = await onEvolve(s)
+      if ('error' in r) { alert((pt ? 'Não foi possível evoluir: ' : "Couldn't evolve: ") + r.error); return }
+      // Abre a proposta no editor p/ o usuário revisar e salvar (staging seguro).
+      setEditing({ ...s, triggers: s.triggers || [], description: r.description || s.description, instructions: r.instructions, ...(r.examples ? { examples: r.examples } : {}) })
+    } catch (e: any) { alert((pt ? 'Falha: ' : 'Failed: ') + (e?.message || e)) }
+    finally { setEvolvingId(null) }
+  }
 
   useEffect(() => { if (!isOpen) setEditing(null) }, [isOpen])
   if (!isOpen) return null
@@ -247,6 +263,13 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
                     {s.pinned ? <PinOff size={15} /> : <Pin size={15} />}
                   </button>
                   <button style={iconBtn} title={pt ? 'Editar' : 'Edit'} onClick={() => setEditing({ ...s, triggers: s.triggers || [] })}><Edit3 size={15} /></button>
+                  {onEvolve && (
+                    <button style={iconBtn} disabled={!!evolvingId}
+                      title={pt ? `Evoluir com IA — propõe uma versão melhorada${s.usageCount ? ` (usada ${s.usageCount}×)` : ''} p/ você revisar` : `Evolve with AI — proposes an improved version${s.usageCount ? ` (used ${s.usageCount}×)` : ''} for you to review`}
+                      onClick={() => handleEvolve(s)}>
+                      {evolvingId === s.id ? <Loader2 size={15} className="spin" /> : <Sparkles size={15} style={{ color: 'var(--accent)' }} />}
+                    </button>
+                  )}
                   <button style={iconBtn} title={pt ? 'Baixar como SKILL.md (padrão aberto)' : 'Download as SKILL.md (open standard)'} onClick={() => downloadSkillMd(s)}><FileText size={15} /></button>
                   {s.isBuiltIn
                     ? <button style={iconBtn} title={pt ? 'Restaurar builtin' : 'Reset builtin'} onClick={() => resetBuiltin(s.id)}><Check size={15} /></button>

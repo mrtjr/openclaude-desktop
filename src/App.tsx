@@ -23,6 +23,7 @@ import { verificationPrompt } from './utils/verification'
 import { ttsController } from './utils/speechOut'
 import type { ImageAttachment } from './utils/multimodal'
 import type { DocAttachment } from './utils/documentAttach'
+import { buildEvolvePrompt, parseEvolvedSkill } from './utils/skillEvolution'
 import { starterPrompts } from './utils/starterPrompts'
 import { findMessageMatches, totalOccurrences, stepHitIndex } from './utils/conversationFind'
 import { useStableCallback } from './hooks/useStableCallback'
@@ -1597,6 +1598,38 @@ export default function App() {
     setInput('')
   })
 
+  // Auto-evolução de skills (v2.154.0): a IA propõe uma versão melhorada da
+  // skill (uma chamada one-off), que o usuário REVISA no editor antes de salvar
+  // (staging seguro — nunca auto-aplica). "de acordo que for usada": o usageCount
+  // entra no prompt.
+  const evolveSkill = useStableCallback(async (skill: Skill): Promise<{ description: string; instructions: string; examples?: string } | { error: string }> => {
+    const cfg = providerConfig
+    if (cfg.isNotOllama && !cfg.apiKey) return { error: settings.language === 'en' ? 'Set the provider API key first.' : 'Configure a chave do provedor primeiro.' }
+    const prompt = buildEvolvePrompt({ name: skill.name, description: skill.description, instructions: skill.instructions, examples: skill.examples, usageCount: skill.usageCount }, settings.language)
+    try {
+      const res: any = cfg.isNotOllama
+        ? await window.electron.providerChat({ provider: cfg.provider, apiKey: cfg.apiKey, model: cfg.model, messages: [{ role: 'user', content: prompt }], temperature: 0.4, max_tokens: 2048, modalHostname: cfg.modalHostname, customBaseUrl: cfg.customBaseUrl })
+        : await window.electron.ollamaChat({ model: cfg.model, messages: [{ role: 'user', content: prompt }], temperature: 0.4, max_tokens: 2048, numCtx: 8192 })
+      if (res?.error) return { error: res.error }
+      const parsed = parseEvolvedSkill(res?.choices?.[0]?.message?.content || '')
+      if (!parsed) return { error: settings.language === 'en' ? "Couldn't parse the model's proposal." : 'Não consegui interpretar a proposta do modelo.' }
+      return parsed
+    } catch (e: any) { return { error: e?.message || String(e) } }
+  })
+
+  // Contagem de uso de skills p/ a auto-evolução: acumula as skills ativas no
+  // turno e incrementa usageCount ao concluir ("de acordo que for usada").
+  const turnSkillsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (isActiveConvLoading) for (const n of chat.activeSkillNames) turnSkillsRef.current.add(n)
+  }, [chat.activeSkillNames, isActiveConvLoading])
+  useEffect(() => {
+    if (!isActiveConvLoading && turnSkillsRef.current.size) {
+      const used = turnSkillsRef.current; turnSkillsRef.current = new Set()
+      persistSkills(skillsRef.current.map(s => used.has(s.name) ? { ...s, usageCount: (s.usageCount || 0) + 1 } : s))
+    }
+  }, [isActiveConvLoading])
+
   // Chain-of-Verification (v2.143.0, pesquisa 2026 de self-correction): dispara
   // um turno OCULTO que pede ao modelo p/ auto-verificar a resposta clicada.
   const handleVerify = useStableCallback((msgId: string) => {
@@ -1850,7 +1883,7 @@ export default function App() {
       <Suspense fallback={<div className="lazy-panel-fallback" role="status" aria-label="Carregando painel"><Loader2 size={20} className="spin" /></div>}>
         {showAnalytics && <AnalyticsDashboard isOpen={showAnalytics} onClose={() => setShowAnalytics(false)} language={settings.language} />}
         {showDevInsights && <DevInsightsPanel isOpen={showDevInsights} onClose={() => setShowDevInsights(false)} language={settings.language} providerConfig={providerConfig} />}
-        {showSkills && <SkillManager isOpen={showSkills} onClose={() => setShowSkills(false)} skills={skills} onSave={persistSkills} language={settings.language} projects={projManager.projects.map(p => ({ id: p.id, name: p.name }))} />}
+        {showSkills && <SkillManager isOpen={showSkills} onClose={() => setShowSkills(false)} skills={skills} onSave={persistSkills} language={settings.language} projects={projManager.projects.map(p => ({ id: p.id, name: p.name }))} onEvolve={evolveSkill} />}
         {showConvPicker && (
           <div className="settings-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowConvPicker(false) }}>
             <div className="analytics-modal" style={{ maxWidth: 540 }}>
