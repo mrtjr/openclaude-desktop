@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, Plus, Edit3, Trash2, Check, Zap, ZapOff, Pin, PinOff, Download, Upload, BookOpen } from 'lucide-react'
+import { X, Plus, Edit3, Trash2, Check, Zap, ZapOff, Pin, PinOff, Download, Upload, BookOpen, FileText } from 'lucide-react'
 import type { Skill } from './types/skill'
 import { BUILTIN_SKILLS } from './utils/skills'
 import { isDangerousFact } from './utils/memoryInduction'
 import { generateId } from './utils/formatting'
+import { parseSkillMarkdown } from './utils/skillImport'
 
 interface Props {
   isOpen: boolean
@@ -26,6 +27,7 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
   const pt = language === 'pt'
   const [editing, setEditing] = useState<Skill | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const mdFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { if (!isOpen) setEditing(null) }, [isOpen])
   if (!isOpen) return null
@@ -69,6 +71,22 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
       } catch (err: any) {
         alert((pt ? 'Falha ao importar: ' : 'Import failed: ') + (err?.message || err))
       }
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
+  // Importa um SKILL.md no padrão aberto (v2.150.0): destrava o ecossistema de
+  // skills da comunidade (anthropics/skills, marketplaces, Claude Code/Codex…).
+  const handleImportSkillMd = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const r = parseSkillMarkdown(String(reader.result))
+      if (!r.skill) { alert((pt ? 'Falha ao importar SKILL.md: ' : 'SKILL.md import failed: ') + r.errors.join(' ')); return }
+      const skill: Skill = { ...empty(), ...r.skill, id: generateId(), enabled: true, pinned: false, isBuiltIn: false, kind: 'user' }
+      onSave([...skills, skill])
+      alert((pt ? 'Skill importada: ' : 'Imported skill: ') + skill.name + (r.warnings.length ? '\n\n' + r.warnings.join('\n') : ''))
     }
     reader.readAsText(file)
     e.target.value = ''
@@ -126,9 +144,14 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
                   <Download size={14} /> {pt ? 'Exportar' : 'Export'}
                 </button>
                 <button className="settings-close" style={{ width: 'auto', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => fileRef.current?.click()}>
-                  <Upload size={14} /> {pt ? 'Importar' : 'Import'}
+                  <Upload size={14} /> {pt ? 'Importar (.json)' : 'Import (.json)'}
+                </button>
+                <button className="settings-close" style={{ width: 'auto', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => mdFileRef.current?.click()}
+                  title={pt ? 'Importar uma skill no padrão aberto SKILL.md (Claude Code/Codex/Cursor…)' : 'Import a skill in the open SKILL.md standard (Claude Code/Codex/Cursor…)'}>
+                  <FileText size={14} /> {pt ? 'Importar SKILL.md' : 'Import SKILL.md'}
                 </button>
                 <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: 'none' }} onChange={handleImport} />
+                <input ref={mdFileRef} type="file" accept=".md,.markdown,text/markdown" style={{ display: 'none' }} onChange={handleImportSkillMd} />
               </div>
 
               {/* Seção de revisão das skills aprendidas (staging) — Fase 4 */}
