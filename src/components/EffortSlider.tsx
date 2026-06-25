@@ -23,8 +23,10 @@ interface Props {
 
 const t = (lang: 'pt' | 'en', pt: string, en: string) => (lang === 'pt' ? pt : en)
 
-// Eixo "mais rápido → mais inteligente" do slider (4 paradas concretas).
-const AXIS: ReasoningEffort[] = ['off', 'low', 'medium', 'high']
+// Eixo "mais rápido → mais inteligente" (6 paradas). xhigh/max só têm efeito
+// real na Anthropic moderna (Opus 4.7/4.8 etc.); em OpenAI-compat o backend
+// rebaixa para 'high' (ver reasoning-control.clampOpenAiEffort).
+const AXIS: ReasoningEffort[] = ['off', 'low', 'medium', 'high', 'xhigh', 'max']
 
 const shortLabel = (v: ReasoningEffort | undefined, lang: 'pt' | 'en'): string => {
   switch (v) {
@@ -33,6 +35,8 @@ const shortLabel = (v: ReasoningEffort | undefined, lang: 'pt' | 'en'): string =
     case 'low': return t(lang, 'Baixo', 'Low')
     case 'medium': return t(lang, 'Médio', 'Medium')
     case 'high': return t(lang, 'Alto', 'High')
+    case 'xhigh': return t(lang, 'Muito alto', 'X-High')
+    case 'max': return t(lang, 'Máximo', 'Max')
     case 'default': return t(lang, 'Padrão', 'Default')
     default: return t(lang, 'Padrão', 'Default') // undefined = herda
   }

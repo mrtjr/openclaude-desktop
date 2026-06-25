@@ -12,7 +12,7 @@ const { formatMcpContent } = require('./mcp-format')
 const os = require('os')
 const { atomicWriteJSON, readJSONWithFallback } = require('./atomic-write')
 const { providerTimeoutMs, createStallWatchdog } = require('./provider-timeouts')
-const { reasoningRequestParams } = require('./reasoning-control')
+const { reasoningRequestParams, anthropicAcceptsTemperature } = require('./reasoning-control')
 const { cachedSystem, withCachedTools } = require('./anthropic-cache')
 const { resolveNavOutcome } = require('./browser-nav')
 const { buildOrionScript } = require('./orion-script')
@@ -1394,7 +1394,8 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
         max_tokens: max_tokens || 4096,
         messages: anthropicMsgs,
         ...(systemMsg ? { system: cachedSystem(systemMsg.content) } : {}),
-        temperature: temperature ?? 0.7,
+        // Opus 4.7/4.8/Fable 5 rejeitam temperature (400) — só envia onde é aceita.
+        ...(anthropicAcceptsTemperature(model) ? { temperature: temperature ?? 0.7 } : {}),
         ...(anthropicTools ? { tools: withCachedTools(anthropicTools) } : {})
       }
     } else if (provider === 'openrouter') {
@@ -1558,7 +1559,8 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
       }
       const anthropicTools = tools?.length ? tools.map(t => ({ name: t.function.name, description: t.function.description || '', input_schema: t.function.parameters || { type: 'object', properties: {} } })) : undefined
       headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }
-      bodyObj = { model, max_tokens: max_tokens || 4096, messages: anthropicMsgs, ...(systemMsg ? { system: cachedSystem(systemMsg.content) } : {}), temperature: temperature ?? 0.7, stream: true, ...(anthropicTools ? { tools: withCachedTools(anthropicTools) } : {}) }
+      // Opus 4.7/4.8/Fable 5 rejeitam temperature (400) — só envia onde é aceita.
+      bodyObj = { model, max_tokens: max_tokens || 4096, messages: anthropicMsgs, ...(systemMsg ? { system: cachedSystem(systemMsg.content) } : {}), ...(anthropicAcceptsTemperature(model) ? { temperature: temperature ?? 0.7 } : {}), stream: true, ...(anthropicTools ? { tools: withCachedTools(anthropicTools) } : {}) }
     } else if (provider === 'custom') {
       const cfg = parseCustomBase(customBaseUrl)
       if (!cfg) return resolve({ error: 'Custom provider: invalid baseUrl' })

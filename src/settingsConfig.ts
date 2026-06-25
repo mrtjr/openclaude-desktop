@@ -16,7 +16,7 @@ import { DEFAULT_SANDBOX } from './utils/commandSandbox'
 
 /** Esforço de raciocínio (v2.25.0; 'auto' em v2.50.0). Reusado pelo seletor
  *  global (Settings) e pelo override por-conversa (EffortSlider). */
-export type ReasoningEffort = 'default' | 'auto' | 'off' | 'low' | 'medium' | 'high'
+export type ReasoningEffort = 'default' | 'auto' | 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export interface McpServer {
   name: string
