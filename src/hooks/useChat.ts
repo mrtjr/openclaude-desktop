@@ -30,7 +30,7 @@ import { outputStyleAddition } from '../constants/outputStyles'
 import { buildTurnEntry, appendTurn, renderReportForInjection, type ReportAction } from '../utils/conversationReport'
 import { toolCallSummary } from '../utils/toolDisplay'
 import { isToolError } from '../utils/toolPolicy'
-import { nextStreamPhase, classifyDelta, createPhaseProfiler, type StreamPhase } from '../utils/streamPhase'
+import { nextStreamPhase, classifyDelta, deltaReasoning, createPhaseProfiler, type StreamPhase } from '../utils/streamPhase'
 import { runCompaction, mergeSummary, planEmergencyCompaction } from '../services/compaction'
 import { renderWorkingMemory, renderPersistentMemory } from '../utils/memoryRender'
 import { mergeFact, normalizeMemory } from '../utils/persistentMemory'
@@ -950,6 +950,9 @@ export function useChat({
           // ─── Streaming path ────────────────────────────────
           let accumulated = ''
           let displayText = ''
+          // Texto de raciocínio (summarized) capturado dos deltas — vira o bloco
+          // "Raciocínio" da mensagem em vez de ser descartado (v2.142.0).
+          let reasoningBuf = ''
           const sanitizer = new StreamingSanitizer()
           let toolCallsData: any[] = []
           let finishReason = ''
@@ -1027,6 +1030,8 @@ export function useChat({
                   // o indicador não atrasar 300ms nessas transições.
                   pushPhase(nextPhase, (nextPhase?.kind) !== (phase?.kind))
                 }
+                const reasoningChunk = deltaReasoning(delta)
+                if (reasoningChunk) reasoningBuf += reasoningChunk
                 if (delta.content) {
                   accumulated += delta.content
                   // Sanitize reasoning leaks in real-time
@@ -1222,7 +1227,9 @@ export function useChat({
           if (remaining) displayText += remaining
           // Capture the model's reasoning (if any) BEFORE sanitizing it out, so
           // the final message can show it as a collapsible thinking block.
-          const turnThinking = extractThinking(accumulated).thinking
+          // Raciocínio: o <think> embutido no texto OU o stream reasoning_content
+          // (summarized) capturado em reasoningBuf (v2.142.0).
+          const turnThinking = extractThinking(accumulated).thinking || (reasoningBuf.trim() || undefined)
           // Encapsulated "never blank" invariant (see sanitizeReasoningLeaksSafe).
           accumulated = sanitizeReasoningLeaksSafe(accumulated)
           console.log('[useChat] Stream completed:', { accumulatedLen: accumulated.length, toolCalls: toolCallsData.length, finishReason })

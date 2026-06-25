@@ -78,7 +78,7 @@ describe('anthropicModelInfo — classificação de geração (v2.140.0)', () =>
 describe('reasoningRequestParams — Anthropic moderna (adaptive + output_config.effort)', () => {
   it('Opus 4.8: adaptive thinking + effort, SEM budget_tokens, remove temperature', () => {
     const r = reasoningRequestParams('anthropic', 'claude-opus-4-8', 'high')
-    expect(r.extra).toEqual({ thinking: { type: 'adaptive' }, output_config: { effort: 'high' } })
+    expect(r.extra).toEqual({ thinking: { type: 'adaptive', display: 'summarized' }, output_config: { effort: 'high' } })
     expect(r.extra.thinking.budget_tokens).toBeUndefined()
     expect(r.dropTemperature).toBe(true)
     expect(r.minMaxTokens).toBe(0)
@@ -91,7 +91,7 @@ describe('reasoningRequestParams — Anthropic moderna (adaptive + output_config
 
   it('Sonnet 4.6 (effortGen, mas aceita temperature): effort + adaptive; drop só por thinking on', () => {
     const r = reasoningRequestParams('anthropic', 'claude-sonnet-4-6', 'medium')
-    expect(r.extra).toEqual({ thinking: { type: 'adaptive' }, output_config: { effort: 'medium' } })
+    expect(r.extra).toEqual({ thinking: { type: 'adaptive', display: 'summarized' }, output_config: { effort: 'medium' } })
     expect(r.dropTemperature).toBe(true) // on → amostragem padrão
   })
 

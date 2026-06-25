@@ -81,7 +81,10 @@ function reasoningRequestParams(provider, model, effort) {
         const extra = {}
         if (on) {
           const lvl = ANTHROPIC_EFFORT_LEVELS.includes(effort) ? effort : 'high'
-          extra.thinking = { type: 'adaptive' }
+          // display:'summarized' devolve um RESUMO legível do raciocínio (o
+          // default 'omitted' deixa o campo vazio = pausa silenciosa). Sem custo
+          // extra; nosso bloco "Raciocínio" passa a mostrá-lo (transparência).
+          extra.thinking = { type: 'adaptive', display: 'summarized' }
           extra.output_config = { effort: lvl }
         }
         return { extra, dropTemperature: info.noSampling || on, minMaxTokens: 0 }

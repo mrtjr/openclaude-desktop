@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest'
-import { nextStreamPhase, formatCharCount, streamPhaseLabel, classifyDelta, createPhaseProfiler, type StreamPhase } from '../src/utils/streamPhase'
+import { nextStreamPhase, formatCharCount, streamPhaseLabel, classifyDelta, deltaReasoning, createPhaseProfiler, type StreamPhase } from '../src/utils/streamPhase'
+
+describe('deltaReasoning — captura o texto de raciocínio (v2.142.0)', () => {
+  it('lê reasoning_content (vLLM/DeepSeek/Anthropic) e reasoning (OpenRouter)', () => {
+    expect(deltaReasoning({ reasoning_content: 'pensando…' })).toBe('pensando…')
+    expect(deltaReasoning({ reasoning: 'hmm' })).toBe('hmm')
+  })
+  it('"" quando não há raciocínio (ou delta inválido)', () => {
+    expect(deltaReasoning({ content: 'oi' })).toBe('')
+    expect(deltaReasoning({ reasoning_content: '' })).toBe('')
+    expect(deltaReasoning(null)).toBe('')
+    expect(deltaReasoning(undefined)).toBe('')
+  })
+})
 
 describe('nextStreamPhase — raciocínio (reasoning_content / reasoning)', () => {
   it('entra na fase reasoning e acumula chars entre deltas', () => {

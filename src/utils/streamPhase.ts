@@ -65,6 +65,18 @@ export function nextStreamPhase(prev: StreamPhase, delta: any): StreamPhase | un
 
 export type DeltaKind = 'reasoning' | 'tool' | 'content'
 
+/** Texto de raciocínio carregado por um delta, em qualquer formato de provider
+ *  (vLLM/DeepSeek `reasoning_content`, OpenRouter `reasoning`, Anthropic
+ *  thinking_delta mapeado p/ reasoning_content no main). '' quando não há.
+ *  v2.142.0 — antes esse texto era detectado só p/ a FASE e depois descartado;
+ *  agora também é capturado no bloco "Raciocínio" da mensagem (transparência). */
+export function deltaReasoning(delta: any): string {
+  if (!delta || typeof delta !== 'object') return ''
+  if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) return delta.reasoning_content
+  if (typeof delta.reasoning === 'string' && delta.reasoning) return delta.reasoning
+  return ''
+}
+
 /** Classifica um delta OpenAI-compat no bucket de fase a que pertence.
  *  Mesma precedência do nextStreamPhase (tool > reasoning > content). */
 export function classifyDelta(delta: any): DeltaKind | null {
