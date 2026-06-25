@@ -1052,6 +1052,15 @@ body .update-banner {
 .pulse { animation: pulse-kf 1.5s infinite; }
 @keyframes pulse-kf { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
 
+/* Selo "Skill ativa" durante o turno (v2.158.0): mostra ao usuário que a skill
+   carregada segue valendo a cada passo. Verde, p/ distinguir do badge do Agente.
+   text-transform none p/ preservar o nome da skill como foi escrito. */
+.skill-badge {
+  background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.4);
+  color: #10b981; text-transform: none; letter-spacing: 0.2px; max-width: 280px;
+}
+.skill-badge span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .stop-agent-btn {
   display: flex; align-items: center; gap: 6px; padding: 4px 12px;
   background: rgba(224,92,92,0.1); border: 1px solid rgba(224,92,92,0.25);

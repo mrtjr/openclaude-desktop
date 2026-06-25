@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore, Suspense, lazy } from 'react'
 import 'highlight.js/styles/github-dark.css'
-import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, ArrowDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, MicOff, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder, Wrench, BrainCircuit, Check, Pencil, Archive, ArchiveRestore, ChevronLeft } from 'lucide-react'
+import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, ArrowDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, MicOff, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder, Wrench, BrainCircuit, Check, Pencil, Archive, ArchiveRestore, ChevronLeft, BookOpen } from 'lucide-react'
 import { loadSettings, type AppSettings } from './settingsConfig'
 import { BackgroundSubagentRegistry } from './utils/backgroundSubagents'
 import { SubagentActivityStore } from './utils/subagentActivity'
@@ -2513,6 +2513,13 @@ export default function App() {
                     )}
                     {isAgentMode && (
                       <div className="agent-badge"><Zap size={10} className="pulse" /><span>Agente: Passo {chat.agentSteps}</span></div>
+                    )}
+                    {chat.activeSkillNames.length > 0 && (
+                      <div className="agent-badge skill-badge" title={settings.language === 'en'
+                        ? `Skill(s) being followed this turn: ${chat.activeSkillNames.join(', ')}`
+                        : `Skill(s) sendo seguida(s) neste turno: ${chat.activeSkillNames.join(', ')}`}>
+                        <BookOpen size={10} /><span>{settings.language === 'en' ? 'Skill active' : 'Skill ativa'}: {chat.activeSkillNames.join(', ')}</span>
+                      </div>
                     )}
                     <button className="stop-agent-btn" onClick={chat.stopAgent} title="Interromper Agente">
                       <BotOff size={14} /> Parar

@@ -12,7 +12,7 @@ import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice, extra
 import { classifyProviderError, humanizeProviderError, isColdStartTimeout } from '../utils/providerErrors'
 import { initStallState, decideStallRetry } from '../utils/stallRecovery'
 import { nextFallbackModel, isModelSwappableError, MAX_FALLBACK_ATTEMPTS } from '../utils/fallbackChain'
-import { renderSkillManifest, renderPinnedSkills, renderSkillBody, matchSkillsByText, collectDisallowedTools, collectAllowedTools, activeSkillsForTools, findSkill, findActiveSkills, renderActiveSkillReminder } from '../utils/skills'
+import { renderSkillManifest, renderPinnedSkills, renderSkillBody, matchSkillsByText, collectDisallowedTools, collectAllowedTools, activeSkillsForTools, findSkill, findActiveSkills, renderActiveSkillsFull, scopeToolsForStep } from '../utils/skills'
 import type { Skill } from '../types/skill'
 import { resolveTurnUsage } from '../utils/usage'
 import { isLengthTruncated } from '../utils/continuation'
@@ -957,12 +957,15 @@ export function useChat({
           })
         }
 
-        // Reforço de skill ativa (v2.104.0): re-lembra SÓ as carregadas por
-        // load_skill (as fixadas já estão no prompt). Tool-scoping do passo
-        // (v2.105.0): disallowed + allowed das skills em vigor (base + carregadas).
+        // Reforço de skill ativa (v2.104.0; blindado em v2.158.0): re-injeta as
+        // INSTRUÇÕES COMPLETAS das skills carregadas por load_skill a CADA passo,
+        // direto do objeto vivo da skill — não depende mais do corpo "acima" no
+        // histórico (que a compactação podia resumir e deixar o lembrete apontando
+        // p/ o nada). As fixadas já estão no prompt (renderPinnedSkills). Tool-
+        // scoping do passo (v2.105.0): disallowed + allowed das skills em vigor.
         const stepLoadedSkills = findActiveSkills(skillsRef.current || [], activeSkillNamesRef.current)
-        const activeSkillReminder = renderActiveSkillReminder(stepLoadedSkills, lang)
-        if (activeSkillReminder) requestMessages.push({ role: 'system', content: activeSkillReminder })
+        const activeSkillFull = renderActiveSkillsFull(stepLoadedSkills, lang)
+        if (activeSkillFull) requestMessages.push({ role: 'system', content: activeSkillFull })
         const stepSkills = [...turnBaseActiveSkills, ...stepLoadedSkills.filter(s => !turnBaseActiveSkills.includes(s))]
         const stepSkillDisallowed = collectDisallowedTools(stepSkills)
         const stepSkillAllowed = collectAllowedTools(stepSkills)
@@ -1079,8 +1082,7 @@ export function useChat({
             let toolsForRequest = toolsDisabledForThisTurn ? [] : (deferralEnabled ? [...toolPartition.eager, toolPartition.metaTool] as any[] : allTools)
             // Tool-scoping por skill ativa (v2.105.0): allowlist positiva primeiro
             // (só as permitidas + load_skill), depois remove as bloqueadas.
-            if (stepSkillAllowed.size) toolsForRequest = toolsForRequest.filter((t: any) => t?.function?.name === 'load_skill' || stepSkillAllowed.has(t?.function?.name))
-            if (stepSkillDisallowed.size) toolsForRequest = toolsForRequest.filter((t: any) => t?.function?.name === 'load_skill' || !stepSkillDisallowed.has(t?.function?.name))
+            toolsForRequest = scopeToolsForStep(toolsForRequest, stepSkillAllowed, stepSkillDisallowed)
             // tool_choice por passo (v2.141.0): 'require' só no 1º passo; só quando há ferramentas.
             const stepToolChoice = toolsForRequest.length ? toolChoiceParam(finalProvider, resolveTurnToolChoice(turnToolChoiceMode, steps)) : undefined
             const streamCall = isNotOllama
@@ -1362,7 +1364,11 @@ export function useChat({
 
         } else {
           // ─── Non-streaming path ────────────────────────────
-          const toolsForRequest = toolsDisabledForThisTurn ? [] : (deferralEnabled ? [...toolPartition.eager, toolPartition.metaTool] as any[] : allTools)
+          let toolsForRequest = toolsDisabledForThisTurn ? [] : (deferralEnabled ? [...toolPartition.eager, toolPartition.metaTool] as any[] : allTools)
+          // Tool-scoping por skill ativa também AQUI (v2.158.0): antes o caminho
+          // não-streaming pulava o filtro por-passo — uma skill carregada via
+          // load_skill no meio do turno não tinha allowed/disallowed aplicados.
+          toolsForRequest = scopeToolsForStep(toolsForRequest, stepSkillAllowed, stepSkillDisallowed)
           // tool_choice por passo (v2.141.0): 'require' só no 1º passo; só quando há ferramentas.
           const stepToolChoice = toolsForRequest.length ? toolChoiceParam(finalProvider, resolveTurnToolChoice(turnToolChoiceMode, steps)) : undefined
           let response: any

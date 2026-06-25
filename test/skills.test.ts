@@ -3,6 +3,7 @@ import {
   findSkill, renderSkillManifest, renderPinnedSkills, renderSkillBody, scopeSkillsToProject, skillManifestHeaders,
   matchSkillsByText, formatLoadSkillResult, mergeSkills, BUILTIN_SKILLS,
   collectDisallowedTools, collectAllowedTools, activeSkillsForTools, findActiveSkills, renderActiveSkillReminder, suggestSkill,
+  renderActiveSkillsFull, scopeToolsForStep,
 } from '../src/utils/skills'
 import type { Skill } from '../src/types/skill'
 
@@ -175,6 +176,36 @@ describe('skill ATIVA por load_skill (v2.104.0)', () => {
   it('o disallowed-tools de uma skill carregada vira efetivo via collectDisallowedTools', () => {
     const set = collectDisallowedTools(findActiveSkills(skills, ['code']))
     expect([...set]).toEqual(['browser_navigate'])
+  })
+  it('renderActiveSkillsFull injeta o CORPO completo (não só o nome) e exclui fixadas', () => {
+    const out = renderActiveSkillsFull([
+      mk({ name: 'code', instructions: 'PASSOS DETALHADOS DA SKILL' }),
+      mk({ name: 'pinned-one', pinned: true, instructions: 'NAO DEVE APARECER' }),
+      mk({ name: 'off-one', enabled: false, instructions: 'TAMBEM NAO' }),
+    ], 'pt')
+    expect(out).toContain('SKILLS ATIVAS')
+    expect(out).toContain('[SKILL ATIVA: code]')
+    expect(out).toContain('PASSOS DETALHADOS DA SKILL') // corpo, não só o nome
+    expect(out).not.toContain('NAO DEVE APARECER')      // fixada já entra via renderPinnedSkills
+    expect(out).not.toContain('TAMBEM NAO')             // desativada fora
+    expect(renderActiveSkillsFull([], 'pt')).toBe('')
+    expect(renderActiveSkillsFull([mk({ name: 'c' })], 'en')).toContain('ACTIVE SKILLS')
+  })
+})
+
+describe('scopeToolsForStep (v2.158.0 — trava dura de ferramentas por passo)', () => {
+  const tool = (name: string) => ({ type: 'function', function: { name } })
+  const tools = [tool('read_file'), tool('write_file'), tool('browser_navigate'), tool('load_skill')]
+  it('allowlist: mantém só as permitidas + load_skill', () => {
+    const out = scopeToolsForStep(tools, new Set(['read_file']), new Set())
+    expect(out.map(t => t.function.name).sort()).toEqual(['load_skill', 'read_file'])
+  })
+  it('disallow: remove as bloqueadas mas NUNCA load_skill', () => {
+    const out = scopeToolsForStep(tools, new Set(), new Set(['browser_navigate', 'load_skill']))
+    expect(out.map(t => t.function.name)).toEqual(['read_file', 'write_file', 'load_skill'])
+  })
+  it('sem restrição → lista intacta', () => {
+    expect(scopeToolsForStep(tools, new Set(), new Set())).toHaveLength(4)
   })
 })
 

@@ -304,13 +304,44 @@ export function findActiveSkills(skills: Skill[], names: string[] | undefined): 
 }
 
 /** Lembrete curto, injetado a cada passo agêntico, para o modelo não "esquecer"
- *  a(s) skill(s) que carregou. '' quando não há nenhuma ativa. */
+ *  a(s) skill(s) que carregou. '' quando não há nenhuma ativa.
+ *  OBS (v2.158.0): substituído por renderActiveSkillsFull no loop do chat —
+ *  apontava para o corpo "acima" (no histórico), que a compactação podia resumir.
+ *  Mantido por compatibilidade/uso pontual. */
 export function renderActiveSkillReminder(activeSkills: Skill[], lang: string): string {
   if (!activeSkills.length) return ''
   const names = activeSkills.map(s => s.name).join(', ')
   return lang === 'en'
     ? `[ACTIVE SKILL: ${names}] Keep following the loaded skill playbook above until the task is done.`
     : `[SKILL ATIVA: ${names}] Continue seguindo o playbook da skill carregada acima até concluir a tarefa.`
+}
+
+/** Instruções COMPLETAS das skills carregadas via load_skill — re-injetadas a
+ *  CADA passo agêntico no cabeçalho protegido (regenerado todo passo a partir do
+ *  objeto vivo da skill, então IMUNE à compactação de contexto), em vez de
+ *  depender do resultado de load_skill que vive no histórico compactável
+ *  (v2.158.0). Exclui as fixadas (essas já entram via renderPinnedSkills, p/ não
+ *  duplicar). '' quando não há nenhuma. */
+export function renderActiveSkillsFull(activeSkills: Skill[], lang: string): string {
+  const list = (activeSkills || []).filter(s => s && s.enabled && !s.pinned)
+  if (!list.length) return ''
+  const header = lang === 'en'
+    ? '[ACTIVE SKILLS — you loaded these; keep FULLY following their playbooks below until the task is done]'
+    : '[SKILLS ATIVAS — você as carregou; continue seguindo INTEGRALMENTE os playbooks abaixo até concluir a tarefa]'
+  const blocks = list.map(s => `[SKILL ATIVA: ${s.name}]\n${renderSkillBody(s)}`).join('\n\n')
+  return `${header}\n\n${blocks}`
+}
+
+/** Aplica o tool-scoping de uma skill ativa às ferramentas de UM passo
+ *  (v2.158.0): allowlist positiva primeiro (só as permitidas + load_skill),
+ *  depois remove as bloqueadas. load_skill é SEMPRE mantida (p/ o modelo poder
+ *  carregar/trocar skills). Puro — usado nos DOIS caminhos (streaming e não),
+ *  fechando o gap em que o não-streaming pulava o filtro por-passo. */
+export function scopeToolsForStep<T extends { function?: { name?: string } }>(tools: T[], allowed: Set<string>, disallowed: Set<string>): T[] {
+  let out = tools || []
+  if (allowed.size) out = out.filter(t => t?.function?.name === 'load_skill' || allowed.has(t?.function?.name as string))
+  if (disallowed.size) out = out.filter(t => t?.function?.name === 'load_skill' || !disallowed.has(t?.function?.name as string))
+  return out
 }
 
 /** Headers curtos para o painel de contexto (orçamento de tokens do slot
