@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { X, Search, BookMarked, UserCog, Swords, FolderOpen, Camera, Database, GitBranch, Scale, Monitor, Image, Zap, BarChart3, Wrench, Code, ListChecks, AlertCircle, Sun, Moon, Mic, Volume2, Shield, Brain, Clock, Plus, Download, Trash2, Activity, Settings as SettingsIcon, HelpCircle } from 'lucide-react'
+import { X, Search, BookMarked, UserCog, Swords, FolderOpen, Camera, Database, GitBranch, Scale, Monitor, Image, FileText, Zap, BarChart3, Wrench, Code, ListChecks, AlertCircle, Sun, Moon, Mic, Volume2, Shield, Brain, Clock, Plus, Download, Trash2, Activity, Settings as SettingsIcon, HelpCircle } from 'lucide-react'
 import type { AppSettings } from '../Settings'
 import type { PermissionLevel } from '../Settings'
 import type { Persona } from '../PersonaEngine'
@@ -36,6 +36,7 @@ interface CommandPaletteProps {
   onOpenOrion: () => void
   onOpenAnalytics: () => void
   onOpenImageUpload: () => void
+  onOpenDocUpload: () => void
   // State toggles
   isAgentMode: boolean
   onToggleAgent: () => void
@@ -101,6 +102,7 @@ export default function CommandPalette(props: CommandPaletteProps) {
     { id: 'rag', label: `RAG${props.ragEnabled ? ' ●' : ''}`, description: language === 'pt' ? 'Busca semântica em documentos' : 'Semantic document search', icon: Database, category: 'knowledge', action: props.onOpenRAG, active: props.ragEnabled },
     { id: 'workspace', label: language === 'pt' ? 'Código' : 'Code', description: language === 'pt' ? 'Editor de código com IA' : 'AI code editor', icon: FolderOpen, category: 'knowledge', action: props.onOpenCodeWorkspace },
     { id: 'image', label: language === 'pt' ? 'Anexar Imagem' : 'Attach Image', description: language === 'pt' ? 'Enviar imagem para análise' : 'Send image for analysis', icon: Image, category: 'knowledge', action: props.onOpenImageUpload },
+    { id: 'doc', label: language === 'pt' ? 'Anexar Documento' : 'Attach Document', description: language === 'pt' ? 'PDF, DOCX ou TXT como contexto' : 'PDF, DOCX or TXT as context', icon: FileText, category: 'knowledge', action: props.onOpenDocUpload },
     // Automation
     { id: 'workflow', label: language === 'pt' ? 'Workflow Builder' : 'Workflow Builder', description: language === 'pt' ? 'Automação visual de tarefas' : 'Visual task automation', icon: GitBranch, category: 'automation', action: props.onOpenWorkflow },
     { id: 'vision', label: language === 'pt' ? 'Visão' : 'Vision', description: language === 'pt' ? 'Captura e análise de tela' : 'Screen capture & analysis', icon: Camera, category: 'automation', action: props.onOpenVision },

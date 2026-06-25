@@ -29,6 +29,9 @@ export interface Message {
   /** v2.147.0 — imagem anexada pelo usuário (multimodal). Renderizada na bolha
    *  e enviada ao provedor no formato dele. */
   image?: import('../utils/multimodal').ImageAttachment
+  /** v2.148.0 — documento anexado (PDF/DOCX/TXT): o texto extraído é injetado
+   *  no request; a bolha mostra só um chip. */
+  document?: import('../utils/documentAttach').DocAttachment
   /** v2.136.0 — mensagem do usuário reenviada após edição (lápis ou ↑).
    *  Mostra o selo "editado" na bolha, estilo ChatGPT. */
   edited?: boolean

@@ -1027,6 +1027,13 @@ body .update-banner {
   display: block; max-width: 280px; max-height: 280px; width: auto; height: auto;
   border-radius: 10px; margin-bottom: 8px; border: 1px solid var(--border);
 }
+.message-doc {
+  display: inline-flex; align-items: center; gap: 7px; margin-bottom: 8px;
+  padding: 6px 11px; border-radius: 9px; max-width: 320px;
+  background: var(--bg-elevated); border: 1px solid var(--border); font-size: 12.5px;
+}
+.message-doc-icon { flex-shrink: 0; }
+.message-doc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Editando a mensagem anterior via ↑ (v2.132.0) — variação accent da pill. */
 .editing-pill {

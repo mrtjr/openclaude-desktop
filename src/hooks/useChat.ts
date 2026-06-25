@@ -21,6 +21,7 @@ import { parseFollowups, hideFollowupTrailer, followupInstruction } from '../uti
 import { resolveTurnToolChoice, toolChoiceParam } from '../utils/toolChoice'
 import { collectSources, normalizeSourceUrl, type Source } from '../utils/sources'
 import { imageContentBlocks, type ImageAttachment } from '../utils/multimodal'
+import { docPlusText, type DocAttachment } from '../utils/documentAttach'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
 import { applyPlanToolCalls, planIsIncomplete, type LocalTask } from '../utils/planTracker'
 import { resolveAdaptiveEffort } from '../utils/adaptiveEffort'
@@ -232,7 +233,7 @@ export function useChat({
     showToast('Agente interrompido pelo usuário.')
   }, [showToast, backgroundTasks, scoutController])
 
-  const sendMessage = useCallback(async (inputText: string, overrideConvId?: string, opts?: { hidden?: boolean; edited?: boolean; image?: ImageAttachment }) => {
+  const sendMessage = useCallback(async (inputText: string, overrideConvId?: string, opts?: { hidden?: boolean; edited?: boolean; image?: ImageAttachment; document?: DocAttachment }) => {
     // Prefer an explicit conversation id when provided (e.g. scheduled
     // tasks firing in batch, where several `newConversation()` calls
     // landed before the React state flushed — without an override the
@@ -240,8 +241,8 @@ export function useChat({
     // the same conversation). Fall back to the ref otherwise.
     const convId = overrideConvId ?? activeConvIdRef.current
     console.log('[useChat] sendMessage called:', { inputText: inputText.substring(0, 50), isLoading, convId })
-    // Permite enviar só a imagem (sem texto) quando há anexo (v2.147.0).
-    if ((!inputText.trim() && !opts?.image) || isLoading || !convId) {
+    // Permite enviar só anexo (imagem/documento) sem texto (v2.147–2.148).
+    if ((!inputText.trim() && !opts?.image && !opts?.document) || isLoading || !convId) {
       console.log('[useChat] EARLY RETURN:', { emptyInput: !inputText.trim(), isLoading, noActiveConv: !convId })
       return
     }
@@ -262,6 +263,8 @@ export function useChat({
       ...(opts?.edited ? { edited: true } : {}),
       // Imagem anexada (v2.147.0): renderizada na bolha + enviada multimodal.
       ...(opts?.image ? { image: opts.image } : {}),
+      // Documento anexado (v2.148.0): texto injetado no request; chip na bolha.
+      ...(opts?.document ? { document: opts.document } : {}),
       timestamp: new Date()
     }
 
@@ -530,9 +533,12 @@ export function useChat({
         for (const m of conv.messages) {
           history.push({
             role: m.role,
-            // Imagem anexada → conteúdo multimodal (formato OpenAI canônico; o
-            // main traduz p/ Anthropic/Gemini). Só p/ mensagens do usuário (v2.147.0).
-            content: (m.role === 'user' && m.image) ? imageContentBlocks(m.image, m.content) : m.content,
+            // Anexos do usuário (v2.147–2.148): documento → texto do contexto +
+            // texto do usuário; imagem → conteúdo multimodal (o main traduz p/
+            // Anthropic/Gemini). Só p/ mensagens do usuário.
+            content: (m.role === 'user' && (m.image || m.document))
+              ? (m.image ? imageContentBlocks(m.image, docPlusText(m.document, m.content)) : docPlusText(m.document, m.content))
+              : m.content,
             ...(m.toolCalls ? { tool_calls: m.toolCalls.map(tc => ({
               id: tc.id,
               type: 'function',

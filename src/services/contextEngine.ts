@@ -35,6 +35,10 @@ function estimateTokens(text: string): number {
 
 function messageTokensRaw(msg: Message): number {
   let tokens = estimateTokens(msg.content) + 4 // overhead per message
+  // Documento anexado (v2.148.0): o texto extraído vai no request → conta no
+  // orçamento (senão a poda subestima e o contexto estoura). Imagem NÃO entra
+  // aqui (o base64 não é texto; o provider conta os tokens reais da imagem).
+  if (msg.document?.content) tokens += estimateTokens(msg.document.content)
   if (msg.toolCalls) {
     for (const tc of msg.toolCalls) {
       tokens += estimateTokens(tc.name) + estimateTokens(JSON.stringify(tc.arguments))

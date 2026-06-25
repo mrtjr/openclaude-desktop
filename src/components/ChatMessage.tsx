@@ -83,6 +83,12 @@ function ChatMessageInner({
         {msg.image && (
           <img className="message-image" src={`data:${msg.image.mimeType};base64,${msg.image.base64}`} alt={msg.image.name} />
         )}
+        {msg.document && (
+          <div className="message-doc" title={msg.document.name}>
+            <span className="message-doc-icon">📄</span>
+            <span className="message-doc-name">{msg.document.name}{msg.document.pages ? ` · ${msg.document.pages}p` : ''}</span>
+          </div>
+        )}
         {msg.thinking && showThinking && (
           <details className="thinking-block" style={{ margin: '0 0 8px' }}>
             <summary style={{ cursor: 'pointer', opacity: 0.65, fontSize: 12, userSelect: 'none' }}>💭 Raciocínio</summary>
