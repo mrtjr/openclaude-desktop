@@ -69,6 +69,47 @@ function stripQuotes(s: string): string {
   return s.replace(/^["']|["']$/g, '')
 }
 
+// ─── Lint de qualidade (pesquisa 2026: qualidade/validação de skills) ──
+// Checa uma skill contra o padrão SKILL.md + best practices da Anthropic
+// (nome ≤64 minúsculas/hífen sem reservados; descrição não-vazia ≤1024 e que
+// diga CLARAMENTE quando usar; corpo ≤500 linhas senão dividir via progressive
+// disclosure). Útil sobretudo p/ skills importadas da comunidade. Puro/testado.
+
+export interface SkillLike {
+  name: string
+  description: string
+  instructions: string
+  pinned?: boolean
+  triggers?: string[]
+}
+
+export function lintSkill(s: SkillLike): string[] {
+  const w: string[] = []
+  const name = String(s?.name || '')
+  if (!name.trim()) w.push('Sem nome.')
+  else {
+    if (name.length > 64) w.push('Nome > 64 chars (padrão).')
+    if (name !== sanitizeSkillName(name)) w.push('Nome fora do padrão (use minúsculas, números e hífens).')
+    if (RESERVED.has(name.toLowerCase())) w.push('Nome reservado (anthropic/claude).')
+  }
+  const desc = String(s?.description || '')
+  if (!desc.trim()) w.push('Sem descrição ("quando usar").')
+  else {
+    if (desc.length > 1024) w.push('Descrição > 1024 chars (padrão).')
+    if (desc.trim().length < 12) w.push('Descrição muito curta — descreva claramente QUANDO usar a skill.')
+  }
+  const body = String(s?.instructions || '')
+  if (!body.trim()) w.push('Sem corpo de instruções.')
+  else {
+    const lines = body.split('\n').length
+    if (lines > 500) w.push(`Corpo com ${lines} linhas (> 500) — divida em arquivos de referência (progressive disclosure).`)
+  }
+  if (!s?.pinned && !(s?.triggers && s.triggers.length) && desc.trim().length < 30) {
+    w.push('Sem gatilhos e descrição fraca — o modelo pode ter dificuldade de descobrir esta skill.')
+  }
+  return w
+}
+
 /** Campos da nossa Skill que viram SKILL.md (subset estável). */
 export interface ExportableSkill {
   name: string

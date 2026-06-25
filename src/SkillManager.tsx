@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, Plus, Edit3, Trash2, Check, Zap, ZapOff, Pin, PinOff, Download, Upload, BookOpen, FileText } from 'lucide-react'
+import { X, Plus, Edit3, Trash2, Check, Zap, ZapOff, Pin, PinOff, Download, Upload, BookOpen, FileText, AlertTriangle } from 'lucide-react'
 import type { Skill } from './types/skill'
 import { BUILTIN_SKILLS } from './utils/skills'
 import { isDangerousFact } from './utils/memoryInduction'
 import { generateId } from './utils/formatting'
-import { parseSkillMarkdown, toSkillMarkdown, sanitizeSkillName } from './utils/skillImport'
+import { parseSkillMarkdown, toSkillMarkdown, sanitizeSkillName, lintSkill } from './utils/skillImport'
 
 interface Props {
   isOpen: boolean
@@ -203,6 +203,12 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
                       <span style={{ fontFamily: 'monospace' }}>{s.name || '(sem nome)'}</span>
                       {s.isBuiltIn && <span style={{ fontSize: 10, opacity: 0.5 }}>builtin</span>}
                       {s.pinned && <Pin size={11} style={{ color: 'var(--accent)' }} />}
+                      {(() => { const issues = s.isBuiltIn ? [] : lintSkill(s); return issues.length > 0 ? (
+                        <span title={(pt ? 'Avisos de qualidade (padrão SKILL.md):\n• ' : 'Quality warnings (SKILL.md standard):\n• ') + issues.join('\n• ')}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: '#f59e0b', fontSize: 11, cursor: 'help' }}>
+                          <AlertTriangle size={12} />{issues.length}
+                        </span>
+                      ) : null })()}
                     </div>
                     <div style={{ fontSize: 12, opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.description}</div>
                   </div>

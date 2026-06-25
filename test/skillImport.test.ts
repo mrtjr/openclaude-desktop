@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseSkillMarkdown, splitFrontmatter, sanitizeSkillName, toSkillMarkdown } from '../src/utils/skillImport'
+import { parseSkillMarkdown, splitFrontmatter, sanitizeSkillName, toSkillMarkdown, lintSkill } from '../src/utils/skillImport'
 
 describe('sanitizeSkillName', () => {
   it('aplica as regras do padrão (minúsculas/números/hífen, ≤64)', () => {
@@ -92,5 +92,29 @@ describe('toSkillMarkdown (export) — round-trip', () => {
     const md = toSkillMarkdown({ name: 'x', description: 'd', instructions: 'corpo', examples: 'ex1' })
     expect(md).toContain('## Exemplos')
     expect(md).toContain('ex1')
+  })
+})
+
+describe('lintSkill', () => {
+  it('skill bem-formada → sem avisos', () => {
+    expect(lintSkill({
+      name: 'code-review', description: 'Use ao revisar pull requests em busca de bugs', instructions: 'Passos…', triggers: ['review'],
+    })).toEqual([])
+  })
+
+  it('aponta nome fora do padrão e reservado', () => {
+    expect(lintSkill({ name: 'My Skill', description: 'descrição clara o suficiente aqui', instructions: 'x' }).join(' ')).toMatch(/fora do padrão/i)
+    expect(lintSkill({ name: 'claude', description: 'descrição clara o suficiente aqui', instructions: 'x' }).join(' ')).toMatch(/reservado/i)
+  })
+
+  it('aponta descrição vazia/curta e corpo gigante', () => {
+    expect(lintSkill({ name: 'x', description: '', instructions: 'x' }).join(' ')).toMatch(/sem descrição/i)
+    expect(lintSkill({ name: 'x', description: 'curta', instructions: 'x' }).join(' ')).toMatch(/muito curta/i)
+    const big = lintSkill({ name: 'ok-name', description: 'descrição suficientemente longa para o lint', instructions: 'l\n'.repeat(600) })
+    expect(big.join(' ')).toMatch(/> 500|progressive disclosure/i)
+  })
+
+  it('aponta descoberta difícil (sem gatilho + descrição fraca)', () => {
+    expect(lintSkill({ name: 'x', description: 'faz coisas', instructions: 'corpo' }).join(' ')).toMatch(/descobrir/i)
   })
 })
