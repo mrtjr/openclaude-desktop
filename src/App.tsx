@@ -1190,7 +1190,21 @@ export default function App() {
             ? window.electron.getPathForFile(file)
             : (file as any).path
           if (filePath) {
+            // Roteia o arquivo arrastado para o anexo certo (v2.149.0): imagem
+            // → anexo de imagem; PDF/DOCX → anexo de documento; texto/código →
+            // inserido no composer (comportamento antigo, útil p/ revisar code).
+            const ext = (filePath.split('.').pop() || '').toLowerCase()
             try {
+              if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(ext)) {
+                const d = await window.electron.readDocument(filePath)
+                if (d?.isImage && d.base64) { imageAttachment.attachFromBase64(d.base64, d.mimeType || 'image/png', d.name || filePath); continue }
+                if (d?.error) { showToast(d.error); continue }
+              }
+              if (['pdf', 'docx', 'doc'].includes(ext)) {
+                const d = await window.electron.readDocument(filePath)
+                if (d?.content) { setAttachedDocument({ name: d.name || filePath, content: d.content, pages: d.pages }); continue }
+                if (d?.error) { showToast(d.error); continue }
+              }
               const result = await window.electron.readDroppedFile(filePath)
               if (result.content) {
                 setInput(prev => prev + formatDroppedFile(result.name || filePath, result.content!))
