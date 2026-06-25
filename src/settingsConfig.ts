@@ -93,6 +93,12 @@ export interface AppSettings {
   /** Matching semântico de skills (Fase 5, v2.56.0) — usa embeddings do Ollama
    *  p/ casar skills por significado. Opt-in (default off; requer Ollama). */
   semanticSkillMatch?: boolean
+  /** v2.157.0 — orçamento de tempo (segundos) que a IA principal gasta no chat
+   *  decidindo SOZINHA quais skills baixar (modo auto do install_skills) quando o
+   *  usuário não especifica: baixa candidatas, compara completude vs. as já
+   *  instaladas e instala novas + upgrades (evolução), nunca regressões. Para ao
+   *  esgotar o orçamento e reporta o parcial. Default 60. */
+  skillAutoDecideSec?: number
   /** v2.12.0 — fire a native OS notification when a response completes
    *  while the window is not focused. Opt-out via Settings (default on). */
   notifyOnComplete?: boolean
@@ -246,6 +252,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   mcpServers: [],
   hooks: [],
   semanticSkillMatch: false,
+  skillAutoDecideSec: 60,
   notifyOnComplete: true,
   toolDeferralMode: 'auto',
   subagentExecutor: 'ollama',

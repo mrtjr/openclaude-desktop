@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseSkillMarkdown, splitFrontmatter, sanitizeSkillName, toSkillMarkdown, lintSkill, buildImportedSkills, parseRepoSpec, parseSkillIndex } from '../src/utils/skillImport'
+import { parseSkillMarkdown, splitFrontmatter, sanitizeSkillName, toSkillMarkdown, lintSkill, buildImportedSkills, parseRepoSpec, parseSkillIndex, skillCompleteness, decideSkillImport } from '../src/utils/skillImport'
 
 describe('parseRepoSpec', () => {
   it('aceita owner/repo, URL, .git e /tree/branch', () => {
@@ -58,6 +58,47 @@ describe('parseSkillIndex (seguidor de índice awesome-*)', () => {
   it('markdown vazio/sem links → []', () => {
     expect(parseSkillIndex('')).toEqual([])
     expect(parseSkillIndex('sem links aqui')).toEqual([])
+  })
+})
+
+describe('skillCompleteness / decideSkillImport (IA decide — evolução, nunca regressão)', () => {
+  it('pontua mais um corpo maior, com estrutura e exemplos', () => {
+    const magra = skillCompleteness({ description: 'd', instructions: 'curta' })
+    const gorda = skillCompleteness({
+      description: 'descrição mais rica e detalhada do quando usar',
+      instructions: '# Passos\n- a\n- b\n- c\n' + 'detalhe '.repeat(200),
+      examples: 'ex1', triggers: ['x'], allowedTools: ['read'],
+    })
+    expect(gorda).toBeGreaterThan(magra)
+  })
+
+  it('nova skill → install', () => {
+    expect(decideSkillImport(null, { instructions: 'qualquer' }).action).toBe('install')
+  })
+
+  it('candidata mais completa → upgrade (evolução)', () => {
+    const existing = { description: 'd', instructions: 'curta' }
+    const candidate = { description: 'd melhor e mais clara', instructions: '# H\n- a\n- b\n' + 'mais conteúdo '.repeat(100), examples: 'ex' }
+    const r = decideSkillImport(existing, candidate)
+    expect(r.action).toBe('upgrade')
+    expect(r.candidateScore).toBeGreaterThan(r.existingScore)
+  })
+
+  it('candidata mais pobre → skip-regression (barra regressão)', () => {
+    const existing = { instructions: '# H\n- a\n- b\n' + 'conteúdo '.repeat(120), examples: 'ex' }
+    const candidate = { instructions: 'só isso' }
+    expect(decideSkillImport(existing, candidate).action).toBe('skip-regression')
+  })
+
+  it('equivalente → skip-equal', () => {
+    const s = { description: 'igual', instructions: 'mesmo corpo aqui' }
+    expect(decideSkillImport(s, { ...s }).action).toBe('skip-equal')
+  })
+
+  it('margin exige folga mínima p/ trocar', () => {
+    const existing = { instructions: 'aaaa' }
+    const candidate = { instructions: 'aaaab' } // levemente maior
+    expect(decideSkillImport(existing, candidate, { margin: 5 }).action).toBe('skip-equal')
   })
 })
 

@@ -155,6 +155,61 @@ export function buildImportedSkills(
   return { skills, imported: skills.length, invalid, duplicates }
 }
 
+// ─── Decisão automática "a IA decide" (v2.157.0) ────────────────────────
+// Quando o usuário não diz QUAIS skills quer (no chat), a IA principal decide
+// sozinha o que baixar seguindo regras DETERMINÍSTICAS (garantia de "evolução,
+// nunca regressão"): se não tem a skill → instala (toda nova é bem-vinda); se
+// já tem → só troca pela versão MAIS COMPLETA. Puro/testável.
+
+export interface CompletenessInput {
+  description?: string
+  instructions?: string
+  examples?: string
+  triggers?: string[]
+  allowedTools?: string[]
+}
+
+/** Pontua a "completude" de uma skill. O corpo (instruções) é o sinal dominante;
+ *  estrutura (headings/listas), exemplos, descrição, gatilhos e allow-list somam.
+ *  Determinístico e monotônico — mais conteúdo/estrutura ⇒ pontuação ≥. */
+export function skillCompleteness(s: CompletenessInput): number {
+  const desc = String(s?.description || '').trim()
+  const body = String(s?.instructions || '').trim()
+  let score = 0
+  score += Math.min(body.length, 4000) / 100 // corpo: até 40 pts (principal)
+  score += Math.min(desc.length, 400) / 50   // descrição: até 8 pts
+  // estrutura: headings markdown e itens de lista
+  const structure = body.split('\n').filter(l => {
+    const t = l.trim()
+    return /^#{1,6}\s/.test(t) || /^[-*+]\s/.test(t) || /^\d+\.\s/.test(t)
+  }).length
+  score += Math.min(structure, 40) * 0.5     // até 20 pts
+  if (s?.examples && s.examples.trim()) score += 5
+  if (s?.triggers && s.triggers.length) score += 2
+  if (s?.allowedTools && s.allowedTools.length) score += 1
+  return Math.round(score * 10) / 10
+}
+
+export type ImportDecision = 'install' | 'upgrade' | 'skip-regression' | 'skip-equal'
+
+/** Decide o destino de uma skill candidata frente à já instalada (ou null).
+ *  install: nova; upgrade: candidata estritamente mais completa (evolução);
+ *  skip-regression: candidata menos completa (seria regressão — barrada);
+ *  skip-equal: equivalente (sem ganho). `margin` exige uma folga mínima p/ trocar. */
+export function decideSkillImport(
+  existing: CompletenessInput | null | undefined,
+  candidate: CompletenessInput,
+  opts: { margin?: number } = {},
+): { action: ImportDecision; existingScore: number; candidateScore: number; reason: string } {
+  const cand = skillCompleteness(candidate)
+  if (!existing) return { action: 'install', existingScore: 0, candidateScore: cand, reason: 'nova skill (ainda não existe) — bem-vinda' }
+  const prev = skillCompleteness(existing)
+  const margin = Math.max(0, opts.margin ?? 0)
+  if (cand > prev + margin) return { action: 'upgrade', existingScore: prev, candidateScore: cand, reason: `mais completa (${cand} > ${prev}) — evolução` }
+  if (cand < prev) return { action: 'skip-regression', existingScore: prev, candidateScore: cand, reason: `menos completa (${cand} < ${prev}) — seria regressão` }
+  return { action: 'skip-equal', existingScore: prev, candidateScore: cand, reason: `equivalente (${cand} ≈ ${prev}) — sem ganho` }
+}
+
 // ─── Lint de qualidade (pesquisa 2026: qualidade/validação de skills) ──
 // Checa uma skill contra o padrão SKILL.md + best practices da Anthropic
 // (nome ≤64 minúsculas/hífen sem reservados; descrição não-vazia ≤1024 e que

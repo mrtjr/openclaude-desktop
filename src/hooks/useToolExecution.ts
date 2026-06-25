@@ -17,7 +17,7 @@ import { paginateFileContent } from '../utils/readFile'
 import { formatClickResult, formatNavResult } from '../utils/browserResult'
 import { logInsight } from '../services/devInsights'
 import { findSkill, formatLoadSkillResult, suggestSkill } from '../utils/skills'
-import { buildImportedSkills, parseRepoSpec, parseSkillIndex } from '../utils/skillImport'
+import { buildImportedSkills, parseRepoSpec, parseSkillIndex, parseSkillMarkdown, sanitizeSkillName, decideSkillImport } from '../utils/skillImport'
 import { generateId } from '../utils/formatting'
 import { matchHooks } from '../utils/hooks'
 import { resolveSubagentPrompt } from '../constants/subagents'
@@ -81,9 +81,13 @@ interface UseToolExecutionOptions {
   getAllSkills?: () => Skill[]
   /** v2.155.0 — instala (persiste) as skills baixadas do GitHub via chat. */
   onInstallSkills?: (skills: Skill[]) => void
+  /** v2.157.0 — substitui a lista COMPLETA de skills (usado pelo modo auto do
+   *  install_skills, que pode tanto adicionar novas quanto fazer upgrade de
+   *  existentes — precisa reescrever a lista, não só anexar). = persistSkills. */
+  onPersistSkills?: (skills: Skill[]) => void
 }
 
-export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool, backgroundTasks, subagentActivity, subagentLimiter, personas, onSetPersona, getConversations, getStopped, getAllSkills, onInstallSkills }: UseToolExecutionOptions) {
+export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool, backgroundTasks, subagentActivity, subagentLimiter, personas, onSetPersona, getConversations, getStopped, getAllSkills, onInstallSkills, onPersistSkills }: UseToolExecutionOptions) {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
   const scoutSeqRef = useRef(0) // ids únicos + rodízio de modelo do scout
   const worktreeSeqRef = useRef(0) // sufixo único dos worktrees (v2.102.0)
@@ -97,6 +101,8 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
   getAllSkillsRef.current = getAllSkills
   const onInstallSkillsRef = useRef(onInstallSkills)
   onInstallSkillsRef.current = onInstallSkills
+  const onPersistSkillsRef = useRef(onPersistSkills)
+  onPersistSkillsRef.current = onPersistSkills
 
   // Use refs to avoid stale closures
   const activeConvIdRef = useRef(activeConvId)
@@ -154,42 +160,124 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         if (!fetchFn) return 'install_skills: indisponível nesta versão do app.'
         const spec = parseRepoSpec(String(args.repo ?? args.url ?? ''))
         if (!spec) return 'install_skills: repositório inválido. Use "owner/repo" ou a URL do GitHub (ex.: anthropics/skills).'
+        // Modo AUTO (v2.157.0): quando o usuário NÃO diz quais skills quer, a IA
+        // decide sozinha — instala novas e troca por versões mais completas
+        // (evolução), nunca regressões. Orçamento de tempo (default 60s).
+        const auto = args.auto === true || args.decide === true || args.let_ai_decide === true
         const res = await fetchFn(spec)
         if (res?.error) return `install_skills: ${res.error}`
-        if (!res?.files?.length) {
-          // Sem SKILL.md: talvez um índice (awesome-*). Segue o README e devolve
-          // os repos catalogados p/ o agente perguntar quais instalar (v2.156.0).
-          const idxFn = (window as any).electron?.fetchGithubIndex
-          if (idxFn) {
-            const idx = await idxFn(spec)
-            const repos = idx?.content ? parseSkillIndex(idx.content, spec).slice(0, 60) : []
-            if (repos.length) {
-              const lines = repos.map((r: { owner: string; repo: string }) => `- ${r.owner}/${r.repo}`).join('\n')
-              return `${spec.owner}/${spec.repo} parece ser um ÍNDICE (awesome-*), sem SKILL.md próprio. Encontrei ${repos.length} repositório(s) de skills catalogado(s):\n${lines}\n\nPergunte ao usuário quais instalar e chame install_skills uma vez por repositório escolhido — NÃO instale todos de uma vez (a API do GitHub limita ~60 req/h).`
-            }
+
+        // Reúne os SKILL.md a avaliar. Repo direto → 1 lote. Índice (awesome-*) →
+        // no modo auto varremos os repos catalogados dentro do orçamento; fora do
+        // auto, devolvemos a lista p/ o agente perguntar quais instalar.
+        const idxFn = (window as any).electron?.fetchGithubIndex
+        type Batch = { repo: string; files: { path?: string; content: string }[] }
+        const batches: Batch[] = []
+        const budgetMs = Math.max(5, Number(settings.skillAutoDecideSec) || 60) * 1000
+        const deadline = Date.now() + budgetMs
+        let stoppedEarly = false
+        let dirHint = res?.dir as string | undefined
+
+        if (res?.files?.length) {
+          batches.push({ repo: `${spec.owner}/${spec.repo}`, files: res.files })
+        } else {
+          const idx = idxFn ? await idxFn(spec) : null
+          const repos = idx?.content ? parseSkillIndex(idx.content, spec) : []
+          if (!repos.length) return `install_skills: nenhum SKILL.md baixado de ${spec.owner}/${spec.repo}.`
+          if (!auto) {
+            const lines = repos.slice(0, 60).map((r: { owner: string; repo: string }) => `- ${r.owner}/${r.repo}`).join('\n')
+            return `${spec.owner}/${spec.repo} parece ser um ÍNDICE (awesome-*), sem SKILL.md próprio. Encontrei ${repos.length} repositório(s) de skills catalogado(s):\n${lines}\n\nOu peça ao usuário quais instalar (chame install_skills uma vez por repo), ou — se ele deixar você decidir — chame install_skills com auto:true neste mesmo índice p/ a IA escolher sozinha (instala novas + upgrades, ~60s, sem regressões).`
           }
-          return `install_skills: nenhum SKILL.md baixado de ${spec.owner}/${spec.repo}.`
+          for (const r of repos) {
+            if (Date.now() > deadline) { stoppedEarly = true; break }
+            let rr: any
+            try { rr = await fetchFn(r) } catch { continue }
+            if (rr?.error) { if (/limite|rate|403/i.test(String(rr.error))) { stoppedEarly = true; break } continue }
+            if (rr?.files?.length) batches.push({ repo: `${r.owner}/${r.repo}`, files: rr.files })
+          }
         }
-        const existingNames = (getAllSkillsRef.current?.() || skillsRef.current || []).map((s) => s.name)
-        const { skills: parsed, imported, invalid, duplicates } = buildImportedSkills(res.files, existingNames)
-        if (imported && onInstallSkillsRef.current) {
-          const now = Date.now()
-          const built: Skill[] = parsed.map((p) => ({
-            id: generateId(),
-            name: p.name, description: p.description, instructions: p.instructions,
-            ...(p.triggers ? { triggers: p.triggers } : {}),
-            ...(p.allowedTools ? { allowedTools: p.allowedTools } : {}),
-            ...(p.disallowedTools ? { disallowedTools: p.disallowedTools } : {}),
-            enabled: false, pinned: false, isBuiltIn: false, kind: 'user', createdAt: now,
-          }))
-          onInstallSkillsRef.current(built)
+
+        // ─── Caminho clássico (não-auto, repo direto): add-only, pula existentes.
+        if (!auto) {
+          const existingNames = (getAllSkillsRef.current?.() || skillsRef.current || []).map((s) => s.name)
+          const allFiles = batches.flatMap(b => b.files)
+          const { skills: parsed, imported, invalid, duplicates } = buildImportedSkills(allFiles, existingNames)
+          if (imported && onInstallSkillsRef.current) {
+            const now = Date.now()
+            const built: Skill[] = parsed.map((p) => ({
+              id: generateId(),
+              name: p.name, description: p.description, instructions: p.instructions,
+              ...(p.triggers ? { triggers: p.triggers } : {}),
+              ...(p.allowedTools ? { allowedTools: p.allowedTools } : {}),
+              ...(p.disallowedTools ? { disallowedTools: p.disallowedTools } : {}),
+              enabled: false, pinned: false, isBuiltIn: false, kind: 'user', createdAt: now,
+            }))
+            onInstallSkillsRef.current(built)
+          }
+          return [
+            `${imported} skill(s) instalada(s) de ${spec.owner}/${spec.repo} (${res.found || allFiles.length} SKILL.md encontradas; ${duplicates} duplicadas, ${invalid} inválidas).`,
+            dirHint ? `Salvas em: ${dirHint}` : '',
+            imported ? 'As novas skills vêm DESATIVADAS — o usuário pode ativá-las no painel de Skills (não as ative você).' : 'Nada novo a instalar.',
+          ].filter(Boolean).join('\n')
         }
-        const lines = [
-          `${imported} skill(s) instalada(s) de ${spec.owner}/${spec.repo} (${res.found || res.files.length} SKILL.md encontradas; ${duplicates} duplicadas, ${invalid} inválidas).`,
-          res.dir ? `Salvas em: ${res.dir}` : '',
-          imported ? 'As novas skills vêm DESATIVADAS — o usuário pode ativá-las no painel de Skills (não as ative você).' : 'Nada novo a instalar.',
-        ].filter(Boolean)
-        return lines.join('\n')
+
+        // ─── Modo AUTO: a IA decide (instala novas + upgrades, barra regressões).
+        const current = (getAllSkillsRef.current?.() || skillsRef.current || [])
+        const byName = new Map<string, Skill>(current.map((s) => [sanitizeSkillName(s.name), s]))
+        const upgradedById = new Map<string, Skill>() // id existente → versão evoluída
+        const additions: Skill[] = []
+        const installedNames: string[] = []
+        const upgradedNames: string[] = []
+        let regressions = 0, equal = 0, invalidCt = 0
+        const now = Date.now()
+        outer: for (const batch of batches) {
+          for (const f of batch.files) {
+            if (Date.now() > deadline) { stoppedEarly = true; break outer }
+            const pr = parseSkillMarkdown(f.content)
+            if (!pr.skill) { invalidCt++; continue }
+            const key = sanitizeSkillName(pr.skill.name)
+            const existing = byName.get(key)
+            const d = decideSkillImport(existing || null, pr.skill)
+            if (d.action === 'install') {
+              const sk: Skill = {
+                id: generateId(), name: pr.skill.name, description: pr.skill.description, instructions: pr.skill.instructions,
+                ...(pr.skill.triggers ? { triggers: pr.skill.triggers } : {}),
+                ...(pr.skill.allowedTools ? { allowedTools: pr.skill.allowedTools } : {}),
+                ...(pr.skill.disallowedTools ? { disallowedTools: pr.skill.disallowedTools } : {}),
+                enabled: false, pinned: false, isBuiltIn: false, kind: 'user', createdAt: now,
+              }
+              additions.push(sk); byName.set(key, sk); installedNames.push(key)
+            } else if (d.action === 'upgrade' && existing) {
+              // Evolução: melhora o CONTEÚDO mantendo id e estado (enabled/pinned).
+              const up: Skill = {
+                ...existing,
+                description: pr.skill.description, instructions: pr.skill.instructions,
+                triggers: pr.skill.triggers ?? existing.triggers,
+                allowedTools: pr.skill.allowedTools ?? existing.allowedTools,
+                disallowedTools: pr.skill.disallowedTools ?? existing.disallowedTools,
+              }
+              upgradedById.set(existing.id, up); byName.set(key, up); upgradedNames.push(key)
+            } else if (d.action === 'skip-regression') { regressions++ }
+            else { equal++ }
+          }
+        }
+
+        const changed = installedNames.length + upgradedNames.length
+        if (changed && onPersistSkillsRef.current) {
+          const next = current.map((s) => upgradedById.get(s.id) || s).concat(additions)
+          onPersistSkillsRef.current(next)
+        }
+        const fmt = (arr: string[], n = 8) => arr.slice(0, n).join(', ') + (arr.length > n ? `, +${arr.length - n}` : '')
+        return [
+          `IA decidiu (orçamento ${Math.round(budgetMs / 1000)}s${stoppedEarly ? ', esgotado — parcial' : ''}): ${changed} skill(s) aplicada(s) de ${batches.length} repositório(s).`,
+          installedNames.length ? `Novas instaladas (${installedNames.length}): ${fmt(installedNames)}` : '',
+          upgradedNames.length ? `Atualizadas por serem mais completas (${upgradedNames.length}): ${fmt(upgradedNames)}` : '',
+          regressions ? `Ignoradas (seriam regressão): ${regressions}` : '',
+          equal ? `Ignoradas por equivalentes: ${equal}` : '',
+          invalidCt ? `SKILL.md inválidos: ${invalidCt}` : '',
+          installedNames.length ? 'As skills NOVAS vêm DESATIVADAS — não as ative você; o usuário ativa no painel. Upgrades preservam o estado anterior.' : '',
+          stoppedEarly ? 'Orçamento/limite atingido — sobrou repositório por avaliar; chame de novo p/ continuar.' : '',
+        ].filter(Boolean).join('\n')
       }
       if (name === 'execute_command') {
         const cwd = resolveExecCwd(args.cwd, projectCwdRef.current)

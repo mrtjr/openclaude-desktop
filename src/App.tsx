@@ -670,6 +670,9 @@ export default function App() {
       const fresh = built.filter(s => !have.has(s.name))
       if (fresh.length) persistSkills([...skillsRef.current, ...fresh])
     },
+    // v2.157.0 — modo auto (a IA decide): pode adicionar E fazer upgrade de
+    // existentes, então reescreve a lista completa.
+    onPersistSkills: persistSkills,
   })
 
   // Matching semântico de skills (Fase 5, v2.56.0) — opt-in, best-effort (Ollama).
