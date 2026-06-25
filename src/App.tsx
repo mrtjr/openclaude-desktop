@@ -20,6 +20,7 @@ import { sliceBeforeMessage, classifyEdit, lastUserMessage } from './utils/conve
 import { continuationPrompt } from './utils/continuation'
 import { nextToolChoiceMode, toolChoiceLabel } from './utils/toolChoice'
 import { verificationPrompt } from './utils/verification'
+import { ttsController } from './utils/speechOut'
 import { starterPrompts } from './utils/starterPrompts'
 import { findMessageMatches, totalOccurrences, stepHitIndex } from './utils/conversationFind'
 import { useStableCallback } from './hooks/useStableCallback'
@@ -1053,6 +1054,13 @@ export default function App() {
     localStorage.setItem('openclaude-theme', theme)
   }, [theme])
 
+  // ─── Read-aloud (TTS) lifecycle (v2.146.0) ────────────────────
+  // Para a fala ao trocar de conversa (o contexto mudou) e ao iniciar uma nova
+  // geração (a resposta antiga não deve continuar sendo lida). Esc também para
+  // (ver handler global). Sem isso, a v2.144.0 deixava a fala correndo solta.
+  useEffect(() => { ttsController.stop() }, [convManager.activeConvId])
+  useEffect(() => { if (isActiveConvLoading) ttsController.stop() }, [isActiveConvLoading])
+
   // ─── Code block copy buttons ──────────────────────────────────
   useEffect(() => {
     const handleCopyClick = (e: MouseEvent) => {
@@ -1114,6 +1122,8 @@ export default function App() {
         for (const [open, close] of overlays) {
           if (open) { close(); return }
         }
+        // Sem overlay aberto: Esc para a leitura em voz alta, se houver (v2.146.0).
+        if (ttsController.getSpeakingId()) { ttsController.stop(); return }
       }
 
       // `/` focuses chat composer when not already typing (Discord/GitHub pattern)
