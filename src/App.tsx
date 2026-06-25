@@ -662,6 +662,14 @@ export default function App() {
     personas: personaList,
     onSetPersona: (p) => { setActivePersona(p as any); setActivePersonaId((p as any)?.id ?? null) },
     getConversations: () => convManager.conversationsRef.current,
+    // install_skills (v2.155.0): instala skills do GitHub "diretamente do chat".
+    getAllSkills: () => skillsRef.current,
+    onInstallSkills: (built) => {
+      if (!built.length) return
+      const have = new Set(skillsRef.current.map(s => s.name))
+      const fresh = built.filter(s => !have.has(s.name))
+      if (fresh.length) persistSkills([...skillsRef.current, ...fresh])
+    },
   })
 
   // Matching semântico de skills (Fase 5, v2.56.0) — opt-in, best-effort (Ollama).

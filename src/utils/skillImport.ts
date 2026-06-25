@@ -69,6 +69,24 @@ function stripQuotes(s: string): string {
   return s.replace(/^["']|["']$/g, '')
 }
 
+/** Repos "famosos" da comunidade que de fato contêm SKILL.md (atalhos da UI).
+ *  awesome-* são LISTAS (índices), não contêm SKILL.md — por isso ficam de fora. */
+export const SKILL_REPO_PRESETS = ['anthropics/skills']
+
+/**
+ * Normaliza a entrada de um repo GitHub para { owner, repo, branch? }. Aceita
+ * "owner/repo", URL completa, ".git" e ".../tree/branch". Null se inválido.
+ * v2.155.0 — instalar skills do GitHub sem git clone.
+ */
+export function parseRepoSpec(input: string): { owner: string; repo: string; branch?: string } | null {
+  let s = String(input || '').trim()
+  s = s.replace(/^git@github\.com:/i, '').replace(/^https?:\/\/(www\.)?github\.com\//i, '')
+  s = s.replace(/\.git(\/)?$/i, '').replace(/\/+$/, '')
+  const m = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)(?:\/tree\/([^?#]+))?/.exec(s)
+  if (!m) return null
+  return { owner: m[1], repo: m[2], ...(m[3] ? { branch: m[3].split('/')[0] } : {}) }
+}
+
 /**
  * Importação em massa: parseia uma lista de arquivos SKILL.md, deduplica por
  * nome (contra os já existentes e entre si) e conta. Tolerante: arquivos

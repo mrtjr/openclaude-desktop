@@ -45,6 +45,7 @@ interface Window {
     importUserData: (payload: { files: Record<string, unknown> }) => Promise<{ restored: number; error: string | null }>
     readDocument: (filePath: string) => Promise<{ content: string | null; base64?: string; mimeType?: string; name?: string; isImage?: boolean; pages?: number; error: string | null }>
     importSkillsDir?: () => Promise<{ files: { path: string; content: string }[]; root: string | null; error: string | null }>
+    fetchGithubSkills?: (spec: { owner: string; repo: string; branch?: string }) => Promise<{ files: { path: string; content: string }[]; dir?: string; branch?: string; found?: number; error: string | null }>
     minimize: () => Promise<void>
     maximize: () => Promise<void>
     close: () => Promise<void>

@@ -5,8 +5,62 @@
  */
 
 module.exports = function registerDocumentHandlers(ipcMain, app, dialog) {
-  const path = require('path')
-  const fs   = require('fs')
+  const path  = require('path')
+  const fs    = require('fs')
+  const https = require('https')
+
+  // GET HTTPS simples → { status, body }. UA obrigatório na API do GitHub.
+  const httpsGet = (hostname, reqPath) => new Promise((resolve) => {
+    const req = https.get({ hostname, path: reqPath, headers: { 'User-Agent': 'OpenClaude-Desktop', 'Accept': 'application/vnd.github+json' } }, (res) => {
+      let d = ''
+      res.setEncoding('utf8')
+      res.on('data', (c) => { d += c; if (d.length > 8 * 1024 * 1024) req.destroy() })
+      res.on('end', () => resolve({ status: res.statusCode, body: d }))
+    })
+    req.on('error', (e) => resolve({ status: 0, body: '', error: e.message }))
+    req.setTimeout(20000, () => { req.destroy(); resolve({ status: 0, body: '', error: 'timeout' }) })
+  })
+
+  // ─── Instalar skills do GitHub (sem git clone, v2.155.0) ────────────────
+  // Recebe { owner, repo, branch? } (o renderer parseia via parseRepoSpec).
+  // Lista a árvore do repo (API), filtra SKILL.md, baixa o raw de cada um,
+  // salva numa PASTA PADRÃO (userData/skills-library/owner-repo) e devolve os
+  // conteúdos p/ instalar. Limite de segurança e mensagens de erro amigáveis.
+  ipcMain.handle('fetch-github-skills', async (event, spec) => {
+    try {
+      const owner = String(spec?.owner || '').trim()
+      const repo = String(spec?.repo || '').trim()
+      if (!owner || !repo) return { files: [], error: 'Repositório inválido (use owner/repo ou a URL do GitHub).' }
+      let branch = String(spec?.branch || '').trim()
+      if (!branch) {
+        const meta = await httpsGet('api.github.com', `/repos/${owner}/${repo}`)
+        if (meta.status === 403) return { files: [], error: 'Limite de requisições do GitHub atingido — tente novamente em alguns minutos.' }
+        if (meta.status === 404) return { files: [], error: `Repositório ${owner}/${repo} não encontrado.` }
+        if (meta.status !== 200) return { files: [], error: `Falha ao acessar o GitHub (${meta.status || meta.error || 'rede'}).` }
+        try { branch = JSON.parse(meta.body).default_branch || 'main' } catch { branch = 'main' }
+      }
+      const tree = await httpsGet('api.github.com', `/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`)
+      if (tree.status !== 200) return { files: [], error: `Não foi possível listar os arquivos do repo (${tree.status || tree.error || 'rede'}).` }
+      let paths = []
+      try { paths = (JSON.parse(tree.body).tree || []).map((t) => t.path).filter((p) => /(^|\/)SKILL\.md$/i.test(p)) } catch { /* json ruim */ }
+      paths = paths.slice(0, 500)
+      if (!paths.length) return { files: [], error: 'Nenhum SKILL.md encontrado neste repositório (listas "awesome-*" são índices e não contêm skills).', branch }
+      const baseDir = path.join(app.getPath('userData'), 'skills-library', `${owner}-${repo}`)
+      const files = []
+      for (const p of paths) {
+        const raw = await httpsGet('raw.githubusercontent.com', `/${owner}/${repo}/${branch}/${p.split('/').map(encodeURIComponent).join('/')}`)
+        if (raw.status === 200 && raw.body) {
+          files.push({ path: p, content: raw.body })
+          try { const dest = path.join(baseDir, p); fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.writeFileSync(dest, raw.body, 'utf-8') } catch { /* best-effort */ }
+        }
+      }
+      return { files, dir: baseDir, branch, found: paths.length, error: null }
+    } catch (e) {
+      return { files: [], error: e.message }
+    }
+  })
+
+  // ─── Importação em massa de skills (SKILL.md) ───────────────────────────
 
   // ─── Open file dialog ────────────────────────────────────────────────────
   ipcMain.handle('open-file-dialog', async (event, opts = {}) => {

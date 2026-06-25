@@ -1,5 +1,19 @@
 import { describe, it, expect } from 'vitest'
-import { parseSkillMarkdown, splitFrontmatter, sanitizeSkillName, toSkillMarkdown, lintSkill, buildImportedSkills } from '../src/utils/skillImport'
+import { parseSkillMarkdown, splitFrontmatter, sanitizeSkillName, toSkillMarkdown, lintSkill, buildImportedSkills, parseRepoSpec } from '../src/utils/skillImport'
+
+describe('parseRepoSpec', () => {
+  it('aceita owner/repo, URL, .git e /tree/branch', () => {
+    expect(parseRepoSpec('anthropics/skills')).toEqual({ owner: 'anthropics', repo: 'skills' })
+    expect(parseRepoSpec('https://github.com/anthropics/skills')).toEqual({ owner: 'anthropics', repo: 'skills' })
+    expect(parseRepoSpec('https://github.com/owner/repo.git')).toEqual({ owner: 'owner', repo: 'repo' })
+    expect(parseRepoSpec('https://github.com/o/r/tree/dev/sub')).toEqual({ owner: 'o', repo: 'r', branch: 'dev' })
+    expect(parseRepoSpec('git@github.com:o/r.git')).toEqual({ owner: 'o', repo: 'r' })
+  })
+  it('null para entradas inválidas', () => {
+    expect(parseRepoSpec('')).toBeNull()
+    expect(parseRepoSpec('só-isso')).toBeNull()
+  })
+})
 
 describe('sanitizeSkillName', () => {
   it('aplica as regras do padrão (minúsculas/números/hífen, ≤64)', () => {

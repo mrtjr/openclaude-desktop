@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, Plus, Edit3, Trash2, Check, Zap, ZapOff, Pin, PinOff, Download, Upload, BookOpen, FileText, AlertTriangle, Sparkles, Loader2 } from 'lucide-react'
+import { X, Plus, Edit3, Trash2, Check, Zap, ZapOff, Pin, PinOff, Download, Upload, BookOpen, FileText, AlertTriangle, Sparkles, Loader2, Github } from 'lucide-react'
 import type { Skill } from './types/skill'
 import { BUILTIN_SKILLS } from './utils/skills'
 import { isDangerousFact } from './utils/memoryInduction'
 import { generateId } from './utils/formatting'
-import { parseSkillMarkdown, toSkillMarkdown, sanitizeSkillName, lintSkill, buildImportedSkills } from './utils/skillImport'
+import { parseSkillMarkdown, toSkillMarkdown, sanitizeSkillName, lintSkill, buildImportedSkills, parseRepoSpec, SKILL_REPO_PRESETS } from './utils/skillImport'
 
 interface Props {
   isOpen: boolean
@@ -129,6 +129,30 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
     } catch (e: any) { alert((pt ? 'Falha: ' : 'Failed: ') + (e?.message || e)) }
     finally { setBulkBusy(false) }
   }
+  // Instalar do GitHub SEM git clone (v2.155.0): baixa os SKILL.md de um repo
+  // p/ a pasta padrão e instala. Vêm DESATIVADAS.
+  const [ghRepo, setGhRepo] = useState(SKILL_REPO_PRESETS[0] || 'anthropics/skills')
+  const [ghBusy, setGhBusy] = useState(false)
+  const handleGithubInstall = async () => {
+    const el = (window as any).electron
+    if (!el?.fetchGithubSkills) return
+    const spec = parseRepoSpec(ghRepo)
+    if (!spec) { alert(pt ? 'Repositório inválido. Use owner/repo ou a URL do GitHub.' : 'Invalid repo. Use owner/repo or a GitHub URL.'); return }
+    setGhBusy(true)
+    try {
+      const res = await el.fetchGithubSkills(spec)
+      if (res?.error) { alert((pt ? 'Erro: ' : 'Error: ') + res.error); return }
+      if (!res?.files?.length) { alert(pt ? 'Nenhum SKILL.md baixado.' : 'No SKILL.md downloaded.'); return }
+      const { skills: parsed, imported, invalid, duplicates } = buildImportedSkills(res.files, skills.map((s: Skill) => s.name))
+      if (!imported) { alert(pt ? `Nada novo (${duplicates} duplicadas, ${invalid} inválidas).` : `Nothing new (${duplicates} dupes, ${invalid} invalid).`); return }
+      const newSkills: Skill[] = parsed.map(p => ({ ...empty(), ...p, id: generateId(), enabled: false, pinned: false, isBuiltIn: false, kind: 'user' as const }))
+      onSave([...skills, ...newSkills])
+      alert(pt
+        ? `${imported} skill(s) instalada(s) de ${spec.owner}/${spec.repo}! (${duplicates} duplicadas, ${invalid} ignoradas)\nSalvas em: ${res.dir}\nVêm DESATIVADAS — ative as que quiser.`
+        : `${imported} skill(s) installed from ${spec.owner}/${spec.repo}! (${duplicates} dupes, ${invalid} skipped)\nSaved to: ${res.dir}\nThey're DISABLED — enable the ones you want.`)
+    } catch (e: any) { alert((pt ? 'Falha: ' : 'Failed: ') + (e?.message || e)) }
+    finally { setGhBusy(false) }
+  }
   // Exporta UMA skill como SKILL.md (padrão aberto) — portável p/ Claude Code/
   // Codex/Cursor (v2.151.0).
   const downloadSkillMd = (s: Skill) => {
@@ -203,6 +227,22 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
                 </button>
                 <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: 'none' }} onChange={handleImport} />
                 <input ref={mdFileRef} type="file" accept=".md,.markdown,text/markdown" style={{ display: 'none' }} onChange={handleImportSkillMd} />
+              </div>
+
+              {/* Instalar direto do GitHub, sem git clone (v2.155.0) */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                <Github size={15} style={{ opacity: 0.6, flexShrink: 0 }} />
+                <input value={ghRepo} onChange={e => setGhRepo(e.target.value)} disabled={ghBusy}
+                  onKeyDown={e => { if (e.key === 'Enter') handleGithubInstall() }}
+                  placeholder={pt ? 'owner/repo ou URL (ex.: anthropics/skills)' : 'owner/repo or URL (e.g. anthropics/skills)'}
+                  style={{ flex: '1 1 240px', minWidth: 160, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-tertiary)', color: 'var(--text-primary)', fontSize: 12.5, fontFamily: 'inherit' }} />
+                <button className="settings-close" style={{ width: 'auto', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 6 }} onClick={handleGithubInstall} disabled={ghBusy}
+                  title={pt ? 'Baixa os SKILL.md do repositório p/ a pasta padrão e instala (sem git clone)' : 'Downloads the repo SKILL.md to the default folder and installs (no git clone)'}>
+                  {ghBusy ? <Loader2 size={14} className="spin" /> : <Download size={14} />} {ghBusy ? (pt ? 'Instalando…' : 'Installing…') : (pt ? 'Instalar do GitHub' : 'Install from GitHub')}
+                </button>
+                {SKILL_REPO_PRESETS.map(r => (
+                  <button key={r} className="settings-close" style={{ width: 'auto', padding: '4px 9px', fontSize: 11, opacity: 0.85 }} onClick={() => setGhRepo(r)} disabled={ghBusy}>{r}</button>
+                ))}
               </div>
 
               {/* Seção de revisão das skills aprendidas (staging) — Fase 4 */}

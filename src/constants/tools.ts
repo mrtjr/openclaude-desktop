@@ -171,6 +171,20 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'install_skills',
+      description: 'Install Agent Skills directly from a public GitHub repository — NO git clone needed. Use this when the user pastes a GitHub repo URL or a `git clone …` command for a skills repo (e.g. anthropics/skills) and asks to install/import its skills. Downloads every SKILL.md from the repo into the app\'s default skills folder and installs them. Imported skills arrive DISABLED by default (the user enables the ones they want in the Skills panel) — do not try to enable them yourself. Note: "awesome-*" repos are usually just index lists and contain no SKILL.md.',
+      parameters: {
+        type: 'object',
+        properties: {
+          repo: { type: 'string', description: 'The repository: "owner/repo", a full GitHub URL, or a "owner/repo/tree/branch" URL. Examples: "anthropics/skills", "https://github.com/anthropics/skills".' }
+        },
+        required: ['repo']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'edit_file',
       description: 'Make a surgical edit to an existing file by replacing an exact text snippet. old_string must appear EXACTLY ONCE in the file (include enough surrounding context to be unique). Far cheaper and safer than rewriting the whole file with write_file.',
       parameters: {
@@ -749,4 +763,7 @@ export const DANGEROUS_TOOLS = new Set([
   'run_workflow',
   // Computer Use — vision-based coordinate interaction
   'browser_click_at', 'browser_type_text', 'browser_key_press', 'browser_scroll',
+  // install_skills (v2.155.0): baixa da rede + grava em disco + instala
+  // capacidades novas (risco de skill-poisoning) → aprovação do usuário.
+  'install_skills',
 ])

@@ -17,6 +17,8 @@ import { paginateFileContent } from '../utils/readFile'
 import { formatClickResult, formatNavResult } from '../utils/browserResult'
 import { logInsight } from '../services/devInsights'
 import { findSkill, formatLoadSkillResult, suggestSkill } from '../utils/skills'
+import { buildImportedSkills, parseRepoSpec } from '../utils/skillImport'
+import { generateId } from '../utils/formatting'
 import { matchHooks } from '../utils/hooks'
 import { resolveSubagentPrompt } from '../constants/subagents'
 import {
@@ -74,9 +76,14 @@ interface UseToolExecutionOptions {
   /** v2.126.0 — lê o estado de Parar do chat para abortar os workers de
    *  delegate_subtasks (top-level e aninhados) quando o usuário clica Parar. */
   getStopped?: () => boolean
+  /** v2.155.0 — lista COMPLETA de skills (não só as ativas) p/ a ferramenta
+   *  install_skills deduplicar pelos nomes já instalados. */
+  getAllSkills?: () => Skill[]
+  /** v2.155.0 — instala (persiste) as skills baixadas do GitHub via chat. */
+  onInstallSkills?: (skills: Skill[]) => void
 }
 
-export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool, backgroundTasks, subagentActivity, subagentLimiter, personas, onSetPersona, getConversations, getStopped }: UseToolExecutionOptions) {
+export function useToolExecution({ settings, activeConvId, setConversations, selectedModel, modalKeyPool, projectCwd, skills, callMcpTool, backgroundTasks, subagentActivity, subagentLimiter, personas, onSetPersona, getConversations, getStopped, getAllSkills, onInstallSkills }: UseToolExecutionOptions) {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
   const scoutSeqRef = useRef(0) // ids únicos + rodízio de modelo do scout
   const worktreeSeqRef = useRef(0) // sufixo único dos worktrees (v2.102.0)
@@ -86,6 +93,10 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
   onSetPersonaRef.current = onSetPersona
   const getConversationsRef = useRef(getConversations)
   getConversationsRef.current = getConversations
+  const getAllSkillsRef = useRef(getAllSkills)
+  getAllSkillsRef.current = getAllSkills
+  const onInstallSkillsRef = useRef(onInstallSkills)
+  onInstallSkillsRef.current = onInstallSkills
 
   // Use refs to avoid stale closures
   const activeConvIdRef = useRef(activeConvId)
@@ -133,6 +144,39 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
           return formatLoadSkillResult(hit, req, hit ? null : suggestSkill(list, req))
         })
         return parts.join('\n\n---\n\n')
+      }
+      // install_skills (v2.155.0): baixa os SKILL.md de um repo do GitHub (sem
+      // git clone) p/ a pasta padrão e os instala — "diretamente do chat". As
+      // skills nascem DESATIVADAS (guarda-rail anti skill-poisoning); o usuário
+      // ativa as que quiser no painel de Skills.
+      if (name === 'install_skills') {
+        const fetchFn = (window as any).electron?.fetchGithubSkills
+        if (!fetchFn) return 'install_skills: indisponível nesta versão do app.'
+        const spec = parseRepoSpec(String(args.repo ?? args.url ?? ''))
+        if (!spec) return 'install_skills: repositório inválido. Use "owner/repo" ou a URL do GitHub (ex.: anthropics/skills).'
+        const res = await fetchFn(spec)
+        if (res?.error) return `install_skills: ${res.error}`
+        if (!res?.files?.length) return `install_skills: nenhum SKILL.md baixado de ${spec.owner}/${spec.repo}.`
+        const existingNames = (getAllSkillsRef.current?.() || skillsRef.current || []).map((s) => s.name)
+        const { skills: parsed, imported, invalid, duplicates } = buildImportedSkills(res.files, existingNames)
+        if (imported && onInstallSkillsRef.current) {
+          const now = Date.now()
+          const built: Skill[] = parsed.map((p) => ({
+            id: generateId(),
+            name: p.name, description: p.description, instructions: p.instructions,
+            ...(p.triggers ? { triggers: p.triggers } : {}),
+            ...(p.allowedTools ? { allowedTools: p.allowedTools } : {}),
+            ...(p.disallowedTools ? { disallowedTools: p.disallowedTools } : {}),
+            enabled: false, pinned: false, isBuiltIn: false, kind: 'user', createdAt: now,
+          }))
+          onInstallSkillsRef.current(built)
+        }
+        const lines = [
+          `${imported} skill(s) instalada(s) de ${spec.owner}/${spec.repo} (${res.found || res.files.length} SKILL.md encontradas; ${duplicates} duplicadas, ${invalid} inválidas).`,
+          res.dir ? `Salvas em: ${res.dir}` : '',
+          imported ? 'As novas skills vêm DESATIVADAS — o usuário pode ativá-las no painel de Skills (não as ative você).' : 'Nada novo a instalar.',
+        ].filter(Boolean)
+        return lines.join('\n')
       }
       if (name === 'execute_command') {
         const cwd = resolveExecCwd(args.cwd, projectCwdRef.current)

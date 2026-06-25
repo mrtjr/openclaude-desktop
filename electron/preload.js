@@ -66,6 +66,8 @@ contextBridge.exposeInMainWorld('electron', {
   readDocument: (filePath) => ipcRenderer.invoke('read-document', filePath),
   // Importação em massa de skills: abre uma pasta e lê todos os SKILL.md (v2.153.0)
   importSkillsDir: () => ipcRenderer.invoke('import-skills-dir'),
+  // Instalar skills do GitHub sem git clone: baixa os SKILL.md de um repo (v2.155.0)
+  fetchGithubSkills: (spec) => ipcRenderer.invoke('fetch-github-skills', spec),
 
   // Window controls
   minimize: () => ipcRenderer.invoke('window-minimize'),
