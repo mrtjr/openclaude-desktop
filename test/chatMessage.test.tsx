@@ -37,6 +37,7 @@ function baseProps() {
     onEditResend: vi.fn(),
     onContinue: vi.fn(),
     onFollowup: vi.fn(),
+    onVerify: vi.fn(),
     showToast: vi.fn(),
   }
 }
@@ -148,6 +149,21 @@ describe('ChatMessage - rendering (behavior preserved from the inline App map)',
     const props = baseProps()
     const { container } = render(<ChatMessage msg={msg({ role: 'assistant', truncated: true })} {...props} onContinue={undefined} />)
     expect(container.querySelector('.continue-gen-btn')).toBeNull()
+  })
+
+  it('offers Verify on assistant answers (not on tool-step or user messages)', () => {
+    const props = baseProps()
+    const ans = render(<ChatMessage msg={msg({ id: 'a3', role: 'assistant', content: 'resposta factual' })} {...props} />)
+    const btn = ans.container.querySelector('.msg-verify-btn')!
+    expect(btn).toBeTruthy()
+    fireEvent.click(btn)
+    expect(props.onVerify).toHaveBeenCalledWith('a3')
+    // user message: no verify
+    const u = render(<ChatMessage msg={msg({ role: 'user', content: 'oi' })} {...props} />)
+    expect(u.container.querySelector('.msg-verify-btn')).toBeNull()
+    // tool-step assistant message: no verify
+    const step = render(<ChatMessage msg={msg({ role: 'assistant', content: 'preâmbulo', toolCalls: [{ id: 't', name: 'run', arguments: {} }] })} {...props} />)
+    expect(step.container.querySelector('.msg-verify-btn')).toBeNull()
   })
 
   it('renders model-suggested follow-up chips and sends the clicked one', () => {

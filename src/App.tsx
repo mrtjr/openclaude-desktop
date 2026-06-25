@@ -19,6 +19,7 @@ import { groupMessages } from './utils/messageGroups'
 import { sliceBeforeMessage, classifyEdit, lastUserMessage } from './utils/conversationEdit'
 import { continuationPrompt } from './utils/continuation'
 import { nextToolChoiceMode, toolChoiceLabel } from './utils/toolChoice'
+import { verificationPrompt } from './utils/verification'
 import { starterPrompts } from './utils/starterPrompts'
 import { findMessageMatches, totalOccurrences, stepHitIndex } from './utils/conversationFind'
 import { useStableCallback } from './hooks/useStableCallback'
@@ -1544,6 +1545,16 @@ export default function App() {
     setInput('')
   })
 
+  // Chain-of-Verification (v2.143.0, pesquisa 2026 de self-correction): dispara
+  // um turno OCULTO que pede ao modelo p/ auto-verificar a resposta clicada.
+  const handleVerify = useStableCallback((msgId: string) => {
+    if (!activeConv || isActiveConvLoading) return
+    const msg = activeConv.messages.find(m => m.id === msgId)
+    if (!msg?.content) return
+    logInsight('chat', 'verify')
+    sendMessageRef.current(verificationPrompt(settings.language, msg.content), activeConv.id, { hidden: true })
+  })
+
   // Fire the queued message once ITS conversation goes idle (switching to
   // another conversation keeps it parked until the user returns).
   useEffect(() => {
@@ -2350,6 +2361,7 @@ export default function App() {
                   onEditResend={handleEditResend}
                   onContinue={handleContinue}
                   onFollowup={handleFollowup}
+                  onVerify={handleVerify}
                   showToast={showToast}
                   displayTransforms={displayTransforms}
                 />

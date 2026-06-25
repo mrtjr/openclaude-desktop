@@ -1,5 +1,5 @@
 import { memo, useState } from 'react'
-import { User, RefreshCw, GitBranch, Trash, Pencil, Check, CornerDownRight } from 'lucide-react'
+import { User, RefreshCw, GitBranch, Trash, Pencil, Check, CornerDownRight, ShieldCheck } from 'lucide-react'
 import type { Message } from '../types'
 import { formatMarkdown } from '../utils/formatting'
 import { applyDisplayTransforms, type DisplayTransform } from '../utils/outputHooks'
@@ -46,6 +46,9 @@ interface ChatMessageProps {
   /** v2.133.0 — click a model-suggested follow-up question (Perplexity-style
    *  chips). Sends it as a new message. */
   onFollowup?: (text: string) => void
+  /** v2.143.0 — Chain-of-Verification: ask the model to self-verify this
+   *  answer (opt-in). Shown on assistant messages with content. */
+  onVerify?: (msgId: string) => void
   showToast: (message: string) => void
   /** v2.94.0 — transformações de exibição (MessageDisplay): aplicadas ao texto
    *  do assistente antes de renderizar. Identidade estável (memoizado no App). */
@@ -54,7 +57,7 @@ interface ChatMessageProps {
 
 function ChatMessageInner({
   msg, language, showThinking, collapsedTools,
-  onToggleCollapse, onOpenArtifact, onRegenerate, onBranch, onDelete, onEditResend, onContinue, onFollowup, showToast, displayTransforms,
+  onToggleCollapse, onOpenArtifact, onRegenerate, onBranch, onDelete, onEditResend, onContinue, onFollowup, onVerify, showToast, displayTransforms,
 }: ChatMessageProps) {
   const en = language === 'en'
   // In-place edit state (ChatGPT-style). Local so toggling it never touches
@@ -160,6 +163,16 @@ function ChatMessageInner({
                 aria-label="Regenerate"
               >
                 <RefreshCw size={12} />
+              </button>
+            )}
+            {msg.role === 'assistant' && msg.content && !(msg.toolCalls && msg.toolCalls.length) && onVerify && (
+              <button
+                className="msg-action-btn msg-verify-btn"
+                onClick={() => onVerify(msg.id)}
+                title={en ? 'Verify this answer (Chain-of-Verification)' : 'Verificar esta resposta (auto-verificação)'}
+                aria-label={en ? 'Verify answer' : 'Verificar resposta'}
+              >
+                <ShieldCheck size={12} />
               </button>
             )}
             <button
