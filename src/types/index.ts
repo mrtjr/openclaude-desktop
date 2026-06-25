@@ -86,6 +86,10 @@ export interface Conversation {
   /** v2.137.0 — o usuário renomeou manualmente; a auto-titulação da 1ª
    *  mensagem NÃO deve sobrescrever. */
   titleManual?: boolean
+  /** v2.160.0 — skills carregadas via load_skill que PERSISTEM na conversa: o
+   *  próximo turno re-hidrata daqui (a skill vale a tarefa inteira sem precisar
+   *  fixar). Acumula nomes; findActiveSkills filtra os inválidos no uso. */
+  activeSkillNames?: string[]
   /** v2.138.0 — arquivada: some da lista principal (estilo ChatGPT), visível
    *  só no filtro "Arquivadas". */
   archived?: boolean

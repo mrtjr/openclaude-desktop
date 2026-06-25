@@ -170,10 +170,13 @@ export function useChat({
     activeSkillNamesRef.current = [...activeSkillNamesRef.current, name]
     setActiveSkillNames(activeSkillNamesRef.current)
   }, [])
-  const resetActiveSkills = useCallback(() => {
-    if (!activeSkillNamesRef.current.length) return
-    activeSkillNamesRef.current = []
-    setActiveSkillNames([])
+  // Re-hidrata as skills ativas do que ficou salvo na conversa (v2.160.0):
+  // load_skill passou a PERSISTIR pela tarefa inteira (antes zerava a cada turno).
+  // Lista vazia = limpa. findActiveSkills filtra nomes inválidos no uso.
+  const hydrateActiveSkills = useCallback((names: string[] | undefined) => {
+    const list = Array.isArray(names) ? [...new Set(names.filter(Boolean))] : []
+    activeSkillNamesRef.current = list
+    setActiveSkillNames(list)
   }, [])
 
   const stopRequestedRef = useRef(false)
@@ -681,8 +684,9 @@ export function useChat({
       const useStreaming = isNotOllama ? (cloudStreamingSupported && settings.streamingEnabled) : settings.streamingEnabled
       let steps = 0
       let idleSteps = 0
-      // Skills ativas são por-turno: zera ao começar este turno (v2.104.0).
-      resetActiveSkills()
+      // Skills carregadas PERSISTEM na conversa (v2.160.0): re-hidrata do que
+      // ficou salvo, em vez de zerar — a skill vale a tarefa inteira sem fixar.
+      hydrateActiveSkills(conv?.activeSkillNames)
       const recentToolCalls: string[] = []
       let activeMemory = conv?.workingMemory || null
       // Per-turn flag for the tools-unsupported auto-retry. Starts from the
@@ -1763,6 +1767,11 @@ export function useChat({
         if (tc.function.name === 'load_skill' && /^\[SKILL:/.test(result)) {
           const loaded = Array.isArray(args.names) && args.names.length ? args.names : [args.name]
           for (const nm of loaded) { if (nm) { addActiveSkill(String(nm)); logInsight('skill', 'load', { name: String(nm) }) } }
+          // Persiste na conversa (v2.160.0): a skill carregada vale a tarefa
+          // inteira — o próximo turno re-hidrata de conv.activeSkillNames.
+          setConversations(prev => prev.map(c =>
+            c.id !== convId ? c : { ...c, activeSkillNames: [...activeSkillNamesRef.current] }
+          ))
         }
       }
 
