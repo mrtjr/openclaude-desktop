@@ -184,6 +184,19 @@ describe('ChatMessage - rendering (behavior preserved from the inline App map)',
     expect(edited.container.querySelector('.message-edited')?.textContent).toBe('editado')
   })
 
+  it('renders a "Sources" list on assistant messages that used the web', () => {
+    const props = baseProps()
+    const m = msg({ role: 'assistant', content: 'resposta', sources: [
+      { title: 'Doc A', url: 'https://a.com/x' },
+      { title: 'Doc B', url: 'https://b.com' },
+    ] })
+    const { container } = render(<ChatMessage msg={m} {...props} />)
+    const links = container.querySelectorAll('.source-link')
+    expect(links.length).toBe(2)
+    expect((links[0] as HTMLAnchorElement).href).toBe('https://a.com/x')
+    expect(container.querySelector('.source-domain')?.textContent).toBe('a.com')
+  })
+
   it('shows no follow-up chips for user messages or when the list is empty', () => {
     const props = baseProps()
     const userMsg = render(<ChatMessage msg={msg({ role: 'user', content: 'oi', followups: ['x?'] })} {...props} />)

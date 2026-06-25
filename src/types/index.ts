@@ -23,6 +23,9 @@ export interface Message {
   /** v2.133.0 — perguntas de acompanhamento (chips estilo Perplexity) que o
    *  modelo sugeriu no fim da resposta. Já separadas do texto visível. */
   followups?: string[]
+  /** v2.145.0 — fontes web usadas neste turno (web_search/fetch_url), exibidas
+   *  como lista "Fontes" sob a resposta (estilo Perplexity). */
+  sources?: import('../utils/sources').Source[]
   /** v2.136.0 — mensagem do usuário reenviada após edição (lápis ou ↑).
    *  Mostra o selo "editado" na bolha, estilo ChatGPT. */
   edited?: boolean

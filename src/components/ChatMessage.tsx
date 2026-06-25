@@ -191,6 +191,22 @@ function ChatMessageInner({
           </div>
         </div>
         )}
+        {/* Fontes web usadas neste turno (estilo Perplexity, v2.145.0). */}
+        {!editing && msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
+          <div className="sources">
+            <div className="sources-label">{en ? 'Sources' : 'Fontes'}</div>
+            <ol className="sources-list">
+              {msg.sources.map((s, i) => (
+                <li key={i} className="source-item">
+                  <a href={s.url} target="_blank" rel="noopener noreferrer" className="source-link" title={s.url}>
+                    <span className="source-domain">{(s.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0])}</span>
+                    <span className="source-title">{s.title}</span>
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
         {/* Perguntas de acompanhamento sugeridas pelo modelo (chips estilo
             Perplexity, v2.133.0). Clicar envia como nova mensagem. */}
         {!editing && msg.role === 'assistant' && msg.followups && msg.followups.length > 0 && onFollowup && (

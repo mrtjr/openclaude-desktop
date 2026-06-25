@@ -1163,6 +1163,30 @@ body .update-banner {
 }
 .continue-gen-btn:hover { background: var(--accent, #6366f1); color: #fff; }
 
+/* ── Fontes / citações (estilo Perplexity, v2.145.0) ── */
+.sources { margin-top: 12px; }
+.sources-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 6px;
+}
+.sources-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; counter-reset: src; }
+.source-item { counter-increment: src; }
+.source-link {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 320px;
+  padding: 5px 10px 5px 8px; border-radius: 8px; text-decoration: none;
+  border: 1px solid var(--border); background: var(--bg-elevated);
+  color: var(--text-secondary); font-size: 12px; transition: all 0.15s;
+}
+.source-link::before {
+  content: counter(src); flex-shrink: 0;
+  width: 15px; height: 15px; border-radius: 50%; font-size: 9.5px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent-dim, rgba(99,102,241,0.15)); color: var(--accent, #6366f1);
+}
+.source-link:hover { border-color: var(--accent-border); background: var(--accent-dim); color: var(--text-primary); }
+.source-domain { color: var(--accent, #6366f1); font-weight: 600; flex-shrink: 0; }
+.source-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.85; }
+
 /* ── Perguntas relacionadas / follow-up (chips estilo Perplexity, v2.133.0) ── */
 .followups { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
 .followups-label {

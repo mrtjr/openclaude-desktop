@@ -19,6 +19,7 @@ import { isLengthTruncated } from '../utils/continuation'
 import { deriveTitleFromMessage } from '../utils/conversationTitle'
 import { parseFollowups, hideFollowupTrailer, followupInstruction } from '../utils/followups'
 import { resolveTurnToolChoice, toolChoiceParam } from '../utils/toolChoice'
+import { collectSources, normalizeSourceUrl, type Source } from '../utils/sources'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
 import { applyPlanToolCalls, planIsIncomplete, type LocalTask } from '../utils/planTracker'
 import { resolveAdaptiveEffort } from '../utils/adaptiveEffort'
@@ -332,6 +333,16 @@ export function useChat({
     // fim. `turnFinalAnswer` guarda a última resposta committada do turno.
     let reportMd = ''
     let turnFinalAnswer = ''
+    // Fontes web acumuladas no turno (web_search/fetch_url) → lista "Fontes" na
+    // resposta final (estilo Perplexity, v2.145.0).
+    let turnSources: Source[] = []
+    const gatherSources = (tm: any) => {
+      if (!tm?.toolCalls?.length) return
+      const found = collectSources(tm.toolCalls.map((tc: any, i: number) => ({ name: tc.name, args: tc.arguments, result: tm.toolResults?.[i]?.result })))
+      if (!found.length) return
+      const seen = new Set(turnSources.map(s => normalizeSourceUrl(s.url)))
+      for (const s of found) { const k = normalizeSourceUrl(s.url); if (!seen.has(k)) { seen.add(k); turnSources.push(s) } }
+    }
 
     // Checkpoint/rewind (v2.37.0): marca o estado dos arquivos no início do
     // turno. Se o turno alterar arquivos, o finally oferece "Reverter" — como o
@@ -1282,6 +1293,7 @@ export function useChat({
             idleSteps = shouldContinue.idleSteps
             if (!shouldContinue.continue) continueLoop = false
 
+            gatherSources(thinkingMsg) // fontes web do passo (v2.145.0)
             setConversations(prev => prev.map(c =>
               c.id !== convId ? c : { ...c, messages: [...c.messages, thinkingMsg] }
             ))
@@ -1314,6 +1326,7 @@ export function useChat({
               // Cortado pelo limite de tokens? Liga o "Continuar gerando" (v2.130.0).
               ...(isLengthTruncated(finishReason) ? { truncated: true } : {}),
               ...(fu.followups.length ? { followups: fu.followups } : {}),
+              ...(turnSources.length ? { sources: turnSources } : {}), // fontes web (v2.145.0)
               timestamp: new Date()
             }
             turnFinalAnswer = safeContent || turnFinalAnswer // p/ o relatório .md
@@ -1479,6 +1492,7 @@ export function useChat({
             if (!shouldContinue.continue) continueLoop = false
             trackPlanFromToolCalls(toolCalls)
 
+            gatherSources(thinkingMsg) // fontes web do passo (v2.145.0)
             setConversations(prev => prev.map(c =>
               c.id !== convId ? c : { ...c, messages: [...c.messages, thinkingMsg] }
             ))
@@ -1507,6 +1521,7 @@ export function useChat({
               // Cortado pelo limite de tokens? Liga o "Continuar gerando" (v2.130.0).
               ...(isLengthTruncated(choice.finish_reason) ? { truncated: true } : {}),
               ...(fu.followups.length ? { followups: fu.followups } : {}),
+              ...(turnSources.length ? { sources: turnSources } : {}), // fontes web (v2.145.0)
               timestamp: new Date()
             }
             turnFinalAnswer = safeContent || turnFinalAnswer // p/ o relatório .md
