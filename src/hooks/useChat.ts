@@ -18,6 +18,7 @@ import { resolveTurnUsage } from '../utils/usage'
 import { isLengthTruncated } from '../utils/continuation'
 import { deriveTitleFromMessage } from '../utils/conversationTitle'
 import { parseFollowups, hideFollowupTrailer, followupInstruction } from '../utils/followups'
+import { resolveTurnToolChoice, toolChoiceParam } from '../utils/toolChoice'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
 import { applyPlanToolCalls, planIsIncomplete, type LocalTask } from '../utils/planTracker'
 import { resolveAdaptiveEffort } from '../utils/adaptiveEffort'
@@ -367,6 +368,8 @@ export function useChat({
       const effectiveEffort = chosenEffort === 'auto'
         ? resolveAdaptiveEffort({ text: inputText, isAgentMode, model: finalModel })
         : chosenEffort
+      // Controle de uso de ferramentas (tool_choice, v2.141.0). Por-conversa.
+      const turnToolChoiceMode = conv?.toolChoice
 
       let systemPrompt = settings.systemPrompt || ''
       // Inject provider context so the model knows where it's running
@@ -1050,19 +1053,23 @@ export function useChat({
             // (só as permitidas + load_skill), depois remove as bloqueadas.
             if (stepSkillAllowed.size) toolsForRequest = toolsForRequest.filter((t: any) => t?.function?.name === 'load_skill' || stepSkillAllowed.has(t?.function?.name))
             if (stepSkillDisallowed.size) toolsForRequest = toolsForRequest.filter((t: any) => t?.function?.name === 'load_skill' || !stepSkillDisallowed.has(t?.function?.name))
+            // tool_choice por passo (v2.141.0): 'require' só no 1º passo; só quando há ferramentas.
+            const stepToolChoice = toolsForRequest.length ? toolChoiceParam(finalProvider, resolveTurnToolChoice(turnToolChoiceMode, steps)) : undefined
             const streamCall = isNotOllama
               ? window.electron.providerChatStream({
                   provider: finalProvider, apiKey: finalApiKey, model: finalModel,
                   messages: requestMessages, tools: toolsForRequest,
                   temperature: settings.temperature, max_tokens: settings.maxTokens,
                   modalHostname, customBaseUrl,
-                  reasoningEffort: effectiveEffort // esforço de raciocínio (v2.25.0; auto-resolvido v2.50.0)
+                  reasoningEffort: effectiveEffort, // esforço de raciocínio (v2.25.0; auto-resolvido v2.50.0)
+                  toolChoice: stepToolChoice
                 })
               : window.electron.ollamaChatStream({
                   model: finalModel, messages: requestMessages, tools: toolsForRequest,
                   temperature: settings.temperature, max_tokens: settings.maxTokens,
                   numCtx: modelLimit, // janela real do local (evita timeout por contexto gigante)
-                  reasoningEffort: effectiveEffort
+                  reasoningEffort: effectiveEffort,
+                  toolChoice: stepToolChoice
                 })
             // O handler do main RESOLVE com {error} (não rejeita) em early-returns
             // que acontecem antes de qualquer chunk `done` (ex.: baseUrl custom
@@ -1324,6 +1331,8 @@ export function useChat({
         } else {
           // ─── Non-streaming path ────────────────────────────
           const toolsForRequest = toolsDisabledForThisTurn ? [] : (deferralEnabled ? [...toolPartition.eager, toolPartition.metaTool] as any[] : allTools)
+          // tool_choice por passo (v2.141.0): 'require' só no 1º passo; só quando há ferramentas.
+          const stepToolChoice = toolsForRequest.length ? toolChoiceParam(finalProvider, resolveTurnToolChoice(turnToolChoiceMode, steps)) : undefined
           let response: any
           if (isNotOllama) {
             response = await window.electron.providerChat({
@@ -1331,14 +1340,16 @@ export function useChat({
               messages: requestMessages, tools: toolsForRequest,
               temperature: settings.temperature, max_tokens: settings.maxTokens,
               modalHostname, customBaseUrl,
-              reasoningEffort: effectiveEffort // esforço de raciocínio (v2.25.0; auto-resolvido v2.50.0)
+              reasoningEffort: effectiveEffort, // esforço de raciocínio (v2.25.0; auto-resolvido v2.50.0)
+              toolChoice: stepToolChoice
             })
           } else {
             response = await window.electron.ollamaChat({
               model: finalModel, messages: requestMessages, tools: toolsForRequest,
               temperature: settings.temperature, max_tokens: settings.maxTokens,
               numCtx: modelLimit, // janela real do local (evita timeout por contexto gigante)
-              reasoningEffort: effectiveEffort
+              reasoningEffort: effectiveEffort,
+              toolChoice: stepToolChoice
             })
           }
 

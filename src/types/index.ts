@@ -70,6 +70,10 @@ export interface Conversation {
    *  Code) — execute_command/run_command_background e ops de arquivo rodam aqui
    *  por padrão. Vence o cwd do projeto. Undefined = sem pasta apontada. */
   cwd?: string
+  /** v2.141.0 — controle de uso de ferramentas (tool_choice): 'require' força
+   *  o modelo a usar uma ferramenta (só no 1º passo), 'none' proíbe. Undefined/
+   *  'auto' = o modelo decide. Ver utils/toolChoice. */
+  toolChoice?: import('../utils/toolChoice').ToolChoiceMode
   /** v2.137.0 — o usuário renomeou manualmente; a auto-titulação da 1ª
    *  mensagem NÃO deve sobrescrever. */
   titleManual?: boolean

@@ -18,6 +18,7 @@ import AgentStepsGroup from './components/AgentStepsGroup'
 import { groupMessages } from './utils/messageGroups'
 import { sliceBeforeMessage, classifyEdit, lastUserMessage } from './utils/conversationEdit'
 import { continuationPrompt } from './utils/continuation'
+import { nextToolChoiceMode, toolChoiceLabel } from './utils/toolChoice'
 import { starterPrompts } from './utils/starterPrompts'
 import { findMessageMatches, totalOccurrences, stepHitIndex } from './utils/conversationFind'
 import { useStableCallback } from './hooks/useStableCallback'
@@ -2570,6 +2571,19 @@ export default function App() {
                       c.id === activeConv.id ? { ...c, reasoningEffort: v } : c
                     ))}
                   />
+                )}
+                {isAgentMode && activeConv && (
+                  <button
+                    className={`status-pill toolchoice${activeConv.toolChoice && activeConv.toolChoice !== 'auto' ? ' active' : ''}`}
+                    onClick={() => convManager.setConversations(prev => prev.map(c =>
+                      c.id === activeConv.id ? { ...c, toolChoice: nextToolChoiceMode(c.toolChoice) } : c
+                    ))}
+                    title={settings.language === 'en'
+                      ? 'Tool use — Auto (model decides) / Required (force a tool on the 1st step) / None (no tools). Click to cycle.'
+                      : 'Ferramentas — Auto (o modelo decide) / Exigir (força uma ferramenta no 1º passo) / Nenhuma. Clique para alternar.'}
+                  >
+                    <Wrench size={9} />{toolChoiceLabel(activeConv.toolChoice, settings.language)}
+                  </button>
                 )}
                 {isAgentMode && <span className="status-pill agent"><Zap size={9} />Agente{isActiveConvLoading ? ` · Passo ${chat.agentSteps}` : ''}</span>}
                 {chat.activeSkillNames.length > 0 && <span className="status-pill persona" title={settings.language === 'en' ? 'Active skill(s)' : 'Skill(s) ativa(s)'}><Wrench size={9} />{chat.activeSkillNames.join(', ')}</span>}

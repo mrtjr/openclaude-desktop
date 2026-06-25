@@ -221,7 +221,7 @@ function createWindow() {
 // trás no resumo estruturado (v2.59.0) — removido para não divergir.
 
 // ─── IPC: Ollama chat (non-streaming) ────────────────────────────────
-ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperature, max_tokens, numCtx, reasoningEffort, timeoutMs }) => {
+ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperature, max_tokens, numCtx, reasoningEffort, timeoutMs, toolChoice }) => {
   return new Promise((resolve, reject) => {
     const bodyObj = {
       model,
@@ -232,6 +232,7 @@ ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperatur
       ...(max_tokens ? { max_tokens } : {})
     }
     applyReasoning(bodyObj, 'ollama', model, reasoningEffort) // think on/off (v2.25.0)
+    if (toolChoice && bodyObj.tools && bodyObj.tools.length) bodyObj.tool_choice = toolChoice // forçar/proibir ferramenta (v2.141.0)
     const body = JSON.stringify(bodyObj)
 
     const options = {
@@ -288,7 +289,7 @@ ipcMain.handle('ollama-chat', async (event, { messages, model, tools, temperatur
 })
 
 // ─── IPC: Ollama chat streaming ──────────────────────────────────────
-ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, temperature, max_tokens, numCtx, reasoningEffort }) => {
+ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, temperature, max_tokens, numCtx, reasoningEffort, toolChoice }) => {
   return new Promise((resolve, reject) => {
     const bodyObj = {
       model,
@@ -303,6 +304,7 @@ ipcMain.handle('ollama-chat-stream', async (event, { messages, model, tools, tem
       ...(max_tokens ? { max_tokens } : {})
     }
     applyReasoning(bodyObj, 'ollama', model, reasoningEffort) // think on/off (v2.25.0)
+    if (toolChoice && bodyObj.tools && bodyObj.tools.length) bodyObj.tool_choice = toolChoice // forçar/proibir ferramenta (v2.141.0)
     const body = JSON.stringify(bodyObj)
 
     const options = {
@@ -1332,7 +1334,7 @@ function parseCustomBase(baseUrl) {
 }
 
 // ─── IPC: Multi-provider chat (OpenAI, Gemini, Anthropic) ──────────
-ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, messages, tools, temperature, max_tokens, stream, modalHostname, customBaseUrl, reasoningEffort }) => {
+ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, messages, tools, temperature, max_tokens, stream, modalHostname, customBaseUrl, reasoningEffort, toolChoice }) => {
   return new Promise((resolve, reject) => {
     let hostname, apiPath, headers, bodyObj
     let transport = https
@@ -1432,6 +1434,7 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
     }
 
     applyReasoning(bodyObj, provider, model, reasoningEffort)
+    if (toolChoice && bodyObj.tools && bodyObj.tools.length) bodyObj.tool_choice = toolChoice // forçar/proibir ferramenta (v2.141.0)
 
     const body = JSON.stringify(bodyObj)
     const reqOptions = {
@@ -1504,7 +1507,7 @@ function applyReasoning(bodyObj, provider, model, effort) {
 }
 
 // ─── IPC: Multi-provider chat STREAMING (OpenAI/OpenRouter/Modal/Anthropic) ─
-ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, messages, tools, temperature, max_tokens, modalHostname, customBaseUrl, reasoningEffort }) => {
+ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, messages, tools, temperature, max_tokens, modalHostname, customBaseUrl, reasoningEffort, toolChoice }) => {
   return new Promise((resolve) => {
     let hostname, apiPath, headers, bodyObj
     let transport = https
@@ -1580,6 +1583,7 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
     // / thinking budget). Anthropic com thinking: remove temperature e garante
     // max_tokens > budget.
     applyReasoning(bodyObj, provider, model, reasoningEffort)
+    if (toolChoice && bodyObj.tools && bodyObj.tools.length) bodyObj.tool_choice = toolChoice // forçar/proibir ferramenta (v2.141.0)
 
     const body = JSON.stringify(bodyObj)
     const reqOptions = { hostname, ...(port ? { port } : {}), path: apiPath, method: 'POST', headers: { ...headers, 'Content-Length': Buffer.byteLength(body) } }

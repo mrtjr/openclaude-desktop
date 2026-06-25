@@ -163,6 +163,13 @@ body {
 }
 .status-pill:hover { background: var(--bg-tertiary); border-color: var(--border-light); }
 .status-pill .status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+/* Pill clicável de tool_choice (v2.141.0) */
+.status-pill.toolchoice { cursor: pointer; font-family: inherit; }
+.status-pill.toolchoice.active {
+  background: var(--accent-dim, rgba(99,102,241,0.12));
+  border-color: var(--accent-border, rgba(99,102,241,0.4));
+  color: var(--accent, #6366f1);
+}
 .status-pill.ok   .status-dot { background: var(--green);  box-shadow: 0 0 6px var(--green); }
 .status-pill.warn .status-dot { background: #f59e0b;       box-shadow: 0 0 6px #f59e0b; }
 .status-pill.err  .status-dot { background: var(--red);    box-shadow: 0 0 6px var(--red); }
