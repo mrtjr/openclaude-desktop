@@ -64,6 +64,8 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Document parsing (PDF / DOCX)
   readDocument: (filePath) => ipcRenderer.invoke('read-document', filePath),
+  // Importação em massa de skills: abre uma pasta e lê todos os SKILL.md (v2.153.0)
+  importSkillsDir: () => ipcRenderer.invoke('import-skills-dir'),
 
   // Window controls
   minimize: () => ipcRenderer.invoke('window-minimize'),

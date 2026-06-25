@@ -69,6 +69,30 @@ function stripQuotes(s: string): string {
   return s.replace(/^["']|["']$/g, '')
 }
 
+/**
+ * Importação em massa: parseia uma lista de arquivos SKILL.md, deduplica por
+ * nome (contra os já existentes e entre si) e conta. Tolerante: arquivos
+ * inválidos são pulados (não quebram a importação). v2.153.0.
+ */
+export function buildImportedSkills(
+  files: Array<{ path?: string; content: string }>,
+  existingNames: string[] = [],
+): { skills: ParsedSkill[]; imported: number; invalid: number; duplicates: number } {
+  const seen = new Set(existingNames.map(n => sanitizeSkillName(n)).filter(Boolean))
+  const skills: ParsedSkill[] = []
+  let invalid = 0
+  let duplicates = 0
+  for (const f of files) {
+    const r = parseSkillMarkdown(f?.content || '')
+    if (!r.skill) { invalid++; continue }
+    const key = sanitizeSkillName(r.skill.name)
+    if (!key || seen.has(key)) { duplicates++; continue }
+    seen.add(key)
+    skills.push(r.skill)
+  }
+  return { skills, imported: skills.length, invalid, duplicates }
+}
+
 // ─── Lint de qualidade (pesquisa 2026: qualidade/validação de skills) ──
 // Checa uma skill contra o padrão SKILL.md + best practices da Anthropic
 // (nome ≤64 minúsculas/hífen sem reservados; descrição não-vazia ≤1024 e que

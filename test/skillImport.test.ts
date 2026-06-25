@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseSkillMarkdown, splitFrontmatter, sanitizeSkillName, toSkillMarkdown, lintSkill } from '../src/utils/skillImport'
+import { parseSkillMarkdown, splitFrontmatter, sanitizeSkillName, toSkillMarkdown, lintSkill, buildImportedSkills } from '../src/utils/skillImport'
 
 describe('sanitizeSkillName', () => {
   it('aplica as regras do padrão (minúsculas/números/hífen, ≤64)', () => {
@@ -92,6 +92,25 @@ describe('toSkillMarkdown (export) — round-trip', () => {
     const md = toSkillMarkdown({ name: 'x', description: 'd', instructions: 'corpo', examples: 'ex1' })
     expect(md).toContain('## Exemplos')
     expect(md).toContain('ex1')
+  })
+})
+
+describe('buildImportedSkills (bulk)', () => {
+  const mk = (name: string, body = 'corpo') => ({ content: `---\nname: ${name}\ndescription: desc de ${name}\n---\n${body}` })
+  it('importa válidas, deduplica e conta inválidas', () => {
+    const r = buildImportedSkills([
+      mk('alpha'),
+      mk('beta'),
+      mk('alpha'),                       // duplicata entre si
+      { content: 'sem frontmatter nem nada' }, // inválida
+    ], ['beta'])                          // beta já existe
+    expect(r.imported).toBe(1)            // só alpha
+    expect(r.skills.map(s => s.name)).toEqual(['alpha'])
+    expect(r.duplicates).toBe(2)          // beta (existente) + 2ª alpha
+    expect(r.invalid).toBe(1)
+  })
+  it('lista vazia → zero', () => {
+    expect(buildImportedSkills([])).toEqual({ skills: [], imported: 0, invalid: 0, duplicates: 0 })
   })
 })
 

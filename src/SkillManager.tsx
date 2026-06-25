@@ -4,7 +4,7 @@ import type { Skill } from './types/skill'
 import { BUILTIN_SKILLS } from './utils/skills'
 import { isDangerousFact } from './utils/memoryInduction'
 import { generateId } from './utils/formatting'
-import { parseSkillMarkdown, toSkillMarkdown, sanitizeSkillName, lintSkill } from './utils/skillImport'
+import { parseSkillMarkdown, toSkillMarkdown, sanitizeSkillName, lintSkill, buildImportedSkills } from './utils/skillImport'
 
 interface Props {
   isOpen: boolean
@@ -91,6 +91,28 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
     reader.readAsText(file)
     e.target.value = ''
   }
+  // Importação EM MASSA (v2.153.0): aponta numa pasta (repos da comunidade
+  // clonados — anthropics/skills, awesome-agent-skills…) e importa todos os
+  // SKILL.md. Vêm DESATIVADAS (importar 1000+ não pode inundar o contexto).
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const handleBulkImport = async () => {
+    const el = (window as any).electron
+    if (!el?.importSkillsDir) return
+    setBulkBusy(true)
+    try {
+      const res = await el.importSkillsDir()
+      if (res?.error) { alert((pt ? 'Erro: ' : 'Error: ') + res.error); return }
+      if (!res?.files?.length) { alert(pt ? 'Nenhum SKILL.md encontrado na pasta.' : 'No SKILL.md found in that folder.'); return }
+      const { skills: parsed, imported, invalid, duplicates } = buildImportedSkills(res.files, skills.map((s: Skill) => s.name))
+      if (!imported) { alert(pt ? `Nada novo (${duplicates} duplicadas, ${invalid} inválidas).` : `Nothing new (${duplicates} dupes, ${invalid} invalid).`); return }
+      const newSkills: Skill[] = parsed.map(p => ({ ...empty(), ...p, id: generateId(), enabled: false, pinned: false, isBuiltIn: false, kind: 'user' as const }))
+      onSave([...skills, ...newSkills])
+      alert(pt
+        ? `${imported} skill(s) importada(s)! (${duplicates} duplicadas, ${invalid} inválidas ignoradas).\nVêm DESATIVADAS — ative as que quiser.`
+        : `${imported} skill(s) imported! (${duplicates} dupes, ${invalid} invalid skipped).\nThey're DISABLED — enable the ones you want.`)
+    } catch (e: any) { alert((pt ? 'Falha: ' : 'Failed: ') + (e?.message || e)) }
+    finally { setBulkBusy(false) }
+  }
   // Exporta UMA skill como SKILL.md (padrão aberto) — portável p/ Claude Code/
   // Codex/Cursor (v2.151.0).
   const downloadSkillMd = (s: Skill) => {
@@ -158,6 +180,10 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
                 <button className="settings-close" style={{ width: 'auto', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => mdFileRef.current?.click()}
                   title={pt ? 'Importar uma skill no padrão aberto SKILL.md (Claude Code/Codex/Cursor…)' : 'Import a skill in the open SKILL.md standard (Claude Code/Codex/Cursor…)'}>
                   <FileText size={14} /> {pt ? 'Importar SKILL.md' : 'Import SKILL.md'}
+                </button>
+                <button className="settings-close" style={{ width: 'auto', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 6 }} onClick={handleBulkImport} disabled={bulkBusy}
+                  title={pt ? 'Importar EM MASSA: aponte numa pasta com repositórios da comunidade clonados (anthropics/skills, awesome-agent-skills) e importe todos os SKILL.md de uma vez' : 'Bulk import: point at a folder of cloned community repos and import all SKILL.md at once'}>
+                  <BookOpen size={14} /> {bulkBusy ? (pt ? 'Importando…' : 'Importing…') : (pt ? 'Importar pasta (em massa)' : 'Bulk import folder')}
                 </button>
                 <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: 'none' }} onChange={handleImport} />
                 <input ref={mdFileRef} type="file" accept=".md,.markdown,text/markdown" style={{ display: 'none' }} onChange={handleImportSkillMd} />

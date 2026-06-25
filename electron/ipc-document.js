@@ -29,6 +29,47 @@ module.exports = function registerDocumentHandlers(ipcMain, app, dialog) {
     }
   })
 
+  // ─── Importação em massa de skills (SKILL.md) ───────────────────────────
+  // Abre uma pasta e varre recursivamente por arquivos SKILL.md (o padrão
+  // aberto: cada skill é uma pasta com um SKILL.md). Devolve [{path, content}].
+  // Pensado p/ apontar nos repos da comunidade (anthropics/skills, awesome-*)
+  // clonados e importar tudo de uma vez (v2.153.0).
+  ipcMain.handle('import-skills-dir', async () => {
+    const { BrowserWindow } = require('electron')
+    const win = BrowserWindow.getFocusedWindow()
+    try {
+      const r = await dialog.showOpenDialog(win, {
+        properties: ['openDirectory'],
+        title: 'Pasta com skills (SKILL.md) — ex.: repositórios da comunidade clonados',
+      })
+      if (r.canceled || !r.filePaths.length) return { files: [], root: null, error: null }
+      const root = r.filePaths[0]
+      const out = []
+      const MAX_FILES = 3000
+      const SKIP_DIRS = new Set(['node_modules', '.git', '.github', 'dist', 'build', '.next', 'vendor'])
+      const walk = (dir, depth) => {
+        if (out.length >= MAX_FILES || depth > 10) return
+        let entries
+        try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+        for (const e of entries) {
+          if (out.length >= MAX_FILES) break
+          if (e.isDirectory()) {
+            if (!SKIP_DIRS.has(e.name) && !e.name.startsWith('.')) walk(path.join(dir, e.name), depth + 1)
+          } else if (/^skill\.md$/i.test(e.name)) {
+            try {
+              const full = path.join(dir, e.name)
+              if (fs.statSync(full).size <= 1024 * 1024) out.push({ path: full, content: fs.readFileSync(full, 'utf-8') })
+            } catch { /* pula arquivo ilegível */ }
+          }
+        }
+      }
+      walk(root, 0)
+      return { files: out, root, error: null }
+    } catch (e) {
+      return { files: [], root: null, error: e.message }
+    }
+  })
+
   // ─── Document parsing (PDF / DOCX / TXT) ────────────────────────────────
   ipcMain.handle('read-document', async (event, filePath) => {
     try {
