@@ -68,6 +68,8 @@ contextBridge.exposeInMainWorld('electron', {
   importSkillsDir: () => ipcRenderer.invoke('import-skills-dir'),
   // Instalar skills do GitHub sem git clone: baixa os SKILL.md de um repo (v2.155.0)
   fetchGithubSkills: (spec) => ipcRenderer.invoke('fetch-github-skills', spec),
+  // Seguir um índice awesome-*: baixa o README p/ extrair os repos catalogados (v2.156.0)
+  fetchGithubIndex: (spec) => ipcRenderer.invoke('fetch-github-index', spec),
 
   // Window controls
   minimize: () => ipcRenderer.invoke('window-minimize'),

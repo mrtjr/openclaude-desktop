@@ -4,7 +4,7 @@ import type { Skill } from './types/skill'
 import { BUILTIN_SKILLS } from './utils/skills'
 import { isDangerousFact } from './utils/memoryInduction'
 import { generateId } from './utils/formatting'
-import { parseSkillMarkdown, toSkillMarkdown, sanitizeSkillName, lintSkill, buildImportedSkills, parseRepoSpec, SKILL_REPO_PRESETS } from './utils/skillImport'
+import { parseSkillMarkdown, toSkillMarkdown, sanitizeSkillName, lintSkill, buildImportedSkills, parseRepoSpec, parseSkillIndex, SKILL_REPO_PRESETS } from './utils/skillImport'
 
 interface Props {
   isOpen: boolean
@@ -133,16 +133,38 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
   // p/ a pasta padrão e instala. Vêm DESATIVADAS.
   const [ghRepo, setGhRepo] = useState(SKILL_REPO_PRESETS[0] || 'anthropics/skills')
   const [ghBusy, setGhBusy] = useState(false)
+  // Seguidor de ÍNDICE (v2.156.0): quando o repo é um "awesome-*" (sem SKILL.md),
+  // listamos os repositórios catalogados no README p/ o usuário escolher.
+  const [indexRepos, setIndexRepos] = useState<{ owner: string; repo: string }[]>([])
+  const [indexSource, setIndexSource] = useState('')
+  const [indexSelected, setIndexSelected] = useState<Set<string>>(new Set())
+  const [indexProgress, setIndexProgress] = useState('')
+  const repoKey = (r: { owner: string; repo: string }) => `${r.owner}/${r.repo}`.toLowerCase()
   const handleGithubInstall = async () => {
     const el = (window as any).electron
     if (!el?.fetchGithubSkills) return
     const spec = parseRepoSpec(ghRepo)
     if (!spec) { alert(pt ? 'Repositório inválido. Use owner/repo ou a URL do GitHub.' : 'Invalid repo. Use owner/repo or a GitHub URL.'); return }
     setGhBusy(true)
+    setIndexRepos([]); setIndexProgress('')
     try {
       const res = await el.fetchGithubSkills(spec)
       if (res?.error) { alert((pt ? 'Erro: ' : 'Error: ') + res.error); return }
-      if (!res?.files?.length) { alert(pt ? 'Nenhum SKILL.md baixado.' : 'No SKILL.md downloaded.'); return }
+      if (!res?.files?.length) {
+        // Sem SKILL.md: talvez seja um índice (awesome-*) — seguir o README.
+        if (el.fetchGithubIndex) {
+          const idx = await el.fetchGithubIndex(spec)
+          const repos = idx?.content ? parseSkillIndex(idx.content, spec).slice(0, 200) : []
+          if (repos.length) {
+            setIndexSource(`${spec.owner}/${spec.repo}`)
+            setIndexRepos(repos)
+            setIndexSelected(new Set())
+            return
+          }
+        }
+        alert(pt ? 'Nenhum SKILL.md neste repositório (e nenhum repo de skills catalogado no README).' : 'No SKILL.md here (and no skill repos catalogued in the README).')
+        return
+      }
       const { skills: parsed, imported, invalid, duplicates } = buildImportedSkills(res.files, skills.map((s: Skill) => s.name))
       if (!imported) { alert(pt ? `Nada novo (${duplicates} duplicadas, ${invalid} inválidas).` : `Nothing new (${duplicates} dupes, ${invalid} invalid).`); return }
       const newSkills: Skill[] = parsed.map(p => ({ ...empty(), ...p, id: generateId(), enabled: false, pinned: false, isBuiltIn: false, kind: 'user' as const }))
@@ -152,6 +174,40 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
         : `${imported} skill(s) installed from ${spec.owner}/${spec.repo}! (${duplicates} dupes, ${invalid} skipped)\nSaved to: ${res.dir}\nThey're DISABLED — enable the ones you want.`)
     } catch (e: any) { alert((pt ? 'Falha: ' : 'Failed: ') + (e?.message || e)) }
     finally { setGhBusy(false) }
+  }
+  // Instala as skills dos repositórios escolhidos no índice. SEQUENCIAL (a API
+  // não-autenticada do GitHub limita ~60 req/h) — para se bater o limite e
+  // reporta o parcial. Deduplica entre repos e contra as já instaladas.
+  const handleInstallSelected = async () => {
+    const el = (window as any).electron
+    if (!el?.fetchGithubSkills) return
+    const chosen = indexRepos.filter(r => indexSelected.has(repoKey(r)))
+    if (!chosen.length) return
+    setGhBusy(true)
+    const existing = new Set(skills.map((s: Skill) => sanitizeSkillName(s.name)))
+    const collected: Skill[] = []
+    let okRepos = 0, failedRepos = 0, rateLimited = false
+    try {
+      for (let i = 0; i < chosen.length; i++) {
+        const r = chosen[i]
+        setIndexProgress(`${i + 1}/${chosen.length} · ${r.owner}/${r.repo}`)
+        let res: any
+        try { res = await el.fetchGithubSkills(r) } catch { failedRepos++; continue }
+        if (res?.error) { if (/limite|rate|403/i.test(String(res.error))) { rateLimited = true; break } failedRepos++; continue }
+        if (!res?.files?.length) { failedRepos++; continue }
+        const { skills: parsed, imported } = buildImportedSkills(res.files, Array.from(existing))
+        for (const p of parsed) { existing.add(sanitizeSkillName(p.name)); collected.push({ ...empty(), ...p, id: generateId(), enabled: false, pinned: false, isBuiltIn: false, kind: 'user' as const }) }
+        if (imported) okRepos++
+      }
+      if (collected.length) onSave([...skills, ...collected])
+      const head = pt
+        ? `${collected.length} skill(s) instalada(s) de ${okRepos} repositório(s)${failedRepos ? `, ${failedRepos} sem skills/falharam` : ''}.`
+        : `${collected.length} skill(s) installed from ${okRepos} repo(s)${failedRepos ? `, ${failedRepos} empty/failed` : ''}.`
+      const tail = rateLimited ? (pt ? '\nLimite de requisições do GitHub atingido — instale o restante mais tarde.' : '\nGitHub rate limit hit — install the rest later.') : ''
+      alert(head + (collected.length ? (pt ? '\nVêm DESATIVADAS — ative as que quiser.' : '\nThey arrive DISABLED — enable the ones you want.') : '') + tail)
+      setIndexRepos([]); setIndexSource('')
+    } catch (e: any) { alert((pt ? 'Falha: ' : 'Failed: ') + (e?.message || e)) }
+    finally { setGhBusy(false); setIndexProgress('') }
   }
   // Exporta UMA skill como SKILL.md (padrão aberto) — portável p/ Claude Code/
   // Codex/Cursor (v2.151.0).
@@ -244,6 +300,46 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
                   <button key={r} className="settings-close" style={{ width: 'auto', padding: '4px 9px', fontSize: 11, opacity: 0.85 }} onClick={() => setGhRepo(r)} disabled={ghBusy}>{r}</button>
                 ))}
               </div>
+
+              {/* Seguidor de ÍNDICE (v2.156.0): repos catalogados num awesome-* */}
+              {indexRepos.length > 0 && (
+                <div style={{ marginBottom: 12, border: '1px solid var(--border)', borderRadius: 10, padding: 10, background: 'var(--bg-secondary)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700 }}>
+                      {pt
+                        ? `${indexSource} é um índice — ${indexRepos.length} repositório(s) de skills`
+                        : `${indexSource} is an index — ${indexRepos.length} skill repo(s)`}
+                    </div>
+                    <button className="settings-close" style={{ width: 'auto', padding: '2px 8px', fontSize: 11 }} onClick={() => { if (!ghBusy) { setIndexRepos([]); setIndexSource('') } }} disabled={ghBusy}>✕</button>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, fontSize: 11.5, opacity: 0.85 }}>
+                    <button className="settings-close" style={{ width: 'auto', padding: '2px 8px', fontSize: 11 }} disabled={ghBusy}
+                      onClick={() => setIndexSelected(new Set(indexRepos.map(repoKey)))}>{pt ? 'Marcar todos' : 'Select all'}</button>
+                    <button className="settings-close" style={{ width: 'auto', padding: '2px 8px', fontSize: 11 }} disabled={ghBusy}
+                      onClick={() => setIndexSelected(new Set())}>{pt ? 'Nenhum' : 'None'}</button>
+                    <span>{pt ? `${indexSelected.size} marcado(s)` : `${indexSelected.size} selected`}</span>
+                  </div>
+                  <div style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, padding: '2px 0' }}>
+                    {indexRepos.map(r => {
+                      const k = repoKey(r)
+                      return (
+                        <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, cursor: ghBusy ? 'default' : 'pointer', padding: '2px 4px', opacity: ghBusy ? 0.6 : 1 }}>
+                          <input type="checkbox" checked={indexSelected.has(k)} disabled={ghBusy}
+                            onChange={e => setIndexSelected(prev => { const n = new Set(prev); if (e.target.checked) n.add(k); else n.delete(k); return n })} />
+                          <span style={{ fontFamily: 'var(--font-mono, monospace)' }}>{r.owner}/{r.repo}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+                    <button className="settings-close" style={{ width: 'auto', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 6 }} onClick={handleInstallSelected} disabled={ghBusy || indexSelected.size === 0}>
+                      {ghBusy ? <Loader2 size={14} className="spin" /> : <Download size={14} />} {pt ? `Instalar selecionados (${indexSelected.size})` : `Install selected (${indexSelected.size})`}
+                    </button>
+                    {ghBusy && indexProgress && <span style={{ fontSize: 11.5, opacity: 0.8 }}>{indexProgress}</span>}
+                    {!ghBusy && indexSelected.size > 20 && <span style={{ fontSize: 11, opacity: 0.7 }}>{pt ? '⚠ muitos repos podem esgotar o limite do GitHub (~60/h)' : '⚠ many repos may hit GitHub\'s ~60/h limit'}</span>}
+                  </div>
+                </div>
+              )}
 
               {/* Seção de revisão das skills aprendidas (staging) — Fase 4 */}
               {stagingSkills.length > 0 && (

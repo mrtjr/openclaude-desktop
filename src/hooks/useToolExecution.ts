@@ -17,7 +17,7 @@ import { paginateFileContent } from '../utils/readFile'
 import { formatClickResult, formatNavResult } from '../utils/browserResult'
 import { logInsight } from '../services/devInsights'
 import { findSkill, formatLoadSkillResult, suggestSkill } from '../utils/skills'
-import { buildImportedSkills, parseRepoSpec } from '../utils/skillImport'
+import { buildImportedSkills, parseRepoSpec, parseSkillIndex } from '../utils/skillImport'
 import { generateId } from '../utils/formatting'
 import { matchHooks } from '../utils/hooks'
 import { resolveSubagentPrompt } from '../constants/subagents'
@@ -156,7 +156,20 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         if (!spec) return 'install_skills: repositório inválido. Use "owner/repo" ou a URL do GitHub (ex.: anthropics/skills).'
         const res = await fetchFn(spec)
         if (res?.error) return `install_skills: ${res.error}`
-        if (!res?.files?.length) return `install_skills: nenhum SKILL.md baixado de ${spec.owner}/${spec.repo}.`
+        if (!res?.files?.length) {
+          // Sem SKILL.md: talvez um índice (awesome-*). Segue o README e devolve
+          // os repos catalogados p/ o agente perguntar quais instalar (v2.156.0).
+          const idxFn = (window as any).electron?.fetchGithubIndex
+          if (idxFn) {
+            const idx = await idxFn(spec)
+            const repos = idx?.content ? parseSkillIndex(idx.content, spec).slice(0, 60) : []
+            if (repos.length) {
+              const lines = repos.map((r: { owner: string; repo: string }) => `- ${r.owner}/${r.repo}`).join('\n')
+              return `${spec.owner}/${spec.repo} parece ser um ÍNDICE (awesome-*), sem SKILL.md próprio. Encontrei ${repos.length} repositório(s) de skills catalogado(s):\n${lines}\n\nPergunte ao usuário quais instalar e chame install_skills uma vez por repositório escolhido — NÃO instale todos de uma vez (a API do GitHub limita ~60 req/h).`
+            }
+          }
+          return `install_skills: nenhum SKILL.md baixado de ${spec.owner}/${spec.repo}.`
+        }
         const existingNames = (getAllSkillsRef.current?.() || skillsRef.current || []).map((s) => s.name)
         const { skills: parsed, imported, invalid, duplicates } = buildImportedSkills(res.files, existingNames)
         if (imported && onInstallSkillsRef.current) {

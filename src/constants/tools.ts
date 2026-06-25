@@ -172,7 +172,7 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'install_skills',
-      description: 'Install Agent Skills directly from a public GitHub repository — NO git clone needed. Use this when the user pastes a GitHub repo URL or a `git clone …` command for a skills repo (e.g. anthropics/skills) and asks to install/import its skills. Downloads every SKILL.md from the repo into the app\'s default skills folder and installs them. Imported skills arrive DISABLED by default (the user enables the ones they want in the Skills panel) — do not try to enable them yourself. Note: "awesome-*" repos are usually just index lists and contain no SKILL.md.',
+      description: 'Install Agent Skills directly from a public GitHub repository — NO git clone needed. Use this when the user pastes a GitHub repo URL or a `git clone …` command for a skills repo (e.g. anthropics/skills) and asks to install/import its skills. Downloads every SKILL.md from the repo into the app\'s default skills folder and installs them. Imported skills arrive DISABLED by default (the user enables the ones they want in the Skills panel) — do not try to enable them yourself. If the repo is an "awesome-*" INDEX (a list with no SKILL.md of its own), this returns the list of skill repositories it catalogues instead of installing — relay that list, ask the user which they want, then call install_skills once per chosen repo (do NOT install them all at once — GitHub\'s API limits ~60 requests/hour).',
       parameters: {
         type: 'object',
         properties: {

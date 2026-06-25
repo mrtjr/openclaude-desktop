@@ -87,6 +87,50 @@ export function parseRepoSpec(input: string): { owner: string; repo: string; bra
   return { owner: m[1], repo: m[2], ...(m[3] ? { branch: m[3].split('/')[0] } : {}) }
 }
 
+/** Primeiro segmento de URLs github.com que NÃO são donos de repositório
+ *  (páginas do site). Usado p/ filtrar links no parse de índices. */
+const GH_RESERVED_OWNERS = new Set([
+  'sponsors', 'topics', 'marketplace', 'apps', 'settings', 'about', 'features',
+  'pricing', 'login', 'join', 'search', 'collections', 'orgs', 'users', 'site',
+  'contact', 'security', 'explore', 'notifications', 'new', 'organizations',
+  'readme', 'watching', 'stars', 'dashboard', 'pulls', 'issues', 'discussions',
+])
+
+/**
+ * Segue um repositório-ÍNDICE (estilo "awesome-*"): extrai do README os links
+ * `github.com/owner/repo` que catalogam OUTROS repositórios de skills. v2.156.0.
+ *
+ * Repos "awesome-*" não têm SKILL.md próprio — são listas. Esta função
+ * transforma o README num conjunto de candidatos (owner/repo) p/ o usuário
+ * escolher quais instalar (NÃO baixa nada; puro/testável).
+ *
+ * - Deduplica (case-insensitive), preserva a 1ª ocorrência.
+ * - Ignora subdomínios (gist.github.com, raw.githubusercontent…) via lookbehind.
+ * - Ignora páginas do site (github.com/sponsors, /topics, …) e o próprio índice.
+ * - Tolera `.git`, querystring/hash/sub-paths (/tree, /blob) e pontuação final.
+ */
+export function parseSkillIndex(markdown: string, exclude?: { owner: string; repo: string }): { owner: string; repo: string }[] {
+  const text = String(markdown || '')
+  // Lookbehind exclui subdomínios: em "gist.github.com" o char antes de "github"
+  // é "." (bloqueado); em "//github.com" é "/" (permitido).
+  const re = /(?<![.\w@])github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)/gi
+  const exKey = exclude ? `${exclude.owner}/${exclude.repo}`.toLowerCase() : ''
+  const seen = new Set<string>()
+  const out: { owner: string; repo: string }[] = []
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text))) {
+    const owner = m[1]
+    const repo = m[2].replace(/\.+$/, '').replace(/\.git$/i, '') // tira ponto final de frase, depois .git
+    if (!owner || !repo) continue
+    if (GH_RESERVED_OWNERS.has(owner.toLowerCase())) continue
+    const key = `${owner}/${repo}`.toLowerCase()
+    if (key === exKey || seen.has(key)) continue
+    seen.add(key)
+    out.push({ owner, repo })
+  }
+  return out
+}
+
 /**
  * Importação em massa: parseia uma lista de arquivos SKILL.md, deduplica por
  * nome (contra os já existentes e entre si) e conta. Tolerante: arquivos

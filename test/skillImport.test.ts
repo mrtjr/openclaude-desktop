@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseSkillMarkdown, splitFrontmatter, sanitizeSkillName, toSkillMarkdown, lintSkill, buildImportedSkills, parseRepoSpec } from '../src/utils/skillImport'
+import { parseSkillMarkdown, splitFrontmatter, sanitizeSkillName, toSkillMarkdown, lintSkill, buildImportedSkills, parseRepoSpec, parseSkillIndex } from '../src/utils/skillImport'
 
 describe('parseRepoSpec', () => {
   it('aceita owner/repo, URL, .git e /tree/branch', () => {
@@ -12,6 +12,52 @@ describe('parseRepoSpec', () => {
   it('null para entradas inválidas', () => {
     expect(parseRepoSpec('')).toBeNull()
     expect(parseRepoSpec('só-isso')).toBeNull()
+  })
+})
+
+describe('parseSkillIndex (seguidor de índice awesome-*)', () => {
+  it('extrai owner/repo de links, deduplica e preserva a 1ª ocorrência', () => {
+    const md = [
+      '# Awesome Agent Skills',
+      '- [PDF tools](https://github.com/alice/pdf-skills) — lida com PDFs',
+      '- [Code review](https://github.com/bob/review-skills)',
+      '- duplicada: https://github.com/alice/pdf-skills again',
+    ].join('\n')
+    expect(parseSkillIndex(md)).toEqual([
+      { owner: 'alice', repo: 'pdf-skills' },
+      { owner: 'bob', repo: 'review-skills' },
+    ])
+  })
+
+  it('ignora páginas do site, subdomínios (gist/raw) e exclui o próprio índice', () => {
+    const md = [
+      'https://github.com/sponsors/someone',          // página do site
+      'https://github.com/topics/agent-skills',        // página do site
+      'https://gist.github.com/x/abcdef123',           // subdomínio → ignora
+      'https://raw.githubusercontent.com/x/y/main/a',  // outro host → ignora
+      'https://github.com/voltagent/awesome-agent-skills', // o próprio índice
+      'https://github.com/carol/my-skills',            // único válido
+    ].join('\n')
+    expect(parseSkillIndex(md, { owner: 'voltagent', repo: 'awesome-agent-skills' }))
+      .toEqual([{ owner: 'carol', repo: 'my-skills' }])
+  })
+
+  it('tolera .git, sub-paths (/tree, /blob), hash e pontuação final', () => {
+    const md = [
+      'a https://github.com/dave/skills.git.',
+      'b https://github.com/eve/cool-skills/tree/main',
+      'c (https://github.com/frank/x-skills#install)',
+    ].join('\n')
+    expect(parseSkillIndex(md)).toEqual([
+      { owner: 'dave', repo: 'skills' },
+      { owner: 'eve', repo: 'cool-skills' },
+      { owner: 'frank', repo: 'x-skills' },
+    ])
+  })
+
+  it('markdown vazio/sem links → []', () => {
+    expect(parseSkillIndex('')).toEqual([])
+    expect(parseSkillIndex('sem links aqui')).toEqual([])
   })
 })
 

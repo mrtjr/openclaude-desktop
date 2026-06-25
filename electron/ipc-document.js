@@ -60,7 +60,30 @@ module.exports = function registerDocumentHandlers(ipcMain, app, dialog) {
     }
   })
 
-  // ─── Importação em massa de skills (SKILL.md) ───────────────────────────
+  // ─── Seguir um repositório-ÍNDICE (awesome-*, v2.156.0) ─────────────────
+  // Repos "awesome-*" não têm SKILL.md — são listas. Aqui buscamos o README
+  // (via API /readme, que acha o arquivo independente do nome/caixa) e
+  // devolvemos o texto cru; o renderer parseia os links com parseSkillIndex
+  // (puro/testável) e oferece os repositórios catalogados p/ o usuário escolher.
+  ipcMain.handle('fetch-github-index', async (event, spec) => {
+    try {
+      const owner = String(spec?.owner || '').trim()
+      const repo = String(spec?.repo || '').trim()
+      if (!owner || !repo) return { content: '', error: 'Repositório inválido.' }
+      const r = await httpsGet('api.github.com', `/repos/${owner}/${repo}/readme`)
+      if (r.status === 403) return { content: '', error: 'Limite de requisições do GitHub atingido — tente novamente em alguns minutos.' }
+      if (r.status === 404) return { content: '', error: `Sem README em ${owner}/${repo}.` }
+      if (r.status !== 200) return { content: '', error: `Falha ao ler o README (${r.status || r.error || 'rede'}).` }
+      let content = ''
+      try {
+        const j = JSON.parse(r.body)
+        content = j && j.content ? Buffer.from(String(j.content), 'base64').toString('utf-8') : ''
+      } catch { /* json ruim */ }
+      return { content, error: null }
+    } catch (e) {
+      return { content: '', error: e.message }
+    }
+  })
 
   // ─── Open file dialog ────────────────────────────────────────────────────
   ipcMain.handle('open-file-dialog', async (event, opts = {}) => {
