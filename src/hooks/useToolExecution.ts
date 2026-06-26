@@ -9,6 +9,7 @@ import { classifyCommand } from '../utils/commandSandbox'
 import { planWorktree, WORKTREE_LIST_COMMAND } from '../utils/worktree'
 import { formatExecResult, resolveExecCwd, resolveExecTimeoutMs } from '../utils/execResult'
 import { formatEditResult, formatWriteResult, COACH_REWRITE_MIN_CHARS } from '../utils/editResult'
+import { salvageTruncatedWrite } from '../utils/writeRecovery'
 import { mergeFact, normalizeMemory } from '../utils/persistentMemory'
 import { addFreshFact, pruneFreshFacts } from '../utils/freshFacts'
 import { parseSearchGlob, formatSearchResults } from '../utils/searchFiles'
@@ -315,18 +316,41 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         return paginateFileContent(result.content, args.offset, args.limit)
       }
       if (name === 'write_file') {
-        const content = String(args.content ?? '')
-        // Passa o `content` NORMALIZADO (não o cru): se o modelo manda content
-        // ausente/não-string, escreve string vazia em vez de o writeFileSync do
-        // main lançar ERR_INVALID_ARG_TYPE — e mantém o byte-count coerente.
-        const result = await window.electron.writeFile({ filePath: args.path, content })
+        // Recuperação de escrita TRUNCADA (v2.161.0): se a chamada foi cortada
+        // pelo limite de tokens, o JSON chegou quebrado (raw_invalid_json) e
+        // antes gravávamos lixo/vazio. Agora salvamos a parte que chegou e
+        // mandamos o modelo CONTINUAR ANEXANDO (não recomeçar).
+        let filePath = args.path
+        let content = String(args.content ?? '')
+        let appendMode = args.append === true
+        let recovered = false
+        if (args.raw_invalid_json !== undefined && !filePath) {
+          const sal = salvageTruncatedWrite(String(args.raw_invalid_json))
+          if (sal) { filePath = sal.path; content = sal.content; appendMode = sal.appendHint; recovered = true }
+        }
+        if (!filePath) {
+          return recovered || args.raw_invalid_json !== undefined
+            ? 'write_file: a chamada foi CORTADA pelo limite de tokens e não deu p/ recuperar o caminho. Escreva o arquivo em PEDAÇOS MENORES: 1ª chamada com o começo, depois write_file com append:true para cada parte seguinte.'
+            : 'write_file: faltou o parâmetro "path".'
+        }
+        // Passa o `content` NORMALIZADO; appendIfExists só na recuperação (anexa
+        // se o arquivo já existe = continuação de um build; senão cria).
+        const result = await window.electron.writeFile({ filePath, content, append: appendMode, appendIfExists: recovered })
         // Anti-padrão medido pelos Dev Insights: reescrita total de arquivo
         // existente (era para ser edit_file). O finding 'prefer-edit-file'
-        // agrega estes eventos.
-        if (!result.error && result.existed && content.length >= COACH_REWRITE_MIN_CHARS) {
+        // agrega estes eventos. Não conta append nem recuperação.
+        if (!result.error && result.existed && !appendMode && !recovered && content.length >= COACH_REWRITE_MIN_CHARS) {
           logInsight('tool', 'rewrite_existing', { bytes: content.length })
         }
-        return formatWriteResult(result, args.path, content.length)
+        if (recovered) {
+          return `[ESCRITA RECUPERADA] A chamada estourou o limite de tokens; salvei a parte que chegou (${content.length} chars) em ${filePath}${(result as any)?.appended ? ' (anexado)' : ''}. CONTINUE escrevendo o RESTANTE com write_file usando append:true, em pedaços MENORES — NÃO reescreva do começo.`
+        }
+        if (appendMode) {
+          // Append deliberado: NÃO usa formatWriteResult (a nota "você reescreveu
+          // por inteiro" não se aplica). Sinaliza que pode anexar mais.
+          return result?.error ? `Erro: ${result.error}` : `Conteúdo anexado ao fim de ${filePath} (${content.length} chars). Para mais partes, chame write_file de novo com append:true; quando terminar, siga normalmente.`
+        }
+        return formatWriteResult(result, filePath, content.length)
       }
       if (name === 'edit_file') {
         const result = await window.electron.editFile({ filePath: args.path, oldString: args.old_string, newString: args.new_string ?? '', replaceAll: args.replace_all === true })

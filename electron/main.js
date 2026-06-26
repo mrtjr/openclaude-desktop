@@ -644,7 +644,7 @@ function restoreSnapshot(snap) {
   }
 }
 
-ipcMain.handle('write-file', async (event, { filePath, content }) => {
+ipcMain.handle('write-file', async (event, { filePath, content, append, appendIfExists }) => {
   try {
     if (!isPathSafe(filePath)) {
       return { error: 'Access denied: path is in a protected directory' }
@@ -655,8 +655,13 @@ ipcMain.handle('write-file', async (event, { filePath, content }) => {
     const existed = fs.existsSync(filePath)
     snapshotFile(filePath)
     fs.mkdirSync(path.dirname(filePath), { recursive: true })
-    fs.writeFileSync(filePath, content, 'utf-8')
-    return { error: null, existed, bytes: Buffer.byteLength(String(content ?? ''), 'utf-8') }
+    // append (v2.161.0): escrever arquivo grande em pedaços sem estourar o limite
+    // de tokens. appendIfExists = recuperação de escrita truncada: anexa só se o
+    // arquivo já existe (continuação de um build), senão cria.
+    const doAppend = append === true || (appendIfExists === true && existed)
+    if (doAppend) fs.appendFileSync(filePath, String(content ?? ''), 'utf-8')
+    else fs.writeFileSync(filePath, content, 'utf-8')
+    return { error: null, existed, appended: doAppend, bytes: Buffer.byteLength(String(content ?? ''), 'utf-8') }
   } catch (e) {
     return { error: e.message }
   }

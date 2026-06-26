@@ -95,12 +95,13 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'write_file',
-      description: 'Write content to a file (replaces the ENTIRE file). For changing part of an existing file, prefer edit_file.',
+      description: 'Write content to a file. By default REPLACES the entire file. Set append:true to ADD to the end instead. CRITICAL for LARGE files (e.g. a big skill/SKILL.md, long docs): a single call cannot exceed the model output token limit, so do NOT try to write a huge file in one call — it gets cut off. Instead build it in PARTS: first call writes the beginning (append:false), then call write_file again with append:true for each subsequent chunk (keep each chunk well under the limit, ~1500-2500 words). If a write is ever cut off mid-way, the partial content is saved automatically and you will be told to continue — just append the REMAINING part with append:true; do NOT rewrite from the start. For changing part of an existing file, prefer edit_file.',
       parameters: {
         type: 'object',
         properties: {
           path: { type: 'string', description: 'The file path to write' },
-          content: { type: 'string', description: 'The content to write' }
+          content: { type: 'string', description: 'The content to write' },
+          append: { type: 'boolean', description: 'When true, append content to the end of the file instead of replacing it. Use to build a large file across multiple calls. Default false.' }
         },
         required: ['path', 'content']
       }
