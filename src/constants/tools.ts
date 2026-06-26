@@ -172,6 +172,27 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'save_skill',
+      description: 'Create or update an Agent Skill DIRECTLY in the user\'s skill library — no file + import step. Use when the user asks you to create/build/update a skill. If a skill with that name does not exist it is created (DISABLED by default — the user enables it in the Skills panel; do NOT assume it is active); if it exists, it is updated. CRITICAL for LARGE skills: the `instructions` go in this call\'s arguments, which cannot exceed the model output token limit — do NOT dump a huge instructions string in one call. Build it in PARTS: first call with name+description+the first chunk of instructions, then call save_skill again with the SAME name and append:true to add each next chunk (keep chunks well under the limit). If a call is ever cut off mid-way, the partial skill is saved and you will be told to continue — just append the rest with append:true; do NOT start over.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Short skill id (lowercase, hyphens). Used to create OR match an existing skill to update.' },
+          description: { type: 'string', description: 'One line: WHEN to use this skill (shown in the manifest). Required when creating.' },
+          instructions: { type: 'string', description: 'The skill body/playbook. For large skills, send in chunks with append:true (see above).' },
+          append: { type: 'boolean', description: 'When true, APPEND instructions to the existing skill of this name (to build a large skill across calls). Default false (replace).' },
+          triggers: { type: 'array', items: { type: 'string' }, description: 'Optional keywords that auto-suggest the skill.' },
+          allowed_tools: { type: 'array', items: { type: 'string' }, description: 'Optional: only these tools are available while the skill is active.' },
+          disallowed_tools: { type: 'array', items: { type: 'string' }, description: 'Optional: tools blocked while the skill is active.' },
+          examples: { type: 'string', description: 'Optional few-shot examples appended to the body.' }
+        },
+        required: ['name']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'install_skills',
       description: 'Install Agent Skills directly from a public GitHub repository — NO git clone needed. Use this when the user pastes a GitHub repo URL or a `git clone …` command for a skills repo (e.g. anthropics/skills) and asks to install/import its skills. Downloads every SKILL.md from the repo into the app\'s default skills folder and installs them. Imported skills arrive DISABLED by default (the user enables the ones they want in the Skills panel) — do not try to enable them yourself. AUTO MODE: when the user does NOT specify which skills/repos they want and lets YOU decide (e.g. "install whatever\'s good", "you pick"), pass auto:true. In auto mode YOU decide what to download under a ~60s time budget following strict rules: a skill the library does not have yet is always installed (new skills are welcome); a skill it already has is only replaced when the downloaded one is MORE COMPLETE (an evolution) — never a regression or an equal. Auto mode also works on an "awesome-*" INDEX repo: it sweeps the catalogued repos within the budget and decides per skill. When NOT in auto mode and the repo is an index, this returns the catalogued repo list — relay it, ask the user which they want, then call install_skills once per chosen repo (do NOT install them all at once — GitHub\'s API limits ~60 requests/hour).',
       parameters: {
@@ -768,4 +789,7 @@ export const DANGEROUS_TOOLS = new Set([
   // install_skills (v2.155.0): baixa da rede + grava em disco + instala
   // capacidades novas (risco de skill-poisoning) → aprovação do usuário.
   'install_skills',
+  // save_skill (v2.162.0): cria/atualiza skill na biblioteca (capacidade nova
+  // que pode ser injetada no prompt) → aprovação do usuário.
+  'save_skill',
 ])

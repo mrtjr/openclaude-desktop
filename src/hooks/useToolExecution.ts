@@ -9,7 +9,7 @@ import { classifyCommand } from '../utils/commandSandbox'
 import { planWorktree, WORKTREE_LIST_COMMAND } from '../utils/worktree'
 import { formatExecResult, resolveExecCwd, resolveExecTimeoutMs } from '../utils/execResult'
 import { formatEditResult, formatWriteResult, COACH_REWRITE_MIN_CHARS } from '../utils/editResult'
-import { salvageTruncatedWrite } from '../utils/writeRecovery'
+import { salvageTruncatedWrite, salvageTruncatedSkill } from '../utils/writeRecovery'
 import { mergeFact, normalizeMemory } from '../utils/persistentMemory'
 import { addFreshFact, pruneFreshFacts } from '../utils/freshFacts'
 import { parseSearchGlob, formatSearchResults } from '../utils/searchFiles'
@@ -156,6 +156,72 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
           return formatLoadSkillResult(hit, req, hit ? null : suggestSkill(list, req))
         })
         return parts.join('\n\n---\n\n')
+      }
+      // save_skill (v2.162.0): cria/atualiza uma skill DIRETO na biblioteca, sem
+      // o passo de salvar arquivo + importar. Robusto a truncação (skill grande):
+      // se os args vêm cortados (raw_invalid_json), recupera o parcial e manda
+      // CONTINUAR com append. Nasce DESATIVADA (anti skill-poisoning).
+      if (name === 'save_skill') {
+        const asArr = (v: any): string[] | undefined => {
+          if (Array.isArray(v)) { const a = v.map(x => String(x || '').trim()).filter(Boolean); return a.length ? a : undefined }
+          if (typeof v === 'string' && v.trim()) { const a = v.split(',').map(s => s.trim()).filter(Boolean); return a.length ? a : undefined }
+          return undefined
+        }
+        let a: any = args
+        let appendMode = args.append === true
+        let recovered = false
+        if (args.raw_invalid_json !== undefined && !args.name) {
+          const sal = salvageTruncatedSkill(String(args.raw_invalid_json))
+          if (sal) { a = { name: sal.name, description: sal.description, instructions: sal.instructions }; appendMode = sal.appendHint; recovered = true }
+        }
+        const rawName = String(a.name ?? '').trim()
+        const skillName = sanitizeSkillName(rawName)
+        if (!skillName) {
+          return (recovered || args.raw_invalid_json !== undefined)
+            ? 'save_skill: a chamada foi CORTADA antes do nome. Reduza o tamanho: mande name+description e as instruções em PEDAÇOS (mesmo name + append:true).'
+            : 'save_skill: informe "name".'
+        }
+        if (skillName === 'claude' || skillName === 'anthropic') return `save_skill: nome reservado ("${skillName}"). Escolha outro.`
+        const current = getAllSkillsRef.current?.() || skillsRef.current || []
+        const existing = current.find((s) => sanitizeSkillName(s.name) === skillName)
+        const instrChunk = String(a.instructions ?? '')
+        if (!existing && !instrChunk) {
+          return 'save_skill: informe "instructions" (o corpo da skill). Para skills grandes, mande em pedaços com append:true.'
+        }
+        const now = Date.now()
+        let nextSkill: Skill
+        if (existing) {
+          const instructions = appendMode ? (existing.instructions + instrChunk) : (instrChunk || existing.instructions)
+          nextSkill = {
+            ...existing,
+            instructions,
+            ...(a.description != null && String(a.description).trim() ? { description: String(a.description) } : {}),
+            ...(asArr(a.triggers) ? { triggers: asArr(a.triggers) } : {}),
+            ...(asArr(a.allowed_tools) ? { allowedTools: asArr(a.allowed_tools) } : {}),
+            ...(asArr(a.disallowed_tools) ? { disallowedTools: asArr(a.disallowed_tools) } : {}),
+            ...(a.examples != null ? { examples: String(a.examples) } : {}),
+          }
+        } else {
+          nextSkill = {
+            id: generateId(), name: skillName, description: String(a.description ?? ''), instructions: instrChunk,
+            ...(asArr(a.triggers) ? { triggers: asArr(a.triggers) } : {}),
+            ...(asArr(a.allowed_tools) ? { allowedTools: asArr(a.allowed_tools) } : {}),
+            ...(asArr(a.disallowed_tools) ? { disallowedTools: asArr(a.disallowed_tools) } : {}),
+            ...(a.examples != null ? { examples: String(a.examples) } : {}),
+            enabled: false, pinned: false, isBuiltIn: false, kind: 'user', createdAt: now,
+          }
+        }
+        const next = existing ? current.map((s) => s.id === existing.id ? nextSkill : s) : [...current, nextSkill]
+        if (onPersistSkillsRef.current) onPersistSkillsRef.current(next)
+        else if (onInstallSkillsRef.current && !existing) onInstallSkillsRef.current([nextSkill])
+        const total = nextSkill.instructions.length
+        if (recovered) {
+          return `[SKILL RECUPERADA] "${skillName}" foi cortada pelo limite de tokens; salvei a parte que chegou (instruções com ${total} chars). CONTINUE com save_skill name:"${skillName}" e append:true passando o RESTANTE das instruções em pedaços — NÃO recomece.`
+        }
+        if (appendMode) {
+          return `Instruções anexadas à skill "${skillName}" (agora ${total} chars). Para mais partes, save_skill com o mesmo name e append:true; quando terminar, finalize.`
+        }
+        return `Skill "${skillName}" ${existing ? 'atualizada' : 'criada'} (${total} chars de instruções).${existing ? '' : ' Nasce DESATIVADA — o usuário a ativa no painel de Skills (não a ative você). Para instruções grandes, continue com append:true.'}`
       }
       // install_skills (v2.155.0): baixa os SKILL.md de um repo do GitHub (sem
       // git clone) p/ a pasta padrão e os instala — "diretamente do chat". As
