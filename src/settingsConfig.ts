@@ -99,6 +99,11 @@ export interface AppSettings {
    *  instaladas e instala novas + upgrades (evolução), nunca regressões. Para ao
    *  esgotar o orçamento e reporta o parcial. Default 60. */
   skillAutoDecideSec?: number
+  /** v2.163.0 — auto-criação de skill sob demanda: no modo agente, ao surgir uma
+   *  situação/achado/técnica NOVA sem skill existente, a IA pesquisa atualizado
+   *  (data de hoje) e cria a skill com save_skill antes de seguir. A skill nasce
+   *  desativada e cada save_skill pede aprovação. Default true. */
+  autoCreateSkillsOnDiscovery?: boolean
   /** v2.12.0 — fire a native OS notification when a response completes
    *  while the window is not focused. Opt-out via Settings (default on). */
   notifyOnComplete?: boolean
@@ -253,6 +258,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   hooks: [],
   semanticSkillMatch: false,
   skillAutoDecideSec: 60,
+  autoCreateSkillsOnDiscovery: true,
   notifyOnComplete: true,
   toolDeferralMode: 'auto',
   subagentExecutor: 'ollama',

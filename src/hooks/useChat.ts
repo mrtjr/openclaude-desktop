@@ -5,7 +5,7 @@ import { applySubagentModels } from '../utils/researchWorker'
 import type { BackgroundSubagentRegistry, BgEntry } from '../utils/backgroundSubagents'
 import { inferScoutFocus, pickScoutActivity, type ScoutController, type RunScout } from '../utils/scout'
 import type { SubagentActivityStore } from '../utils/subagentActivity'
-import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIMING, LANGUAGE_REMINDER } from '../constants/prompts'
+import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIMING, LANGUAGE_REMINDER, SELF_SKILL_DIRECTIVE } from '../constants/prompts'
 import { partitionTools, renderDeferredManifest, decideDeferral } from '../services/toolDeferral'
 import { generateId, isSmallModel } from '../utils/formatting'
 import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice, extractThinking } from '../utils/sanitizers'
@@ -468,6 +468,12 @@ export function useChat({
         // remover ferramentas do modelo enquanto vigoram.
         turnBaseActiveSkills = activeSkillsForTools(allSkills, autoMatched)
         disallowedToolNames = collectDisallowedTools(turnBaseActiveSkills)
+        // Auto-criação de skill sob demanda (v2.163.0): no modo agente, ao topar
+        // com algo NOVO sem skill, a IA pesquisa atualizado (data de hoje já está
+        // no prompt) e cria a skill com save_skill antes de seguir. Opt-out.
+        if (isAgentMode && settings.autoCreateSkillsOnDiscovery !== false) {
+          systemPrompt += `\n\n${SELF_SKILL_DIRECTIVE[lang]}`
+        }
       }
 
       // RAG (fusão do RAGPanel, v2.73.0): quando há índice local, injeta a regra

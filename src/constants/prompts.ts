@@ -37,6 +37,22 @@ export const PLANNING_MODE_PROMPT: Record<string, string> = {
   en: `[PLANNING MODE ACTIVE]\nYou are in plan mode: EXPLORE with READ-only tools (read_file, search_files, web_search, list_directory, fetch_url) and PROPOSE a clear plan. Tools that CHANGE things (write/edit/execute/desktop/browser-interaction/MCP) are BLOCKED until the user approves and leaves the mode — do not try to use them. Create/update the plan with 'plan_tasks', explain your reasoning, and end by asking for approval.`
 }
 
+// Auto-criação de skill sob demanda (v2.163.0): no meio de uma tarefa, ao
+// surgir uma situação/achado/descoberta NOVA, o agente verifica se já há skill
+// e, se não, PESQUISA atualizado (data de hoje) e cria a skill com save_skill.
+export const SELF_SKILL_DIRECTIVE: Record<string, string> = {
+  pt: `[SKILLS SOB DEMANDA — AUTO-CRIAÇÃO]
+Enquanto resolve o pedido, ao surgir uma SITUAÇÃO, ACHADO ou TÉCNICA NOVA — algo que vai se repetir ou que você ainda não domina:
+1. Verifique no manifesto [SKILLS DISPONÍVEIS] se já existe uma skill para esse trabalho. Se existir, chame load_skill e siga o playbook dela.
+2. Se NÃO existir skill adequada E o trabalho for reaproveitável (não um detalhe trivial e único): PESQUISE o tema com web_search/fetch_url buscando informação ATUAL — inclua a data de HOJE no termo de busca e priorize fontes recentes — e então crie a skill com save_skill: instruções claras de COMO executar o trabalho, registrando no corpo a DATA da pesquisa e as FONTES. Em seguida, use essa skill para fazer o trabalho.
+NÃO crie skills para tarefas triviais ou de uso único. A skill nasce desativada (o usuário ativa depois); continue a tarefa normalmente usando-a neste turno via load_skill.`,
+  en: `[ON-DEMAND SKILLS — AUTO-CREATION]
+While handling the request, when a NEW situation, finding, or technique comes up — something that will recur or that you don't yet master:
+1. Check the [AVAILABLE SKILLS] manifest for an existing skill for that work. If one exists, call load_skill and follow its playbook.
+2. If NO suitable skill exists AND the work is reusable (not a trivial one-off): RESEARCH the topic with web_search/fetch_url for UP-TO-DATE info — include TODAY's date in the query and prefer recent sources — then create the skill with save_skill: clear instructions on HOW to do the work, recording the research DATE and SOURCES in the body. Then use that skill to do the work.
+Do NOT create skills for trivial or one-off tasks. The new skill starts disabled (the user enables it later); keep going with the task this turn via load_skill.`
+}
+
 export const LANGUAGE_RULE: Record<string, string> = {
   pt: '\n\nREGRA CRÍTICA DE IDIOMA: Você DEVE responder TODAS as mensagens em português brasileiro. Não importa em que idioma o usuário escreva, sua resposta DEVE ser em português. Isso inclui explicações, comentários em código, nomes de variáveis em exemplos, e qualquer texto. NUNCA responda em inglês ou outro idioma.',
   en: '\n\nCRITICAL LANGUAGE RULE: You MUST respond to ALL messages in English. No matter what language the user writes in, your response MUST be in English. This includes explanations, code comments, variable names in examples, and any text. NEVER respond in Portuguese or any other language.'

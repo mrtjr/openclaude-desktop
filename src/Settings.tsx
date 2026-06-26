@@ -238,6 +238,22 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                 </p>
               </div>
 
+              {/* Auto-criação de skill sob demanda (v2.163.0) */}
+              <div className="settings-group">
+                <label className="settings-label">
+                  <span>{local.language === 'en' ? 'Auto-create skills on new discoveries (agent mode)' : 'Auto-criar skills em novas descobertas (modo agente)'}</span>
+                  <div className={`toggle ${local.autoCreateSkillsOnDiscovery !== false ? 'on' : ''}`}
+                    onClick={() => setLocal(s => ({ ...s, autoCreateSkillsOnDiscovery: s.autoCreateSkillsOnDiscovery === false }))}>
+                    <div className="toggle-knob" />
+                  </div>
+                </label>
+                <p className="settings-hint">
+                  {local.language === 'en'
+                    ? 'When the agent hits a new situation/finding with no existing skill, it researches it (with today\'s date) and creates a reusable skill via save_skill before proceeding. New skills start disabled; each save_skill asks for approval. On by default.'
+                    : 'Quando o agente topa com uma situação/achado novo sem skill existente, ele pesquisa o tema (com a data de hoje) e cria uma skill reaproveitável via save_skill antes de seguir. As skills nascem desativadas; cada save_skill pede aprovação. Ligado por padrão.'}
+                </p>
+              </div>
+
               {/* Tool deferral (v2.12.6) */}
               <div className="settings-group">
                 <label className="settings-label">
