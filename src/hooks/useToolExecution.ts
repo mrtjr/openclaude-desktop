@@ -184,7 +184,9 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         if (next !== current && onPersistSkillsRef.current) onPersistSkillsRef.current(next)
         const head: string[] = []
         if (activated.length) head.push(`[SKILLS ATIVADAS: ${activated.join(', ')}]`)
-        if (deactivated.length) head.push(`[SKILLS DESATIVADAS: ${deactivated.join(', ')}]`)
+        // O corpo das desativadas pode ter ficado no histórico (allMessages não é
+        // limpo retroativamente) — instrui explicitamente a IGNORAR (v2.166.0).
+        if (deactivated.length) head.push(`[SKILLS DESATIVADAS: ${deactivated.join(', ')}] — IGNORE quaisquer instruções anteriores destas skills que ainda apareçam no histórico.`)
         if (missing.length) head.push(`Não encontradas: ${missing.join(', ')}.`)
         // Inclui o corpo das ativadas p/ guiarem o modelo já neste passo.
         const bodies = activated.map((nm) => { const s = findSkill(next, nm); return s ? `[SKILL: ${s.name}]\n${renderSkillBody(s)}` : '' }).filter(Boolean)

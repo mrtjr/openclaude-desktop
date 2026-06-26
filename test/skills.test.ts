@@ -177,17 +177,19 @@ describe('skill ATIVA por load_skill (v2.104.0)', () => {
     const set = collectDisallowedTools(findActiveSkills(skills, ['code']))
     expect([...set]).toEqual(['browser_navigate'])
   })
-  it('renderActiveSkillsFull injeta o CORPO completo (não só o nome) e exclui fixadas', () => {
+  it('renderActiveSkillsFull injeta o CORPO completo (inclui fixadas; exclui desativada/staging)', () => {
     const out = renderActiveSkillsFull([
       mk({ name: 'code', instructions: 'PASSOS DETALHADOS DA SKILL' }),
-      mk({ name: 'pinned-one', pinned: true, instructions: 'NAO DEVE APARECER' }),
+      mk({ name: 'pinned-one', pinned: true, instructions: 'FIXADA ATIVADA AGORA' }),  // v2.166: entra
       mk({ name: 'off-one', enabled: false, instructions: 'TAMBEM NAO' }),
+      mk({ name: 'staging-one', status: 'staging', instructions: 'STAGING NAO' }),
     ], 'pt')
     expect(out).toContain('SKILLS ATIVAS')
     expect(out).toContain('[SKILL ATIVA: code]')
     expect(out).toContain('PASSOS DETALHADOS DA SKILL') // corpo, não só o nome
-    expect(out).not.toContain('NAO DEVE APARECER')      // fixada já entra via renderPinnedSkills
+    expect(out).toContain('FIXADA ATIVADA AGORA')       // fixada ativada no turno ENTRA (fecha o gap)
     expect(out).not.toContain('TAMBEM NAO')             // desativada fora
+    expect(out).not.toContain('STAGING NAO')            // staging nunca guia
     expect(renderActiveSkillsFull([], 'pt')).toBe('')
     expect(renderActiveSkillsFull([mk({ name: 'c' })], 'en')).toContain('ACTIVE SKILLS')
   })

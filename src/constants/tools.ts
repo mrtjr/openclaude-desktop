@@ -194,7 +194,7 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'manage_skills',
-      description: 'Curate which skills are ACTIVE for THIS conversation — you decide intelligently, as many as truly help. activate: enables each named skill (even if it was disabled) AND loads its playbook so it guides you for the rest of this turn/conversation. deactivate: removes skills no longer relevant so you stay focused. Use this right after creating a skill with save_skill to start using it now, when an existing (possibly disabled) skill fits the current work, or to switch the active set as the task changes. Names are matched leniently. Prefer activating the few skills that directly help the current step; deactivate the rest.',
+      description: 'Curate which skills are ACTIVE for THIS conversation — you decide intelligently, as many as truly help. activate: enables each named skill (even if it was disabled) AND loads its playbook so it guides you for the rest of this turn/conversation. deactivate: removes skills no longer relevant so you stay focused. Use this right after creating a skill with save_skill to start using it now, when an existing (possibly disabled) skill fits the current work, or to switch the active set as the task changes. IMPORTANT: activate the skill BEFORE doing the work that needs it (the playbook guides you from the NEXT step on) — do not activate as a closing afterthought. Names are matched leniently. Prefer activating the few skills that directly help the current step; deactivate the rest.',
       parameters: {
         type: 'object',
         properties: {

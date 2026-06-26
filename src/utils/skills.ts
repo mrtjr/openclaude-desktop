@@ -298,7 +298,9 @@ export function findActiveSkills(skills: Skill[], names: string[] | undefined): 
   const out: Skill[] = []
   for (const n of names || []) {
     const s = findSkill(all, n)
-    if (s && s.enabled && !out.includes(s)) out.push(s)
+    // Exige enabled E não-staging (v2.166.0): uma skill em staging NUNCA guia o
+    // modelo, mesmo que algo vire seu `enabled` (guarda anti skill-poisoning).
+    if (s && s.enabled && s.status !== 'staging' && !out.includes(s)) out.push(s)
   }
   return out
 }
@@ -323,7 +325,12 @@ export function renderActiveSkillReminder(activeSkills: Skill[], lang: string): 
  *  (v2.158.0). Exclui as fixadas (essas já entram via renderPinnedSkills, p/ não
  *  duplicar). '' quando não há nenhuma. */
 export function renderActiveSkillsFull(activeSkills: Skill[], lang: string): string {
-  const list = (activeSkills || []).filter(s => s && s.enabled && !s.pinned)
+  // Renderiza o conjunto ATIVO (load_skill/manage_skills) por completo, INCLUSIVE
+  // fixadas (v2.166.0): uma skill fixada-mas-desativada ativada no meio do turno
+  // não estava no renderPinnedSkills (montado no início, quando ela estava off) e
+  // antes era excluída aqui por ser pinned → caía no vácuo. A duplicação com
+  // renderPinnedSkills (caso raro: fixada-ativa também no conjunto) é inofensiva.
+  const list = (activeSkills || []).filter(s => s && s.enabled && s.status !== 'staging')
   if (!list.length) return ''
   const header = lang === 'en'
     ? '[ACTIVE SKILLS — you loaded these; keep FULLY following their playbooks below until the task is done]'

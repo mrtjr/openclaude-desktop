@@ -1795,6 +1795,18 @@ export function useChat({
           const toArr = (v: any): string[] => Array.isArray(v) ? v.map((x: any) => String(x || '')).filter(Boolean) : (typeof v === 'string' && v.trim() ? [v.trim()] : [])
           const act = [...toArr(args.activate), ...toArr(args.names)]
           const deact = toArr(args.deactivate)
+          // Reflete o `enabled` SINCRONAMENTE no skillsRef do hook (v2.166.0): a
+          // persistência via setSkills é async e só entra no próximo render. Sem
+          // isto, o passo seguinte leria enabled:false e findActiveSkills/
+          // renderActiveSkillsFull NÃO injetariam o playbook da skill recém-ativada
+          // (corrida pega na verificação adversarial do v2.165). O próximo render
+          // reatribui skillsRef.current = skills, então fica consistente.
+          const actNames = new Set(act.map(n => findSkill(skillsRef.current || [], n)?.name).filter(Boolean))
+          const deactNames = new Set(deact.map(n => findSkill(skillsRef.current || [], n)?.name).filter(Boolean))
+          if (actNames.size || deactNames.size) {
+            skillsRef.current = (skillsRef.current || []).map(s =>
+              actNames.has(s.name) ? { ...s, enabled: true } : (deactNames.has(s.name) ? { ...s, enabled: false } : s))
+          }
           for (const nm of act) if (nm) addActiveSkill(String(nm))
           for (const nm of deact) if (nm) removeActiveSkill(String(nm))
           if (act.length || deact.length) {
