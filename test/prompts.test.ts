@@ -11,6 +11,7 @@ describe('buildSelfSkillDirective (v2.164.0 — auto-criação de skill, 3 níve
       const d = buildSelfSkillDirective(lang, 'balanced')
       expect(d).toMatch(/load_skill/)
       expect(d).toMatch(/save_skill/)
+      expect(d).toMatch(/manage_skills/)
       expect(d).toMatch(/web_search/)
       expect(d.toLowerCase()).toMatch(lang === 'en' ? /today/ : /hoje/)
     })

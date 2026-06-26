@@ -66,12 +66,12 @@ export function buildSelfSkillDirective(lang: string, mode: SkillCreationMode = 
 While handling the request, when a NEW situation, finding, or technique comes up:
 1. Check the [AVAILABLE SKILLS] manifest for an existing skill for that work. If one exists, call load_skill and follow its playbook.
 2. If NO suitable skill exists: RESEARCH the topic with web_search/fetch_url for UP-TO-DATE info — include TODAY's date in the query and prefer recent sources — then create the skill with save_skill: clear instructions on HOW to do the work, recording the research DATE and SOURCES in the body. Then use that skill to do the work.
-${threshold} The new skill starts disabled (the user enables it later); keep going with the task this turn via load_skill.`
+${threshold} The new skill starts disabled — ACTIVATE it now with manage_skills (which enables + loads it) and use it this turn; deactivate skills no longer relevant to stay focused.`
     : `[SKILLS SOB DEMANDA — AUTO-CRIAÇÃO]
 Enquanto resolve o pedido, ao surgir uma SITUAÇÃO, ACHADO ou TÉCNICA NOVA:
 1. Verifique no manifesto [SKILLS DISPONÍVEIS] se já existe uma skill para esse trabalho. Se existir, chame load_skill e siga o playbook dela.
 2. Se NÃO existir skill adequada: PESQUISE o tema com web_search/fetch_url buscando informação ATUAL — inclua a data de HOJE no termo de busca e priorize fontes recentes — e crie a skill com save_skill: instruções claras de COMO executar o trabalho, registrando no corpo a DATA da pesquisa e as FONTES. Em seguida, use essa skill para fazer o trabalho.
-${threshold} A skill nasce desativada (o usuário ativa depois); continue a tarefa neste turno via load_skill.`
+${threshold} A skill nasce desativada — ATIVE-a agora com manage_skills (que habilita + carrega) e use-a neste turno; desative as que não forem mais relevantes para manter o foco.`
 }
 
 export const LANGUAGE_RULE: Record<string, string> = {

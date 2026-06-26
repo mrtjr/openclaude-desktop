@@ -170,6 +170,14 @@ export function useChat({
     activeSkillNamesRef.current = [...activeSkillNamesRef.current, name]
     setActiveSkillNames(activeSkillNamesRef.current)
   }, [])
+  // Remove uma skill do conjunto ativo (manage_skills deactivate, v2.165.0).
+  const removeActiveSkill = useCallback((rawName: string) => {
+    const found = findSkill(skillsRef.current || [], rawName)
+    const name = found?.name || rawName
+    if (!activeSkillNamesRef.current.includes(name)) return
+    activeSkillNamesRef.current = activeSkillNamesRef.current.filter(n => n !== name)
+    setActiveSkillNames(activeSkillNamesRef.current)
+  }, [])
   // Re-hidrata as skills ativas do que ficou salvo na conversa (v2.160.0):
   // load_skill passou a PERSISTIR pela tarefa inteira (antes zerava a cada turno).
   // Lista vazia = limpa. findActiveSkills filtra nomes inválidos no uso.
@@ -1778,6 +1786,22 @@ export function useChat({
           setConversations(prev => prev.map(c =>
             c.id !== convId ? c : { ...c, activeSkillNames: [...activeSkillNamesRef.current] }
           ))
+        }
+        // manage_skills (v2.165.0): a IA curou o conjunto ativo — reflete no
+        // active-set do turno (ativa/desativa) e persiste na conversa. O handler
+        // já habilitou/desabilitou o `enabled` global; aqui ajustamos o que GUIA
+        // o modelo neste turno.
+        if (tc.function.name === 'manage_skills') {
+          const toArr = (v: any): string[] => Array.isArray(v) ? v.map((x: any) => String(x || '')).filter(Boolean) : (typeof v === 'string' && v.trim() ? [v.trim()] : [])
+          const act = [...toArr(args.activate), ...toArr(args.names)]
+          const deact = toArr(args.deactivate)
+          for (const nm of act) if (nm) addActiveSkill(String(nm))
+          for (const nm of deact) if (nm) removeActiveSkill(String(nm))
+          if (act.length || deact.length) {
+            setConversations(prev => prev.map(c =>
+              c.id !== convId ? c : { ...c, activeSkillNames: [...activeSkillNamesRef.current] }
+            ))
+          }
         }
       }
 

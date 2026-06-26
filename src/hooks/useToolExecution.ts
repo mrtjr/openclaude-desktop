@@ -17,7 +17,7 @@ import { isRiskyDesktopAction } from '../utils/desktopPolicy'
 import { paginateFileContent } from '../utils/readFile'
 import { formatClickResult, formatNavResult } from '../utils/browserResult'
 import { logInsight } from '../services/devInsights'
-import { findSkill, formatLoadSkillResult, suggestSkill, renderSkillsForWorker } from '../utils/skills'
+import { findSkill, formatLoadSkillResult, suggestSkill, renderSkillsForWorker, renderSkillBody } from '../utils/skills'
 import { buildImportedSkills, parseRepoSpec, parseSkillIndex, parseSkillMarkdown, sanitizeSkillName, decideSkillImport } from '../utils/skillImport'
 import { generateId } from '../utils/formatting'
 import { matchHooks } from '../utils/hooks'
@@ -156,6 +156,39 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
           return formatLoadSkillResult(hit, req, hit ? null : suggestSkill(list, req))
         })
         return parts.join('\n\n---\n\n')
+      }
+      // manage_skills (v2.165.0): a IA CURA o próprio conjunto ativo na conversa
+      // — ativa (habilita + carrega) as skills necessárias e desativa as que não
+      // são mais úteis. Fecha o gap do modo agressivo (skills nascem desativadas).
+      // O useChat detecta esta tool e atualiza o active-set do turno/conversa.
+      if (name === 'manage_skills') {
+        const toArr = (v: any): string[] => Array.isArray(v) ? v.map((x: any) => String(x || '').trim()).filter(Boolean) : (typeof v === 'string' && v.trim() ? [v.trim()] : [])
+        const activate = [...toArr(args.activate), ...toArr(args.names)]
+        const deactivate = toArr(args.deactivate)
+        if (!activate.length && !deactivate.length) return 'manage_skills: informe "activate" e/ou "deactivate" (nomes de skills).'
+        const current = getAllSkillsRef.current?.() || skillsRef.current || []
+        let next = current
+        const activated: string[] = [], deactivated: string[] = [], missing: string[] = []
+        for (const nm of activate) {
+          const s = findSkill(next, nm)
+          if (!s) { missing.push(nm); continue }
+          if (!s.enabled) next = next.map((x) => x.id === s.id ? { ...x, enabled: true } : x)
+          if (!activated.includes(s.name)) activated.push(s.name)
+        }
+        for (const nm of deactivate) {
+          const s = findSkill(next, nm)
+          if (!s) { missing.push(nm); continue }
+          if (s.enabled) next = next.map((x) => x.id === s.id ? { ...x, enabled: false } : x)
+          if (!deactivated.includes(s.name)) deactivated.push(s.name)
+        }
+        if (next !== current && onPersistSkillsRef.current) onPersistSkillsRef.current(next)
+        const head: string[] = []
+        if (activated.length) head.push(`[SKILLS ATIVADAS: ${activated.join(', ')}]`)
+        if (deactivated.length) head.push(`[SKILLS DESATIVADAS: ${deactivated.join(', ')}]`)
+        if (missing.length) head.push(`Não encontradas: ${missing.join(', ')}.`)
+        // Inclui o corpo das ativadas p/ guiarem o modelo já neste passo.
+        const bodies = activated.map((nm) => { const s = findSkill(next, nm); return s ? `[SKILL: ${s.name}]\n${renderSkillBody(s)}` : '' }).filter(Boolean)
+        return [head.join(' '), ...bodies].filter(Boolean).join('\n\n') || 'manage_skills: nada a fazer.'
       }
       // save_skill (v2.162.0): cria/atualiza uma skill DIRETO na biblioteca, sem
       // o passo de salvar arquivo + importar. Robusto a truncação (skill grande):

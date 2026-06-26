@@ -193,6 +193,20 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'manage_skills',
+      description: 'Curate which skills are ACTIVE for THIS conversation — you decide intelligently, as many as truly help. activate: enables each named skill (even if it was disabled) AND loads its playbook so it guides you for the rest of this turn/conversation. deactivate: removes skills no longer relevant so you stay focused. Use this right after creating a skill with save_skill to start using it now, when an existing (possibly disabled) skill fits the current work, or to switch the active set as the task changes. Names are matched leniently. Prefer activating the few skills that directly help the current step; deactivate the rest.',
+      parameters: {
+        type: 'object',
+        properties: {
+          activate: { type: 'array', items: { type: 'string' }, description: 'Skill names to enable + activate for this conversation.' },
+          deactivate: { type: 'array', items: { type: 'string' }, description: 'Skill names to remove from the active set (no longer needed).' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'install_skills',
       description: 'Install Agent Skills directly from a public GitHub repository — NO git clone needed. Use this when the user pastes a GitHub repo URL or a `git clone …` command for a skills repo (e.g. anthropics/skills) and asks to install/import its skills. Downloads every SKILL.md from the repo into the app\'s default skills folder and installs them. Imported skills arrive DISABLED by default (the user enables the ones they want in the Skills panel) — do not try to enable them yourself. AUTO MODE: when the user does NOT specify which skills/repos they want and lets YOU decide (e.g. "install whatever\'s good", "you pick"), pass auto:true. In auto mode YOU decide what to download under a ~60s time budget following strict rules: a skill the library does not have yet is always installed (new skills are welcome); a skill it already has is only replaced when the downloaded one is MORE COMPLETE (an evolution) — never a regression or an equal. Auto mode also works on an "awesome-*" INDEX repo: it sweeps the catalogued repos within the budget and decides per skill. When NOT in auto mode and the repo is an index, this returns the catalogued repo list — relay it, ask the user which they want, then call install_skills once per chosen repo (do NOT install them all at once — GitHub\'s API limits ~60 requests/hour).',
       parameters: {
@@ -770,7 +784,7 @@ export const SAFE_TOOLS = new Set([
   'read_file', 'search_files', 'list_directory', 'web_search', 'fetch_url', 'browser_get_text',
   'browser_get_links', 'browser_get_forms', 'browser_screenshot', 'browser_wait',
   'update_working_memory', 'plan_tasks', 'update_task_status', 'undo_last_write',
-  'remember_fact', 'remember_fresh_fact', 'load_skill', 'rag_search',
+  'remember_fact', 'remember_fresh_fact', 'load_skill', 'manage_skills', 'rag_search',
   'capture_screen', 'analyze_image', 'compare_models', 'set_persona', 'project_tree', 'glob_files',
   'search_conversations', 'get_command_output', 'kill_background_command'
 ])
