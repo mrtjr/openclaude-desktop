@@ -37,20 +37,41 @@ export const PLANNING_MODE_PROMPT: Record<string, string> = {
   en: `[PLANNING MODE ACTIVE]\nYou are in plan mode: EXPLORE with READ-only tools (read_file, search_files, web_search, list_directory, fetch_url) and PROPOSE a clear plan. Tools that CHANGE things (write/edit/execute/desktop/browser-interaction/MCP) are BLOCKED until the user approves and leaves the mode — do not try to use them. Create/update the plan with 'plan_tasks', explain your reasoning, and end by asking for approval.`
 }
 
-// Auto-criação de skill sob demanda (v2.163.0): no meio de uma tarefa, ao
-// surgir uma situação/achado/descoberta NOVA, o agente verifica se já há skill
-// e, se não, PESQUISA atualizado (data de hoje) e cria a skill com save_skill.
-export const SELF_SKILL_DIRECTIVE: Record<string, string> = {
-  pt: `[SKILLS SOB DEMANDA — AUTO-CRIAÇÃO]
-Enquanto resolve o pedido, ao surgir uma SITUAÇÃO, ACHADO ou TÉCNICA NOVA — algo que vai se repetir ou que você ainda não domina:
-1. Verifique no manifesto [SKILLS DISPONÍVEIS] se já existe uma skill para esse trabalho. Se existir, chame load_skill e siga o playbook dela.
-2. Se NÃO existir skill adequada E o trabalho for reaproveitável (não um detalhe trivial e único): PESQUISE o tema com web_search/fetch_url buscando informação ATUAL — inclua a data de HOJE no termo de busca e priorize fontes recentes — e então crie a skill com save_skill: instruções claras de COMO executar o trabalho, registrando no corpo a DATA da pesquisa e as FONTES. Em seguida, use essa skill para fazer o trabalho.
-NÃO crie skills para tarefas triviais ou de uso único. A skill nasce desativada (o usuário ativa depois); continue a tarefa normalmente usando-a neste turno via load_skill.`,
-  en: `[ON-DEMAND SKILLS — AUTO-CREATION]
-While handling the request, when a NEW situation, finding, or technique comes up — something that will recur or that you don't yet master:
+// Auto-criação de skill sob demanda (v2.163.0; níveis v2.164.0): no meio de uma
+// tarefa, ao surgir uma situação/achado/descoberta NOVA, o agente verifica se já
+// há skill e, se não, PESQUISA atualizado (data de hoje) e cria com save_skill.
+// A "vontade" de criar é calibrável (conservadora/equilibrada/agressiva).
+export type SkillCreationMode = 'conservative' | 'balanced' | 'aggressive'
+
+const SELF_SKILL_THRESHOLD: Record<SkillCreationMode, { pt: string; en: string }> = {
+  conservative: {
+    pt: 'Crie a skill APENAS quando o trabalho for claramente RECORRENTE e útil no futuro. Na dúvida, NÃO crie.',
+    en: 'Create the skill ONLY when the work is clearly RECURRING and useful in the future. When in doubt, do NOT create.',
+  },
+  balanced: {
+    pt: 'Crie a skill quando o trabalho for reaproveitável — não um detalhe trivial e de uso único. Na dúvida sobre algo realmente útil, prefira criar.',
+    en: 'Create the skill when the work is reusable — not a trivial one-off. When in doubt about something genuinely useful, lean toward creating.',
+  },
+  aggressive: {
+    pt: 'Seja PROATIVO: crie a skill para QUALQUER técnica, domínio ou achado NOVO e relevante, MESMO que talvez não se repita — toda nova capacidade é aprendizado. Só pule passos mecânicos triviais (ex.: listar arquivos, um único comando).',
+    en: 'Be PROACTIVE: create the skill for ANY new, relevant technique, domain, or finding, EVEN if it might not recur — every new capability is learning. Only skip trivial mechanical steps (e.g. listing files, a single command).',
+  },
+}
+
+export function buildSelfSkillDirective(lang: string, mode: SkillCreationMode = 'aggressive'): string {
+  const l = lang === 'en' ? 'en' : 'pt'
+  const threshold = (SELF_SKILL_THRESHOLD[mode] || SELF_SKILL_THRESHOLD.aggressive)[l]
+  return l === 'en'
+    ? `[ON-DEMAND SKILLS — AUTO-CREATION]
+While handling the request, when a NEW situation, finding, or technique comes up:
 1. Check the [AVAILABLE SKILLS] manifest for an existing skill for that work. If one exists, call load_skill and follow its playbook.
-2. If NO suitable skill exists AND the work is reusable (not a trivial one-off): RESEARCH the topic with web_search/fetch_url for UP-TO-DATE info — include TODAY's date in the query and prefer recent sources — then create the skill with save_skill: clear instructions on HOW to do the work, recording the research DATE and SOURCES in the body. Then use that skill to do the work.
-Do NOT create skills for trivial or one-off tasks. The new skill starts disabled (the user enables it later); keep going with the task this turn via load_skill.`
+2. If NO suitable skill exists: RESEARCH the topic with web_search/fetch_url for UP-TO-DATE info — include TODAY's date in the query and prefer recent sources — then create the skill with save_skill: clear instructions on HOW to do the work, recording the research DATE and SOURCES in the body. Then use that skill to do the work.
+${threshold} The new skill starts disabled (the user enables it later); keep going with the task this turn via load_skill.`
+    : `[SKILLS SOB DEMANDA — AUTO-CRIAÇÃO]
+Enquanto resolve o pedido, ao surgir uma SITUAÇÃO, ACHADO ou TÉCNICA NOVA:
+1. Verifique no manifesto [SKILLS DISPONÍVEIS] se já existe uma skill para esse trabalho. Se existir, chame load_skill e siga o playbook dela.
+2. Se NÃO existir skill adequada: PESQUISE o tema com web_search/fetch_url buscando informação ATUAL — inclua a data de HOJE no termo de busca e priorize fontes recentes — e crie a skill com save_skill: instruções claras de COMO executar o trabalho, registrando no corpo a DATA da pesquisa e as FONTES. Em seguida, use essa skill para fazer o trabalho.
+${threshold} A skill nasce desativada (o usuário ativa depois); continue a tarefa neste turno via load_skill.`
 }
 
 export const LANGUAGE_RULE: Record<string, string> = {

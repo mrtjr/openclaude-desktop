@@ -1,9 +1,31 @@
 import { describe, it, expect } from 'vitest'
-import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE } from '../src/constants/prompts'
+import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, buildSelfSkillDirective } from '../src/constants/prompts'
 
 // The agent system prompt governs HOW the model researches, executes and
 // delivers. These structural guards make sure both languages keep the key
 // directives (so an accidental edit can't silently gut the agent brain).
+
+describe('buildSelfSkillDirective (v2.164.0 — auto-criação de skill, 3 níveis)', () => {
+  for (const lang of ['pt', 'en'] as const) {
+    it(`${lang}: sempre instrui checar skill, pesquisar com data e save_skill`, () => {
+      const d = buildSelfSkillDirective(lang, 'balanced')
+      expect(d).toMatch(/load_skill/)
+      expect(d).toMatch(/save_skill/)
+      expect(d).toMatch(/web_search/)
+      expect(d.toLowerCase()).toMatch(lang === 'en' ? /today/ : /hoje/)
+    })
+  }
+  it('agressiva é mais proativa que conservadora', () => {
+    expect(buildSelfSkillDirective('pt', 'aggressive')).toMatch(/PROATIVO|QUALQUER/)
+    expect(buildSelfSkillDirective('pt', 'conservative')).toMatch(/APENAS|RECORRENTE/)
+    // o limiar muda conforme o modo
+    expect(buildSelfSkillDirective('pt', 'aggressive')).not.toBe(buildSelfSkillDirective('pt', 'conservative'))
+  })
+  it('default é agressivo e modo inválido cai no agressivo', () => {
+    expect(buildSelfSkillDirective('pt')).toBe(buildSelfSkillDirective('pt', 'aggressive'))
+    expect(buildSelfSkillDirective('pt', 'xpto' as any)).toBe(buildSelfSkillDirective('pt', 'aggressive'))
+  })
+})
 
 describe('AGENT_SYSTEM_PROMPT', () => {
   for (const lang of ['pt', 'en'] as const) {

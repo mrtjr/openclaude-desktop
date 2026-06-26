@@ -104,6 +104,10 @@ export interface AppSettings {
    *  (data de hoje) e cria a skill com save_skill antes de seguir. A skill nasce
    *  desativada e cada save_skill pede aprovação. Default true. */
   autoCreateSkillsOnDiscovery?: boolean
+  /** v2.164.0 — "vontade" da auto-criação: conservadora (só recorrente claro),
+   *  equilibrada (reaproveitável, não trivial) ou agressiva (qualquer achado
+   *  novo relevante). Default 'aggressive'. Só vale com autoCreateSkillsOnDiscovery. */
+  skillCreationMode?: 'conservative' | 'balanced' | 'aggressive'
   /** v2.12.0 — fire a native OS notification when a response completes
    *  while the window is not focused. Opt-out via Settings (default on). */
   notifyOnComplete?: boolean
@@ -259,6 +263,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   semanticSkillMatch: false,
   skillAutoDecideSec: 60,
   autoCreateSkillsOnDiscovery: true,
+  skillCreationMode: 'aggressive',
   notifyOnComplete: true,
   toolDeferralMode: 'auto',
   subagentExecutor: 'ollama',

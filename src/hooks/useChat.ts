@@ -5,7 +5,7 @@ import { applySubagentModels } from '../utils/researchWorker'
 import type { BackgroundSubagentRegistry, BgEntry } from '../utils/backgroundSubagents'
 import { inferScoutFocus, pickScoutActivity, type ScoutController, type RunScout } from '../utils/scout'
 import type { SubagentActivityStore } from '../utils/subagentActivity'
-import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIMING, LANGUAGE_REMINDER, SELF_SKILL_DIRECTIVE } from '../constants/prompts'
+import { AGENT_SYSTEM_PROMPT, PLANNING_MODE_PROMPT, LANGUAGE_RULE, LANGUAGE_PRIMING, LANGUAGE_REMINDER, buildSelfSkillDirective } from '../constants/prompts'
 import { partitionTools, renderDeferredManifest, decideDeferral } from '../services/toolDeferral'
 import { generateId, isSmallModel } from '../utils/formatting'
 import { sanitizeReasoningLeaksSafe, StreamingSanitizer, emptyReplyNotice, extractThinking } from '../utils/sanitizers'
@@ -472,7 +472,7 @@ export function useChat({
         // com algo NOVO sem skill, a IA pesquisa atualizado (data de hoje já está
         // no prompt) e cria a skill com save_skill antes de seguir. Opt-out.
         if (isAgentMode && settings.autoCreateSkillsOnDiscovery !== false) {
-          systemPrompt += `\n\n${SELF_SKILL_DIRECTIVE[lang]}`
+          systemPrompt += `\n\n${buildSelfSkillDirective(lang, settings.skillCreationMode || 'aggressive')}`
         }
       }
 

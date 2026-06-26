@@ -252,6 +252,27 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                     ? 'When the agent hits a new situation/finding with no existing skill, it researches it (with today\'s date) and creates a reusable skill via save_skill before proceeding. New skills start disabled; each save_skill asks for approval. On by default.'
                     : 'Quando o agente topa com uma situação/achado novo sem skill existente, ele pesquisa o tema (com a data de hoje) e cria uma skill reaproveitável via save_skill antes de seguir. As skills nascem desativadas; cada save_skill pede aprovação. Ligado por padrão.'}
                 </p>
+                {local.autoCreateSkillsOnDiscovery !== false && (
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                    {([
+                      ['conservative', local.language === 'en' ? 'Conservative' : 'Conservadora'],
+                      ['balanced', local.language === 'en' ? 'Balanced' : 'Equilibrada'],
+                      ['aggressive', local.language === 'en' ? 'Aggressive' : 'Agressiva'],
+                    ] as const).map(([mode, label]) => {
+                      const active = (local.skillCreationMode || 'aggressive') === mode
+                      return (
+                        <button key={mode} className="settings-close"
+                          style={{ width: 'auto', padding: '4px 12px', fontSize: 12, opacity: active ? 1 : 0.65, border: active ? '1px solid var(--accent)' : undefined, color: active ? 'var(--accent)' : undefined }}
+                          onClick={() => setLocal(s => ({ ...s, skillCreationMode: mode }))}>{label}</button>
+                      )
+                    })}
+                  </div>
+                )}
+                <p className="settings-hint" style={{ marginTop: 4 }}>
+                  {local.language === 'en'
+                    ? 'Aggressive: create a skill for any new relevant technique (library grows fast, more to review). Balanced: only reusable work. Conservative: only clearly recurring work.'
+                    : 'Agressiva: cria skill para qualquer técnica nova relevante (biblioteca cresce rápido, mais para revisar). Equilibrada: só trabalho reaproveitável. Conservadora: só o claramente recorrente.'}
+                </p>
               </div>
 
               {/* Tool deferral (v2.12.6) */}
