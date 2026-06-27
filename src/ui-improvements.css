@@ -63,8 +63,13 @@
 /* ── 2. BASE ─────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 body {
-  font-family: var(--oc-font) !important;
-  background: var(--oc-bg) !important;
+  /* Fallbacks (v2.188.0): o @import remoto da fonte (fontshare) é render-blocking
+     — enquanto carrega (rede lenta/offline), o :root acima ainda não aplicou e
+     --oc-bg/--oc-font ficam vazios. Sem fallback, o `!important` deixava o body
+     TRANSPARENTE → app em branco até a fonte resolver. Com fallback p/ as vars do
+     index.css, o body nunca fica sem fundo/fonte. */
+  font-family: var(--oc-font, 'Inter', system-ui, -apple-system, sans-serif) !important;
+  background: var(--oc-bg, var(--bg-primary, #f8f8fc)) !important;
   -webkit-font-smoothing: antialiased;
 }
 
