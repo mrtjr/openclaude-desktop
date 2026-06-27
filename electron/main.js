@@ -1,5 +1,5 @@
 const { app, BrowserWindow, ipcMain, shell, Tray, Menu, globalShortcut, dialog, nativeImage } = require('electron')
-const { exec } = require('child_process')
+const { exec, execFile } = require('child_process')
 const path = require('path')
 const fs = require('fs')
 const http = require('http')
@@ -469,18 +469,26 @@ ipcMain.handle('exec-command', async (event, payload) => {
           : null
       })
     }
-    // No built-in `timeout` option — it only kills the powershell parent. A
-    // manual timer + killProcessTree takes down the whole subtree on timeout.
-    const child = exec(command, {
-      shell: 'powershell.exe',
-      cwd: cwd || undefined,
-      maxBuffer: 10 * 1024 * 1024, // 10MB
-      windowsHide: true,
-      // env extra (ex.: hooks PreToolUse recebem OPENCLAUDE_TOOL_NAME/ARGS).
-      // Sanitizado (v2.114.0): chaves de hijack (PATH/NODE_OPTIONS/LD_PRELOAD…)
-      // são barradas; valores limitados. Ver electron/exec-env.js.
-      ...((() => { const safe = sanitizeChildEnv(env); return safe ? { env: { ...process.env, ...safe } } : {} })())
-    }, finish)
+    // Roda PowerShell -NoProfile -NonInteractive -Command (v2.189.0), igual ao
+    // handler de background. Sem -NonInteractive, qualquer prompt do PowerShell
+    // (confirmação de cmdlet, Read-Host, credencial, ou um $PROFILE travado) fica
+    // esperando input PARA SEMPRE → o comando "não termina" e só morre no timeout.
+    // Com -NonInteractive ele FALHA RÁPIDO com erro claro em vez de travar; e
+    // -NoProfile evita que o profile do usuário atrase/altere a execução.
+    // execFile (não exec) p/ passar o comando como UM argumento de -Command —
+    // sem reparse por shell. No built-in `timeout`: o timer manual + killProcessTree
+    // derruba a subárvore inteira.
+    const child = execFile('powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', command],
+      {
+        cwd: cwd || undefined,
+        maxBuffer: 10 * 1024 * 1024, // 10MB
+        windowsHide: true,
+        // env extra (ex.: hooks PreToolUse recebem OPENCLAUDE_TOOL_NAME/ARGS).
+        // Sanitizado (v2.114.0): chaves de hijack (PATH/NODE_OPTIONS/LD_PRELOAD…)
+        // são barradas; valores limitados. Ver electron/exec-env.js.
+        ...((() => { const safe = sanitizeChildEnv(env); return safe ? { env: { ...process.env, ...safe } } : {} })())
+      }, finish)
     entry.child = child
     entry.markUser = () => { killedByUser = true }
     activeCommands.add(entry)
