@@ -241,12 +241,20 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
   // Busca + filtro (v2.167.0) — essencial com a biblioteca crescendo.
   const [skillSearch, setSkillSearch] = useState('')
   const [skillFilter, setSkillFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
+  // Ordenação (v2.168.0): 'default' preserva a ordem atual (builtins→criação) p/
+  // não mudar o comportamento existente; demais são opt-in.
+  const [skillSort, setSkillSort] = useState<'default' | 'name' | 'recent' | 'used'>('default')
   const q = skillSearch.trim().toLowerCase()
   const visibleRegular = regularSkills.filter(s => {
     if (skillFilter === 'enabled' && !s.enabled) return false
     if (skillFilter === 'disabled' && s.enabled) return false
     if (q && !(`${s.name} ${s.description}`.toLowerCase().includes(q))) return false
     return true
+  }).sort((a, b) => {
+    if (skillSort === 'name') return (a.name || '').localeCompare(b.name || '')
+    if (skillSort === 'recent') return (b.createdAt || 0) - (a.createdAt || 0)
+    if (skillSort === 'used') return (b.usageCount || 0) - (a.usageCount || 0)
+    return 0 // 'default' — mantém a ordem original (sort estável)
   })
   const visibleIds = new Set(visibleRegular.map(s => s.id))
   // Revalida o CORPO da skill aprendida antes de ativar (v2.115.0): o usuário
@@ -422,6 +430,18 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
                       )
                     })}
                   </div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', fontSize: 11.5, opacity: 0.8 }}>
+                    <span>{pt ? 'Ordenar:' : 'Sort:'}</span>
+                    {([
+                      ['default', pt ? 'Padrão' : 'Default'],
+                      ['name', 'A–Z'],
+                      ['recent', pt ? 'Recentes' : 'Recent'],
+                      ['used', pt ? 'Mais usadas' : 'Most used'],
+                    ] as const).map(([k, l]) => (
+                      <button key={k} className="settings-close" style={{ width: 'auto', padding: '3px 8px', fontSize: 11, opacity: skillSort === k ? 1 : 0.55, color: skillSort === k ? 'var(--accent)' : undefined }}
+                        onClick={() => setSkillSort(k)}>{l}</button>
+                    ))}
+                  </div>
                   {visibleRegular.length > 0 && (skillFilter !== 'all' || q) && (
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', fontSize: 11.5, opacity: 0.85 }}>
                       <span>{pt ? `${visibleRegular.length} filtrada(s):` : `${visibleRegular.length} filtered:`}</span>
@@ -443,6 +463,7 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
                       <span style={{ fontFamily: 'monospace' }}>{s.name || '(sem nome)'}</span>
                       {s.isBuiltIn && <span style={{ fontSize: 10, opacity: 0.5 }}>builtin</span>}
                       {s.pinned && <Pin size={11} style={{ color: 'var(--accent)' }} />}
+                      {!!s.usageCount && <span title={pt ? `Usada em ${s.usageCount} turno(s)` : `Used in ${s.usageCount} turn(s)`} style={{ fontSize: 10, opacity: 0.5 }}>{s.usageCount}×</span>}
                       {(() => { const issues = s.isBuiltIn ? [] : lintSkill(s); return issues.length > 0 ? (
                         <span title={(pt ? 'Avisos de qualidade (padrão SKILL.md):\n• ' : 'Quality warnings (SKILL.md standard):\n• ') + issues.join('\n• ')}
                           style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: '#f59e0b', fontSize: 11, cursor: 'help' }}>
