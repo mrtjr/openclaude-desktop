@@ -261,7 +261,17 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         // final (não em pedaços de append).
         const lint = lintSkill(nextSkill)
         const lintNote = lint.length ? `\nDica(s) de qualidade: ${lint.join(' ')}` : ''
-        return `Skill "${skillName}" ${existing ? 'atualizada' : 'criada'} (${total} chars de instruções).${existing ? '' : ' Nasce DESATIVADA — o usuário a ativa no painel de Skills (não a ative você). Para instruções grandes, continue com append:true.'}${lintNote}`
+        // Anti quase-duplicata (v2.171.0): no modo agressivo a IA pode criar
+        // skills de nome parecido. Se ao CRIAR já existe uma fuzzy-próxima,
+        // sugere atualizar em vez de duplicar.
+        let dupNote = ''
+        if (!existing) {
+          const near = findSkill(current, skillName)
+          if (near && sanitizeSkillName(near.name) !== skillName) {
+            dupNote = `\nObs: já existe a skill parecida "${near.name}". Se for o mesmo trabalho, prefira ATUALIZÁ-LA (save_skill com name:"${near.name}") em vez de manter duas quase iguais.`
+          }
+        }
+        return `Skill "${skillName}" ${existing ? 'atualizada' : 'criada'} (${total} chars de instruções).${existing ? '' : ' Nasce DESATIVADA — o usuário a ativa no painel de Skills (não a ative você). Para instruções grandes, continue com append:true.'}${lintNote}${dupNote}`
       }
       // install_skills (v2.155.0): baixa os SKILL.md de um repo do GitHub (sem
       // git clone) p/ a pasta padrão e os instala — "diretamente do chat". As
