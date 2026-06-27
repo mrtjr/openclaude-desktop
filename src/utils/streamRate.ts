@@ -23,8 +23,12 @@ export function tokensPerSec(tokens: number, elapsedMs: number): number | null {
   return Math.round(rate)
 }
 
-/** Texto curto pronto para a UI, ex.: "≈ 42 tok/s". Vazio quando não há dado. */
+/** Texto curto pronto para a UI, ex.: "≈ 42 tok/s". Vazio quando não há dado.
+ *  Stream muito lento (taxa arredonda p/ 0) vira "< 1 tok/s" em vez do enganoso
+ *  "≈ 0 tok/s" (v2.179.0). */
 export function formatTokRate(tokens: number, elapsedMs: number): string {
   const r = tokensPerSec(tokens, elapsedMs)
-  return r === null ? '' : `≈ ${r} tok/s`
+  if (r === null) return ''
+  if (r < 1) return '< 1 tok/s'
+  return `≈ ${r} tok/s`
 }

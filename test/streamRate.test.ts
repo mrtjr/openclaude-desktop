@@ -31,4 +31,8 @@ describe('formatTokRate', () => {
     expect(formatTokRate(100, 2000)).toBe('≈ 50 tok/s')
     expect(formatTokRate(100, 500)).toBe('')
   })
+
+  it('stream lento (taxa < 1) vira "< 1 tok/s" em vez de "≈ 0 tok/s" (v2.179.0)', () => {
+    expect(formatTokRate(1, 3000)).toBe('< 1 tok/s') // 0,33 tok/s arredondaria p/ 0
+  })
 })
