@@ -7,8 +7,11 @@
 // know which command ran.
 
 /** Argument keys tried in order — the first string value wins. Covers every
- *  built-in tool's primary arg (command/url/path/query/target/goal/selector). */
-const PRIMARY_ARG_KEYS = ['command', 'url', 'path', 'query', 'target', 'goal', 'selector', 'text'] as const
+ *  built-in tool's primary arg (command/url/path/query/target/goal/selector).
+ *  'name'/'repo' no fim (v2.180.0) cobrem os tools de skill (save_skill/
+ *  load_skill mostram a skill; install_skills mostra o repo) — só como fallback,
+ *  então não muda os tools que já têm uma chave anterior. */
+const PRIMARY_ARG_KEYS = ['command', 'url', 'path', 'query', 'target', 'goal', 'selector', 'text', 'name', 'repo'] as const
 
 /** Short, single-line summary of a tool call's main argument ('' when there is
  *  nothing presentable). Whitespace collapses so multiline commands stay on
@@ -24,6 +27,17 @@ export function toolCallSummary(
   if (name === 'delegate_subtasks' && Array.isArray(a.subtasks)) {
     const n = a.subtasks.length
     return `${n} subagente${n === 1 ? '' : 's'} pesquisando…`
+  }
+  // manage_skills (v2.180.0): mostra o que está sendo ativado/desativado (mais
+  // útil que o nome genérico da tool no indicador ao vivo / bloco da chamada).
+  if (name === 'manage_skills') {
+    const act = Array.isArray(a.activate) ? (a.activate as unknown[]).filter((x): x is string => typeof x === 'string' && !!x.trim()) : []
+    const deact = Array.isArray(a.deactivate) ? (a.deactivate as unknown[]).filter((x): x is string => typeof x === 'string' && !!x.trim()) : []
+    const parts: string[] = []
+    if (act.length) parts.push(`ativar ${act.join(', ')}`)
+    if (deact.length) parts.push(`desativar ${deact.join(', ')}`)
+    const s = parts.join(' · ')
+    return s.length > max ? s.slice(0, max - 1) + '…' : s
   }
   let value = ''
   for (const key of PRIMARY_ARG_KEYS) {

@@ -28,6 +28,14 @@ describe('toolCallSummary', () => {
     expect(toolCallSummary('delegate_subtasks', { subtasks: [{ prompt: 'a' }] })).toBe('1 subagente pesquisando…')
   })
 
+  it('cobre os tools de skill via name/repo e manage_skills (v2.180.0)', () => {
+    expect(toolCallSummary('save_skill', { name: 'code-review', instructions: 'x' })).toBe('code-review')
+    expect(toolCallSummary('load_skill', { name: 'pesquisa' })).toBe('pesquisa')
+    expect(toolCallSummary('install_skills', { repo: 'anthropics/skills' })).toBe('anthropics/skills')
+    expect(toolCallSummary('manage_skills', { activate: ['a', 'b'], deactivate: ['c'] })).toBe('ativar a, b · desativar c')
+    expect(toolCallSummary('manage_skills', { activate: ['solo'] })).toBe('ativar solo')
+  })
+
   it('returns empty string when there is nothing presentable', () => {
     expect(toolCallSummary('plan_tasks', {})).toBe('')
     expect(toolCallSummary('x', null)).toBe('')
