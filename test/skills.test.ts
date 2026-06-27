@@ -3,7 +3,7 @@ import {
   findSkill, renderSkillManifest, renderPinnedSkills, renderSkillBody, scopeSkillsToProject, skillManifestHeaders,
   matchSkillsByText, formatLoadSkillResult, mergeSkills, BUILTIN_SKILLS,
   collectDisallowedTools, collectAllowedTools, activeSkillsForTools, findActiveSkills, renderActiveSkillReminder, suggestSkill,
-  renderActiveSkillsFull, scopeToolsForStep, renderSkillsForWorker,
+  renderActiveSkillsFull, scopeToolsForStep, renderSkillsForWorker, filterAndSortSkills,
 } from '../src/utils/skills'
 import type { Skill } from '../src/types/skill'
 
@@ -192,6 +192,34 @@ describe('skill ATIVA por load_skill (v2.104.0)', () => {
     expect(out).not.toContain('STAGING NAO')            // staging nunca guia
     expect(renderActiveSkillsFull([], 'pt')).toBe('')
     expect(renderActiveSkillsFull([mk({ name: 'c' })], 'en')).toContain('ACTIVE SKILLS')
+  })
+})
+
+describe('filterAndSortSkills (v2.172.0 — busca/filtro/ordenação do painel)', () => {
+  const list = [
+    mk({ id: '1', name: 'code-review', description: 'revisa PRs', enabled: true, createdAt: 100, usageCount: 5 }),
+    mk({ id: '2', name: 'pdf-tools', description: 'lida com PDFs', enabled: false, createdAt: 300, usageCount: 1 }),
+    mk({ id: '3', name: 'deploy', description: 'sobe pra produção', enabled: true, createdAt: 200, usageCount: 9 }),
+  ]
+  it('filtra por estado', () => {
+    expect(filterAndSortSkills(list, '', 'enabled', 'default').map(s => s.id)).toEqual(['1', '3'])
+    expect(filterAndSortSkills(list, '', 'disabled', 'default').map(s => s.id)).toEqual(['2'])
+  })
+  it('busca em nome e descrição (case-insensitive)', () => {
+    expect(filterAndSortSkills(list, 'REVISA', 'all', 'default').map(s => s.id)).toEqual(['1']) // descrição, case-insensitive
+    expect(filterAndSortSkills(list, 'deploy', 'all', 'default').map(s => s.id)).toEqual(['3']) // nome
+    expect(filterAndSortSkills(list, 'inexistente', 'all', 'default')).toEqual([])
+  })
+  it("'default' preserva a ordem; name/recent/used ordenam", () => {
+    expect(filterAndSortSkills(list, '', 'all', 'default').map(s => s.id)).toEqual(['1', '2', '3'])
+    expect(filterAndSortSkills(list, '', 'all', 'name').map(s => s.name)).toEqual(['code-review', 'deploy', 'pdf-tools'])
+    expect(filterAndSortSkills(list, '', 'all', 'recent').map(s => s.id)).toEqual(['2', '3', '1']) // createdAt desc
+    expect(filterAndSortSkills(list, '', 'all', 'used').map(s => s.id)).toEqual(['3', '1', '2'])   // usageCount desc
+  })
+  it('não muta a lista de entrada', () => {
+    const before = list.map(s => s.id)
+    filterAndSortSkills(list, '', 'all', 'name')
+    expect(list.map(s => s.id)).toEqual(before)
   })
 })
 

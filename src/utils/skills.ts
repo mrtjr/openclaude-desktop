@@ -339,6 +339,30 @@ export function renderActiveSkillsFull(activeSkills: Skill[], lang: string): str
   return `${header}\n\n${blocks}`
 }
 
+/** Busca + filtro + ordenação da lista de skills do painel (v2.172.0, extraído
+ *  do SkillManager p/ ser puro/testável). `search` casa nome+descrição; `filter`
+ *  por estado; `sort` 'default' preserva a ordem de entrada (estável). */
+export function filterAndSortSkills(
+  skills: Skill[],
+  search: string,
+  filter: 'all' | 'enabled' | 'disabled',
+  sort: 'default' | 'name' | 'recent' | 'used',
+): Skill[] {
+  const q = String(search || '').trim().toLowerCase()
+  const out = (skills || []).filter(s => {
+    if (filter === 'enabled' && !s.enabled) return false
+    if (filter === 'disabled' && s.enabled) return false
+    if (q && !(`${s.name} ${s.description}`.toLowerCase().includes(q))) return false
+    return true
+  })
+  return out.sort((a, b) => {
+    if (sort === 'name') return (a.name || '').localeCompare(b.name || '')
+    if (sort === 'recent') return (b.createdAt || 0) - (a.createdAt || 0)
+    if (sort === 'used') return (b.usageCount || 0) - (a.usageCount || 0)
+    return 0
+  })
+}
+
 /** Playbook das skills em vigor, p/ injetar no system prompt de um SUBAGENTE
  *  (v2.159.0): o worker herda as instruções das skills que o orquestrador segue
  *  (fixadas + carregadas via load_skill), já que ele NÃO recebe o prompt do

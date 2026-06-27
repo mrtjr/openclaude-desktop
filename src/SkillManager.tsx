@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { X, Plus, Edit3, Trash2, Check, Zap, ZapOff, Pin, PinOff, Download, Upload, BookOpen, FileText, AlertTriangle, Sparkles, Loader2, Github, Search } from 'lucide-react'
 import type { Skill } from './types/skill'
-import { BUILTIN_SKILLS } from './utils/skills'
+import { BUILTIN_SKILLS, filterAndSortSkills } from './utils/skills'
 import { isDangerousFact } from './utils/memoryInduction'
 import { generateId } from './utils/formatting'
 import { parseSkillMarkdown, toSkillMarkdown, sanitizeSkillName, lintSkill, buildImportedSkills, parseRepoSpec, parseSkillIndex, SKILL_REPO_PRESETS } from './utils/skillImport'
@@ -245,17 +245,7 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
   // não mudar o comportamento existente; demais são opt-in.
   const [skillSort, setSkillSort] = useState<'default' | 'name' | 'recent' | 'used'>('default')
   const q = skillSearch.trim().toLowerCase()
-  const visibleRegular = regularSkills.filter(s => {
-    if (skillFilter === 'enabled' && !s.enabled) return false
-    if (skillFilter === 'disabled' && s.enabled) return false
-    if (q && !(`${s.name} ${s.description}`.toLowerCase().includes(q))) return false
-    return true
-  }).sort((a, b) => {
-    if (skillSort === 'name') return (a.name || '').localeCompare(b.name || '')
-    if (skillSort === 'recent') return (b.createdAt || 0) - (a.createdAt || 0)
-    if (skillSort === 'used') return (b.usageCount || 0) - (a.usageCount || 0)
-    return 0 // 'default' — mantém a ordem original (sort estável)
-  })
+  const visibleRegular = filterAndSortSkills(regularSkills, skillSearch, skillFilter, skillSort)
   const visibleIds = new Set(visibleRegular.map(s => s.id))
   // Revalida o CORPO da skill aprendida antes de ativar (v2.115.0): o usuário
   // pode editar o rascunho em staging e injetar execução/injeção. Não valida
