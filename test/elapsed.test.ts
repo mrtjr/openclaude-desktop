@@ -15,6 +15,13 @@ describe('formatElapsed', () => {
     expect(formatElapsed(629)).toBe('10m 29s') // ~the digest p95
   })
 
+  it('switches to h + zero-padded m at one hour (v2.178.0)', () => {
+    expect(formatElapsed(3600)).toBe('1h 00m')
+    expect(formatElapsed(3600 + 15 * 60 + 30)).toBe('1h 15m') // segundos omitidos
+    expect(formatElapsed(2 * 3600 + 5 * 60)).toBe('2h 05m')
+    expect(formatElapsed(3599)).toBe('59m 59s') // ainda em minutos logo abaixo de 1h
+  })
+
   it('floors fractional seconds', () => {
     expect(formatElapsed(3.9)).toBe('3s')
     expect(formatElapsed(61.4)).toBe('1m 01s')
