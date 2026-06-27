@@ -242,6 +242,7 @@ export function lintSkill(s: SkillLike): string[] {
   const body = String(s?.instructions || '')
   if (!body.trim()) w.push('Sem corpo de instruções.')
   else {
+    if (body.trim().length < 40) w.push('Corpo muito curto — uma skill é um playbook acionável, não uma frase; descreva o passo a passo.')
     const lines = body.split('\n').length
     if (lines > 500) w.push(`Corpo com ${lines} linhas (> 500) — divida em arquivos de referência (progressive disclosure).`)
   }

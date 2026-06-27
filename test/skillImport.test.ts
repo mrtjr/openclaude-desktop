@@ -218,8 +218,13 @@ describe('buildImportedSkills (bulk)', () => {
 describe('lintSkill', () => {
   it('skill bem-formada → sem avisos', () => {
     expect(lintSkill({
-      name: 'code-review', description: 'Use ao revisar pull requests em busca de bugs', instructions: 'Passos…', triggers: ['review'],
+      name: 'code-review', description: 'Use ao revisar pull requests em busca de bugs',
+      instructions: 'Passo 1: leia o diff. Passo 2: procure bugs e riscos. Passo 3: relate com sugestões.', triggers: ['review'],
     })).toEqual([])
+  })
+
+  it('aponta corpo muito curto (skill fina, v2.174.0)', () => {
+    expect(lintSkill({ name: 'x', description: 'descrição clara o suficiente aqui', instructions: 'faz' }).join(' ')).toMatch(/muito curto/i)
   })
 
   it('aponta nome fora do padrão e reservado', () => {
