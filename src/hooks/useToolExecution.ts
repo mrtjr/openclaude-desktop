@@ -219,6 +219,11 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         if (skillName === 'claude' || skillName === 'anthropic') return `save_skill: nome reservado ("${skillName}"). Escolha outro.`
         const current = getAllSkillsRef.current?.() || skillsRef.current || []
         const existing = current.find((s) => sanitizeSkillName(s.name) === skillName)
+        // Guarda (v2.173.0): não deixar a IA sobrescrever uma skill de fábrica
+        // (builtin) por engano — clobber de skill core é regressão silenciosa.
+        if (existing?.isBuiltIn) {
+          return `save_skill: "${skillName}" é uma skill de fábrica (builtin) e não pode ser sobrescrita por aqui. Use outro nome (ex.: "${skillName}-custom") ou edite-a no painel de Skills.`
+        }
         const instrChunk = String(a.instructions ?? '')
         if (!existing && !instrChunk) {
           return 'save_skill: informe "instructions" (o corpo da skill). Para skills grandes, mande em pedaços com append:true.'
