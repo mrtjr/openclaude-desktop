@@ -18,7 +18,7 @@ import { paginateFileContent } from '../utils/readFile'
 import { formatClickResult, formatNavResult } from '../utils/browserResult'
 import { logInsight } from '../services/devInsights'
 import { findSkill, formatLoadSkillResult, suggestSkill, renderSkillsForWorker, renderSkillBody } from '../utils/skills'
-import { buildImportedSkills, parseRepoSpec, parseSkillIndex, parseSkillMarkdown, sanitizeSkillName, decideSkillImport } from '../utils/skillImport'
+import { buildImportedSkills, parseRepoSpec, parseSkillIndex, parseSkillMarkdown, sanitizeSkillName, decideSkillImport, lintSkill } from '../utils/skillImport'
 import { generateId } from '../utils/formatting'
 import { matchHooks } from '../utils/hooks'
 import { resolveSubagentPrompt } from '../constants/subagents'
@@ -256,7 +256,12 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         if (appendMode) {
           return `Instruções anexadas à skill "${skillName}" (agora ${total} chars). Para mais partes, save_skill com o mesmo name e append:true; quando terminar, finalize.`
         }
-        return `Skill "${skillName}" ${existing ? 'atualizada' : 'criada'} (${total} chars de instruções).${existing ? '' : ' Nasce DESATIVADA — o usuário a ativa no painel de Skills (não a ative você). Para instruções grandes, continue com append:true.'}`
+        // Feedback de qualidade (v2.170.0): nudge p/ a IA escrever skills melhores
+        // (descrição clara de QUANDO usar, corpo não gigante etc.). Só na escrita
+        // final (não em pedaços de append).
+        const lint = lintSkill(nextSkill)
+        const lintNote = lint.length ? `\nDica(s) de qualidade: ${lint.join(' ')}` : ''
+        return `Skill "${skillName}" ${existing ? 'atualizada' : 'criada'} (${total} chars de instruções).${existing ? '' : ' Nasce DESATIVADA — o usuário a ativa no painel de Skills (não a ative você). Para instruções grandes, continue com append:true.'}${lintNote}`
       }
       // install_skills (v2.155.0): baixa os SKILL.md de um repo do GitHub (sem
       // git clone) p/ a pasta padrão e os instala — "diretamente do chat". As
