@@ -28,4 +28,11 @@ describe('formatDroppedFile', () => {
     expect(out).toContain('[TRUNCADO: mostrando 3 de 6 caracteres do arquivo]')
     expect(out).not.toContain('abcd')
   })
+
+  it('usa cerca mais longa quando o arquivo contém ``` (v2.181.0)', () => {
+    const md = 'Veja:\n```js\nconsole.log(1)\n```\nfim'
+    const out = formatDroppedFile('README.md', md)
+    expect(out).toContain('````\n' + md + '\n````') // cerca de 4 crases envolve o conteúdo com 3
+    expect(out).toContain(md)                        // conteúdo preservado intacto
+  })
 })

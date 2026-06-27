@@ -16,5 +16,11 @@ export function formatDroppedFile(name: string, content: string, max = DROPPED_F
   const marker = content.length > max
     ? `\n[TRUNCADO: mostrando ${max} de ${content.length} caracteres do arquivo]`
     : ''
-  return `[Arquivo: ${name}]\n\`\`\`\n${body}${marker}\n\`\`\`\n`
+  const inner = `${body}${marker}`
+  // Cerca mais longa que QUALQUER sequência de crases no conteúdo (CommonMark):
+  // um arquivo que contém ``` (markdown/código) não fecha o bloco cedo demais
+  // — antes isso corrompia a renderização e confundia o modelo (v2.181.0).
+  const longestRun = (inner.match(/`+/g) || []).reduce((m, s) => Math.max(m, s.length), 0)
+  const fence = '`'.repeat(Math.max(3, longestRun + 1))
+  return `[Arquivo: ${name}]\n${fence}\n${inner}\n${fence}\n`
 }
