@@ -30,6 +30,11 @@ describe('deriveTitleFromMessage', () => {
     expect(t).not.toMatch(/palavr$/) // não corta no meio da palavra
   })
 
+  it('converte links markdown para o rótulo e remove URLs cruas (v2.175.0)', () => {
+    expect(deriveTitleFromMessage('Veja [a doc do Claude](https://docs.anthropic.com) agora')).toBe('Veja a doc do Claude agora')
+    expect(deriveTitleFromMessage('Acesse https://exemplo.com/path?x=1 para ver')).toBe('Acesse para ver')
+  })
+
   it('falls back for empty input', () => {
     expect(deriveTitleFromMessage('')).toBe('Nova conversa')
   })

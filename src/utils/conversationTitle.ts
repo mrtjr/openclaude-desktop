@@ -16,8 +16,10 @@ export function sanitizeTitle(raw: string, maxLen = 80): string {
  *  marcadores de markdown comuns do início. Usado quando o título é automático. */
 export function deriveTitleFromMessage(text: string, maxLen = 48): string {
   let t = String(text ?? '')
-    .replace(/```[\s\S]*?```/g, ' ')      // remove blocos de código
-    .replace(/[`*_>#]+/g, '')              // marcadores inline/headers
+    .replace(/```[\s\S]*?```/g, ' ')          // remove blocos de código
+    .replace(/!?\[([^\]]+)\]\([^)]*\)/g, '$1') // [rótulo](url) / ![alt](url) → rótulo (v2.175.0)
+    .replace(/\bhttps?:\/\/\S+/gi, ' ')        // URLs cruas → fora do título
+    .replace(/[`*_>#]+/g, '')                  // marcadores inline/headers
     .replace(/\s+/g, ' ')
     .trim()
   if (!t) return 'Nova conversa'
