@@ -2526,10 +2526,13 @@ export default function App() {
                       <div className="agent-badge"><Zap size={10} className="pulse" /><span>Agente: Passo {chat.agentSteps}</span></div>
                     )}
                     {chat.activeSkillNames.length > 0 && (
-                      <div className="agent-badge skill-badge" title={settings.language === 'en'
-                        ? `Skill(s) being followed this turn: ${chat.activeSkillNames.join(', ')}`
-                        : `Skill(s) sendo seguida(s) neste turno: ${chat.activeSkillNames.join(', ')}`}>
-                        <BookOpen size={10} /><span>{settings.language === 'en' ? 'Skill active' : 'Skill ativa'}: {chat.activeSkillNames.join(', ')}</span>
+                      <div className="agent-badge skill-badge" role="button" tabIndex={0} onClick={() => setShowSkills(true)}
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowSkills(true) } }}
+                        style={{ cursor: 'pointer' }}
+                        title={settings.language === 'en'
+                        ? `Skill(s) being followed this turn: ${chat.activeSkillNames.join(', ')} — click to manage`
+                        : `Skill(s) sendo seguida(s) neste turno: ${chat.activeSkillNames.join(', ')} — clique para gerenciar`}>
+                        <BookOpen size={10} /><span>{settings.language === 'en' ? 'Skill active' : 'Skill ativa'}: {chat.activeSkillNames.length > 2 ? `${chat.activeSkillNames.length}` : chat.activeSkillNames.join(', ')}</span>
                       </div>
                     )}
                     <button className="stop-agent-btn" onClick={chat.stopAgent} title="Interromper Agente">
