@@ -132,6 +132,13 @@ describe('getRelativeTime', () => {
     // Must NOT be "há 1 dias" — regression from v2.2.1
     expect(out).not.toMatch(/1 dias/)
   })
+
+  it('localiza em inglês quando lang=en (v2.183.0)', () => {
+    expect(getRelativeTime(new Date(), 'en')).toBe('now')
+    expect(getRelativeTime(new Date(Date.now() - 30 * 60000), 'en')).toBe('30 min ago')
+    const d2 = new Date(); d2.setDate(d2.getDate() - 2)
+    expect(getRelativeTime(d2, 'en')).toBe('2 days ago')
+  })
 })
 
 describe('sanitizeHtml — central, endurecido (v2.116.0)', () => {

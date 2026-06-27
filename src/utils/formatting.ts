@@ -128,18 +128,19 @@ export function isSmallModel(modelName: string): boolean {
   return size !== null && size <= 14
 }
 
-export function getRelativeTime(d: Date): string {
+export function getRelativeTime(d: Date, lang: 'pt' | 'en' = 'pt'): string {
+  const en = lang === 'en'
   const diff = Math.floor((new Date().getTime() - new Date(d).getTime()) / 60000)
-  if (diff < 1) return 'agora'
-  if (diff < 60) return `há ${diff} min`
-  if (diff < 1440) return `há ${Math.floor(diff / 60)} h`
-  if (diff < 2880) return 'ontem'
+  if (diff < 1) return en ? 'now' : 'agora'
+  if (diff < 60) return en ? `${diff} min ago` : `há ${diff} min`
+  if (diff < 1440) { const h = Math.floor(diff / 60); return en ? `${h} h ago` : `há ${h} h` }
+  if (diff < 2880) return en ? 'yesterday' : 'ontem'
   const days = Math.floor(diff / 1440)
-  if (diff < 10080) return `há ${days} dia${days > 1 ? 's' : ''}`
+  if (diff < 10080) return en ? `${days} day${days > 1 ? 's' : ''} ago` : `há ${days} dia${days > 1 ? 's' : ''}`
   const weeks = Math.floor(diff / 10080)
-  if (diff < 43200) return `há ${weeks} sem.`
+  if (diff < 43200) return en ? `${weeks} wk ago` : `há ${weeks} sem.`
   const months = Math.floor(diff / 43200)
-  return `há ${months} ${months === 1 ? 'mês' : 'meses'}`
+  return en ? `${months} mo ago` : `há ${months} ${months === 1 ? 'mês' : 'meses'}`
 }
 
 /** Sidebar bucket labels for ChatGPT/Claude-style temporal grouping. */

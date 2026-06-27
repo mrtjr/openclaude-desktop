@@ -2165,7 +2165,7 @@ export default function App() {
                       <Archive size={14} className="conv-icon" />
                       <div className="conv-info">
                         <span className="conv-title">{conv.title}</span>
-                        <span className="conv-date">{getRelativeTime(conv.createdAt)}</span>
+                        <span className="conv-date">{getRelativeTime(conv.createdAt, settings.language === 'en' ? 'en' : 'pt')}</span>
                       </div>
                       <div className="conv-actions">
                         <button className="conv-action-btn" onClick={(e) => { e.stopPropagation(); convManager.setArchived(conv.id, false) }} title={settings.language === 'en' ? 'Unarchive' : 'Desarquivar'}>
@@ -2215,7 +2215,7 @@ export default function App() {
                         {conv.title}
                       </span>
                     )}
-                    <span className="conv-date">{getRelativeTime(conv.createdAt)}</span>
+                    <span className="conv-date">{getRelativeTime(conv.createdAt, settings.language === 'en' ? 'en' : 'pt')}</span>
                   </div>
                   <div className="conv-actions">
                     <button className="conv-action-btn" onClick={(e) => { e.stopPropagation(); setRenameDraft(conv.title); setRenamingConvId(conv.id) }} title={settings.language === 'en' ? 'Rename' : 'Renomear'}>
