@@ -12,6 +12,10 @@ describe('firstLine', () => {
   it('trunca com reticências', () => {
     expect(firstLine('x'.repeat(200), 10)).toBe('xxxxxxxxx…')
   })
+  it('converte links markdown para o rótulo e tira URLs cruas (v2.182.0)', () => {
+    expect(firstLine('Veja [a doc](https://x.com) pronta')).toBe('Veja a doc pronta')
+    expect(firstLine('Pronto em https://exemplo.com/y agora')).toBe('Pronto em agora')
+  })
 })
 
 describe('buildRecap', () => {

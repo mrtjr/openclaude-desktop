@@ -9,8 +9,13 @@ interface RecapConv { title?: string; messages: RecapMessage[] }
 
 /** Primeira linha não-vazia de um texto, sem markdown pesado, truncada. */
 export function firstLine(text: string | undefined, max = 100): string {
-  const raw = String(text ?? '').replace(/```[\s\S]*?```/g, ' ').replace(/[#>*_`]/g, '')
-  const line = raw.split('\n').map((l) => l.trim()).find((l) => l.length > 0) || ''
+  const raw = String(text ?? '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/!?\[([^\]]+)\]\([^)]*\)/g, '$1') // [rótulo](url) → rótulo (v2.182.0)
+    .replace(/\bhttps?:\/\/\S+/gi, ' ')        // URLs cruas fora do recap
+    .replace(/[#>*_`]/g, '')
+  const line = (raw.split('\n').map((l) => l.trim()).find((l) => l.length > 0) || '')
+    .replace(/[ \t]{2,}/g, ' ') // colapsa espaços (ex.: resíduo da remoção de URL)
   return line.length > max ? line.slice(0, max - 1).trimEnd() + '…' : line
 }
 
