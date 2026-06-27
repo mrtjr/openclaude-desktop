@@ -4023,6 +4023,16 @@ button:focus-visible,
   50%      { transform: translateX(calc(-50% + 40px)) scale(1.05); }
 }
 @media (prefers-reduced-motion: reduce) {
+  /* a11y (v2.184.0): respeita "reduzir movimento" do SO em TODO o app — antes só
+     o orb ambiente era tratado, então spinners/pulsos/transições ainda rodavam.
+     Padrão recomendado: quase zera animações/transições. Só afeta quem PEDE a
+     opção no sistema; o visual padrão fica intacto (sem regressão). */
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
   .ambient-orb-core, .ambient-orb-halo { animation: none; opacity: 0.45; }
 }
 /* Make sure composer floats above the orb */
