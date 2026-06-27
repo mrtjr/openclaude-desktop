@@ -83,6 +83,11 @@
 ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
+/* Seleção de texto alinhada ao accent (v2.186.0): antes usava o azul padrão do
+   navegador, destoando do tema. Fundo translúcido = texto segue legível; só o
+   realce muda, sem qualquer impacto de layout. */
+::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif;
   background: var(--bg-primary);
