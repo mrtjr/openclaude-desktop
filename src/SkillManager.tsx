@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, Plus, Edit3, Trash2, Check, Zap, ZapOff, Pin, PinOff, Download, Upload, BookOpen, FileText, AlertTriangle, Sparkles, Loader2, Github } from 'lucide-react'
+import { X, Plus, Edit3, Trash2, Check, Zap, ZapOff, Pin, PinOff, Download, Upload, BookOpen, FileText, AlertTriangle, Sparkles, Loader2, Github, Search } from 'lucide-react'
 import type { Skill } from './types/skill'
 import { BUILTIN_SKILLS } from './utils/skills'
 import { isDangerousFact } from './utils/memoryInduction'
@@ -60,6 +60,21 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
   const resetBuiltin = (id: string) => {
     const b = BUILTIN_SKILLS.find(x => x.id === id)
     if (b) onSave(skills.map(s => s.id === id ? { ...b } : s))
+  }
+  // Ações em massa (v2.167.0): com a auto-criação agressiva a biblioteca cresce —
+  // ativar/desativar/excluir o conjunto filtrado de uma vez. Excluir só pega
+  // não-builtin. `targets` = ids visíveis no filtro atual.
+  const bulkSetEnabled = (ids: Set<string>, enabled: boolean) => {
+    if (!ids.size) return
+    onSave(skills.map(s => ids.has(s.id) ? { ...s, enabled } : s))
+  }
+  const bulkDelete = (ids: Set<string>) => {
+    const delible = skills.filter(s => ids.has(s.id) && !s.isBuiltIn)
+    if (!delible.length) return
+    if (confirm(pt ? `Excluir ${delible.length} skill(s) filtrada(s)? (builtins são preservadas)` : `Delete ${delible.length} filtered skill(s)? (builtins kept)`)) {
+      const del = new Set(delible.map(s => s.id))
+      onSave(skills.filter(s => !del.has(s.id)))
+    }
   }
 
   const handleExport = () => {
@@ -223,6 +238,17 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
   // as demais na lista normal.
   const stagingSkills = skills.filter(s => s.status === 'staging')
   const regularSkills = skills.filter(s => s.status !== 'staging')
+  // Busca + filtro (v2.167.0) — essencial com a biblioteca crescendo.
+  const [skillSearch, setSkillSearch] = useState('')
+  const [skillFilter, setSkillFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
+  const q = skillSearch.trim().toLowerCase()
+  const visibleRegular = regularSkills.filter(s => {
+    if (skillFilter === 'enabled' && !s.enabled) return false
+    if (skillFilter === 'disabled' && s.enabled) return false
+    if (q && !(`${s.name} ${s.description}`.toLowerCase().includes(q))) return false
+    return true
+  })
+  const visibleIds = new Set(visibleRegular.map(s => s.id))
   // Revalida o CORPO da skill aprendida antes de ativar (v2.115.0): o usuário
   // pode editar o rascunho em staging e injetar execução/injeção. Não valida
   // allowed/disallowedTools (esses nomeiam tools de propósito).
@@ -373,7 +399,43 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
               )}
 
               {skills.length === 0 && <p style={{ opacity: 0.6 }}>{pt ? 'Nenhuma skill.' : 'No skills.'}</p>}
-              {regularSkills.map(s => (
+
+              {/* Busca + filtro + ações em massa (v2.167.0) */}
+              {regularSkills.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ position: 'relative', flex: '1 1 200px', minWidth: 140 }}>
+                      <Search size={13} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
+                      <input value={skillSearch} onChange={e => setSkillSearch(e.target.value)}
+                        placeholder={pt ? 'Buscar por nome/descrição…' : 'Search name/description…'}
+                        style={{ width: '100%', padding: '6px 10px 6px 28px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-tertiary)', color: 'var(--text-primary)', fontSize: 12.5, fontFamily: 'inherit' }} />
+                    </div>
+                    {([
+                      ['all', pt ? 'Todas' : 'All', regularSkills.length],
+                      ['enabled', pt ? 'Ativas' : 'Enabled', regularSkills.filter(s => s.enabled).length],
+                      ['disabled', pt ? 'Desativadas' : 'Disabled', regularSkills.filter(s => !s.enabled).length],
+                    ] as const).map(([key, label, count]) => {
+                      const active = skillFilter === key
+                      return (
+                        <button key={key} className="settings-close" style={{ width: 'auto', padding: '4px 10px', fontSize: 11.5, opacity: active ? 1 : 0.6, border: active ? '1px solid var(--accent)' : undefined, color: active ? 'var(--accent)' : undefined }}
+                          onClick={() => setSkillFilter(key)}>{label} ({count})</button>
+                      )
+                    })}
+                  </div>
+                  {visibleRegular.length > 0 && (skillFilter !== 'all' || q) && (
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', fontSize: 11.5, opacity: 0.85 }}>
+                      <span>{pt ? `${visibleRegular.length} filtrada(s):` : `${visibleRegular.length} filtered:`}</span>
+                      <button className="settings-close" style={{ width: 'auto', padding: '3px 9px', fontSize: 11 }} onClick={() => bulkSetEnabled(visibleIds, true)}>{pt ? 'Ativar todas' : 'Enable all'}</button>
+                      <button className="settings-close" style={{ width: 'auto', padding: '3px 9px', fontSize: 11 }} onClick={() => bulkSetEnabled(visibleIds, false)}>{pt ? 'Desativar todas' : 'Disable all'}</button>
+                      <button className="settings-close" style={{ width: 'auto', padding: '3px 9px', fontSize: 11, color: '#ef4444' }} onClick={() => bulkDelete(visibleIds)}>{pt ? 'Excluir filtradas' : 'Delete filtered'}</button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {regularSkills.length > 0 && visibleRegular.length === 0 && (
+                <p style={{ opacity: 0.6, fontSize: 12.5 }}>{pt ? 'Nenhuma skill corresponde ao filtro.' : 'No skills match the filter.'}</p>
+              )}
+              {visibleRegular.map(s => (
                 <div key={s.id} style={row}>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: s.enabled ? 'var(--success, #46a758)' : 'rgba(127,127,127,0.4)' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
