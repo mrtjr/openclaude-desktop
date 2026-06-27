@@ -321,7 +321,7 @@ export default function SkillManager({ isOpen, onClose, skills, onSave, language
                   {ghBusy ? <Loader2 size={14} className="spin" /> : <Download size={14} />} {ghBusy ? (pt ? 'Instalando…' : 'Installing…') : (pt ? 'Instalar do GitHub' : 'Install from GitHub')}
                 </button>
                 {SKILL_REPO_PRESETS.map(r => (
-                  <button key={r} className="settings-close" style={{ width: 'auto', padding: '4px 9px', fontSize: 11, opacity: 0.85 }} onClick={() => setGhRepo(r)} disabled={ghBusy}>{r}</button>
+                  <button key={r} className="settings-close" title={pt ? `Usar ${r}` : `Use ${r}`} style={{ width: 'auto', padding: '4px 10px', fontSize: 11, border: '1px solid var(--border)', borderRadius: 999, background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }} onClick={() => setGhRepo(r)} disabled={ghBusy}>{r}</button>
                 ))}
               </div>
 
