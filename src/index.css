@@ -3271,6 +3271,18 @@ button:focus-visible,
   border-radius: 6px;
 }
 
+/* Mesma baseline p/ campos e links (v2.185.0): teclado ganha anel de foco
+   consistente. Sem mudar border-radius (não altera a forma); offset afasta o
+   anel. Só keyboard-focus, então mouse não vê diferença. Regras mais específicas
+   (ex.: .cmd-search-input) continuam vencendo. */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* ── Onboarding Modal ────────────────────────────────────────── */
 .onboarding-overlay {
   position: fixed; inset: 0;
