@@ -16,6 +16,8 @@ describe('classifyProviderError', () => {
     ["This model's maximum context length is 8192 tokens", 'context', false],
     ['API error 404: model not found', 'not_found', false],
     ['Stream travado: provider parou de enviar conteúdo por 150s (só keep-alive)', 'stall', true],
+    ['The response was blocked by our content filter', 'filtered', false],
+    ['Azure content management policy violation', 'filtered', false],
     ['some totally weird thing', 'unknown', false],
   ]
   it.each(cases)('classifies "%s" as %s (retryable=%s)', (msg, kind, retryable) => {

@@ -21,6 +21,7 @@ export type ProviderErrorKind =
   | 'not_found'
   | 'stall'
   | 'bad_response'
+  | 'filtered'
   | 'unknown'
 
 export interface ProviderErrorInfo {
@@ -99,6 +100,14 @@ export function classifyProviderError(raw: string | undefined): ProviderErrorInf
           'model_not_found', 'unknown model', 'no such model'))
     return { kind: 'not_found', retryable: false }
 
+  // Bloqueio por política de conteúdo/segurança do provedor (moderação). Vinha
+  // como dump cru em 'unknown'. Não-retryable (refazer igual seria bloqueado de
+  // novo). Substrings de alto sinal p/ não confundir com erro comum (v2.176.0).
+  if (has('content_filter', 'content filter', 'content_policy', 'content policy',
+          'content management policy', 'content_management_policy', 'responsible ai',
+          'responsibleaipolicy', 'output blocked', 'blocked by content', 'jailbreak'))
+    return { kind: 'filtered', retryable: false }
+
   return { kind: 'unknown', retryable: false }
 }
 
@@ -148,6 +157,10 @@ const MESSAGES: Record<ProviderErrorKind, { pt: string; en: string }> = {
   bad_response: {
     pt: 'O provedor retornou uma resposta inválida ou incompleta. Tente novamente — se persistir, troque de modelo/provedor.',
     en: 'The provider returned an invalid or incomplete response. Try again — if it persists, switch model/provider.',
+  },
+  filtered: {
+    pt: 'A resposta foi bloqueada pela política de conteúdo/segurança do provedor. Reformule o pedido ou troque de modelo/provedor.',
+    en: 'The response was blocked by the provider content/safety policy. Rephrase the request or switch model/provider.',
   },
   unknown: { pt: '', en: '' },
 }
