@@ -7,6 +7,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { Smartphone, Copy, Check, RefreshCw, Power } from 'lucide-react'
+import QRCode from 'qrcode'
 
 interface Addr { address: string; iface: string; tailscale: boolean }
 interface Status { running: boolean; port: number; token: string; addresses: Addr[] }
@@ -17,6 +18,7 @@ export function RemoteAccessPanel({ pt }: { pt: boolean }) {
   const [status, setStatus] = useState<Status>({ running: false, port: 0, token: '', addresses: [] })
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState<string>('')
+  const [qr, setQr] = useState<string>('')
 
   const refresh = useCallback(async () => {
     const s = await window.electron?.remoteServerStatus?.()
@@ -51,6 +53,16 @@ export function RemoteAccessPanel({ pt }: { pt: boolean }) {
   const urlFor = (a?: Addr) => a ? `http://${a.address}:${port}/?token=${status.token}` : ''
   const tailUrl = urlFor(tail)
   const lanUrl = urlFor(lan)
+  const preferredUrl = tailUrl || lanUrl
+
+  // Gera o QR da URL de pareamento preferida (Tailscale > LAN). O usuário escaneia
+  // com a câmera do iPhone — abre direto, sem digitar token.
+  useEffect(() => {
+    if (status.running && preferredUrl) {
+      QRCode.toDataURL(preferredUrl, { margin: 1, width: 240, color: { dark: '#0b0b0d', light: '#ffffff' } })
+        .then(setQr).catch(() => setQr(''))
+    } else { setQr('') }
+  }, [preferredUrl, status.running])
 
   const L = (p: string, e: string) => (pt ? p : e)
 
@@ -91,11 +103,22 @@ export function RemoteAccessPanel({ pt }: { pt: boolean }) {
                ' on the PC and the iPhone and sign in to the SAME account. That links them on a private network that works on mobile data.')}
           </div>
 
-          {/* Passo 2 — abrir a URL */}
+          {/* Passo 2 — escanear o QR ou abrir a URL */}
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
-              {L('Passo 2 — abra esta URL no Safari do iPhone:', 'Step 2 — open this URL in Safari on the iPhone:')}
+              {L('Passo 2 — aponte a câmera do iPhone para o QR (ou abra a URL):', 'Step 2 — point the iPhone camera at the QR (or open the URL):')}
             </div>
+            {qr && (
+              <div style={{ display: 'flex', justifyContent: 'center', margin: '6px 0 12px' }}>
+                <img
+                  src={qr}
+                  alt="QR de pareamento"
+                  width={200}
+                  height={200}
+                  style={{ borderRadius: 14, background: '#fff', padding: 10, boxShadow: '0 4px 18px rgba(0,0,0,.35)' }}
+                />
+              </div>
+            )}
             {tailUrl ? (
               <PairRow label="Tailscale" value={tailUrl} copied={copied === 'tail'} onCopy={() => copy(tailUrl, 'tail')} />
             ) : (

@@ -1,6 +1,6 @@
 {
   "name": "openclaude-desktop",
-  "version": "2.191.0",
+  "version": "2.192.0",
   "description": "Desktop GUI for OpenClaude",
   "author": "OpenClaude",
   "main": "electron/main.js",
@@ -51,6 +51,7 @@
     "@testing-library/react": "^16.3.2",
     "@types/katex": "^0.16.7",
     "@types/node": "^20.0.0",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",
@@ -78,6 +79,7 @@
     "marked": "^14.1.0",
     "marked-katex-extension": "^5.1.7",
     "pdf-parse": "^1.1.1",
+    "qrcode": "^1.5.4",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
   }

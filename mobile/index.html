@@ -4,8 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
   <title>OpenClaude</title>
-  <meta name="theme-color" content="#0f0f10" />
-  <!-- iOS standalone (vira "app" ao Adicionar à Tela de Início) -->
+  <meta name="theme-color" content="#0b0b0d" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="OpenClaude" />
@@ -22,8 +21,10 @@
         <span class="title">OpenClaude</span>
       </div>
       <div class="meta">
-        <span id="model" class="badge">—</span>
-        <button id="menuBtn" class="icon-btn" aria-label="Menu">⋯</button>
+        <button id="modelBtn" class="model-pill" aria-label="Trocar modelo">
+          <span id="model">—</span>
+          <svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>
+        </button>
       </div>
     </header>
 
@@ -31,26 +32,42 @@
       <div id="empty" class="empty">
         <div class="empty-logo">◈</div>
         <p class="empty-title">Conectado ao seu desktop</p>
-        <p class="empty-sub">Converse com a IA local e a principal do seu PC, de qualquer rede.</p>
+        <p class="empty-sub">Converse com a IA local e a principal do seu PC — de qualquer rede.</p>
       </div>
     </main>
 
     <div id="typing" class="typing hidden"><span></span><span></span><span></span></div>
 
     <form id="composer" class="composer">
-      <textarea id="input" rows="1" placeholder="Escreva uma mensagem…" autocomplete="off"></textarea>
-      <button id="send" class="send" type="submit" aria-label="Enviar">
-        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M3.4 20.4 21 12 3.4 3.6 3.39 10l12.6 2-12.6 2z"/></svg>
-      </button>
+      <div class="composer-box">
+        <textarea id="input" rows="1" placeholder="Mensagem…" autocomplete="off" enterkeyhint="send"></textarea>
+        <button id="send" class="send" type="submit" aria-label="Enviar">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M3.4 20.4 21 12 3.4 3.6 3.39 10l12.6 2-12.6 2z"/></svg>
+        </button>
+      </div>
     </form>
   </div>
 
-  <!-- Tela de pareamento (quando não há token válido) -->
+  <!-- Bottom sheet: modelo + ações -->
+  <div id="sheet" class="sheet hidden">
+    <div class="sheet-backdrop"></div>
+    <div class="sheet-card">
+      <div class="sheet-handle"></div>
+      <div class="sheet-section-title">Modelo</div>
+      <div id="targets" class="targets"></div>
+      <div class="sheet-actions">
+        <button id="clearBtn" class="sheet-btn">Limpar conversa</button>
+        <button id="repairBtn" class="sheet-btn danger">Reparear (esquecer este PC)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tela de pareamento -->
   <div id="pair" class="pair hidden">
     <div class="pair-card">
       <div class="empty-logo">◈</div>
       <h1>Parear com o desktop</h1>
-      <p>No app do PC, abra <b>Conectar celular</b> e escaneie o QR ou cole o código de pareamento aqui.</p>
+      <p>No app do PC, abra <b>Configurações → Celular</b> e escaneie o QR. Ou cole o código de pareamento aqui.</p>
       <input id="pairToken" type="text" inputmode="text" placeholder="Cole o código de pareamento" autocomplete="off" />
       <button id="pairBtn" class="primary">Conectar</button>
       <p id="pairErr" class="pair-err"></p>

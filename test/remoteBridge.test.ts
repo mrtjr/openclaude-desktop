@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resolveRemoteConfig, defaultModelFor } from '../src/utils/remoteBridge'
+import { resolveRemoteConfig, defaultModelFor, buildRemoteTargets } from '../src/utils/remoteBridge'
 import type { AppSettings } from '../src/types'
 
 // Settings mínimo só com os campos que o helper lê.
@@ -65,5 +65,26 @@ describe('resolveRemoteConfig', () => {
     const custom = resolveRemoteConfig(S({ provider: 'custom', customApiKey: 'c', customModel: 'cm', customBaseUrl: 'https://x/v1' }), { messages: [] })
     expect(custom.customBaseUrl).toBe('https://x/v1')
     expect(custom.modalHostname).toBeUndefined()
+  })
+})
+
+describe('buildRemoteTargets', () => {
+  it('offers the main provider AND the local Ollama when main is a cloud provider', () => {
+    const t = buildRemoteTargets(S({ provider: 'openai', openaiModel: 'gpt-4o' }), 'qwen-local')
+    expect(t).toHaveLength(2)
+    expect(t[0]).toMatchObject({ id: 'main', provider: 'openai', model: 'gpt-4o' })
+    expect(t[1]).toMatchObject({ id: 'local', provider: 'ollama', model: 'qwen-local' })
+    expect(t[0].label).toContain('Principal')
+    expect(t[1].label).toContain('Local')
+  })
+  it('offers only one target when the main provider is already Ollama', () => {
+    const t = buildRemoteTargets(S({ provider: 'ollama' }), 'qwen-local')
+    expect(t).toHaveLength(1)
+    expect(t[0]).toMatchObject({ id: 'main', provider: 'ollama', model: 'qwen-local' })
+  })
+  it('omits the local target when no ollama model is selected', () => {
+    const t = buildRemoteTargets(S({ provider: 'anthropic', anthropicModel: 'claude-x' }), '')
+    expect(t).toHaveLength(1)
+    expect(t[0].provider).toBe('anthropic')
   })
 })

@@ -3376,7 +3376,7 @@ if (!gotSingleInstanceLock) {
 const REMOTE_TOKEN_PATH = path.join(app.getPath('userData'), 'remote-token.txt')
 let remoteServer = null
 let remoteToken = ''
-let remoteConfig = { name: 'OpenClaude', version: app.getVersion(), provider: null, model: null, models: [] }
+let remoteConfig = { name: 'OpenClaude', version: app.getVersion(), provider: null, model: null, models: [], targets: [] }
 const remotePending = new Map() // id -> { resolve, timer }
 let remoteSeq = 0
 
@@ -3415,7 +3415,7 @@ function getRemoteServer() {
     remoteServer = createRemoteServer({
       staticDir: path.join(__dirname, '..', 'mobile'),
       getToken: () => remoteToken,
-      getInfo: () => ({ name: remoteConfig.name, version: remoteConfig.version, provider: remoteConfig.provider, model: remoteConfig.model, models: remoteConfig.models }),
+      getInfo: () => ({ name: remoteConfig.name, version: remoteConfig.version, provider: remoteConfig.provider, model: remoteConfig.model, models: remoteConfig.models, targets: remoteConfig.targets }),
       chatHandler: remoteChatHandler,
     })
   }
@@ -3462,6 +3462,14 @@ ipcMain.handle('remote-server-config', async (_e, cfg = {}) => {
     provider: cfg.provider != null ? String(cfg.provider) : remoteConfig.provider,
     model: cfg.model != null ? String(cfg.model) : remoteConfig.model,
     models: Array.isArray(cfg.models) ? cfg.models.slice(0, 100).map(String) : remoteConfig.models,
+    // Alvos selecionáveis no celular (IA principal + local). Cada um:
+    // { id, label, provider, model }. Sanitizado p/ não confiar cegamente.
+    targets: Array.isArray(cfg.targets)
+      ? cfg.targets.slice(0, 30).map((t) => ({
+          id: String(t?.id ?? ''), label: String(t?.label ?? ''),
+          provider: String(t?.provider ?? ''), model: String(t?.model ?? ''),
+        })).filter((t) => t.label && t.provider)
+      : remoteConfig.targets,
   }
   return { ok: true }
 })

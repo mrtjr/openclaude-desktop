@@ -43,6 +43,24 @@ export function defaultModelFor(settings: AppSettings, provider: string, fallbac
   }
 }
 
+export interface RemoteTarget { id: string; label: string; provider: string; model: string }
+
+/** Alvos que o celular pode escolher: a IA PRINCIPAL (provider configurado) e,
+ *  se a principal não for local, também a IA LOCAL (Ollama). É o que alimenta o
+ *  seletor de modelo no app — exatamente "IA local + principal". */
+export function buildRemoteTargets(settings: AppSettings, selectedModel: string): RemoteTarget[] {
+  const provider = settings.provider || 'ollama'
+  const model = provider === 'ollama' ? selectedModel : defaultModelFor(settings, provider, selectedModel)
+  const provLabel = provider === 'ollama' ? 'Ollama' : provider
+  const targets: RemoteTarget[] = [
+    { id: 'main', label: `Principal · ${provLabel}: ${model || '—'}`, provider, model: model || '' },
+  ]
+  if (provider !== 'ollama' && selectedModel) {
+    targets.push({ id: 'local', label: `Local · Ollama: ${selectedModel}`, provider: 'ollama', model: selectedModel })
+  }
+  return targets
+}
+
 /** Resolve a config de provider para um pedido do celular. O payload pode
  *  sobrescrever provider/model; a CHAVE vem sempre do settings local. */
 export function resolveRemoteConfig(

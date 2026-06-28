@@ -12,7 +12,7 @@
 
 import { useEffect, useRef } from 'react'
 import type { AppSettings } from '../types'
-import { resolveRemoteConfig } from '../utils/remoteBridge'
+import { resolveRemoteConfig, buildRemoteTargets } from '../utils/remoteBridge'
 import { extractChatText } from '../utils/compareModels'
 import { getDisplayModel } from './useProviderConfig'
 
@@ -22,11 +22,12 @@ export function useRemoteBridge(settings: AppSettings, selectedModel: string) {
   const selectedModelRef = useRef(selectedModel)
   selectedModelRef.current = selectedModel
 
-  // (1) Espelha a config atual p/ o /api/info do celular sempre que muda.
+  // (1) Espelha a config atual + alvos selecionáveis p/ o /api/info do celular.
   useEffect(() => {
     const provider = settings.provider || 'ollama'
     const model = getDisplayModel(settings, selectedModel)
-    window.electron?.remoteServerConfig?.({ provider, model, models: model ? [model] : [] })
+    const targets = buildRemoteTargets(settings, selectedModel)
+    window.electron?.remoteServerConfig?.({ provider, model, models: model ? [model] : [], targets })
   }, [settings, selectedModel])
 
   // (2) Registra o handler de pedidos do celular (uma vez; lê estado via refs).
