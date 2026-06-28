@@ -155,6 +155,8 @@ interface Window {
     remoteServerConfig?: (cfg: { provider?: string; model?: string; models?: string[]; targets?: { id: string; label: string; provider: string; model: string }[] }) => Promise<{ ok: boolean }>
     remoteServerRegenToken?: () => Promise<{ token: string }>
     onRemoteChatRequest?: (callback: (req: { id: string; messages: { role: string; content: string }[]; model?: string; provider?: string }) => void) => () => void
-    remoteChatReply?: (data: { id: string; text?: string; error?: string; model?: string }) => void
+    remoteChatChunk?: (data: { id: string; delta: string }) => void
+    remoteChatDone?: (data: { id: string; text: string; model?: string }) => void
+    remoteChatError?: (data: { id: string; error: string }) => void
   }
 }

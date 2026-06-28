@@ -3370,7 +3370,7 @@ if (!gotSingleInstanceLock) {
 // CHAVES de API e o motor de chat vivem no RENDERER (provider-chat recebe apiKey
 // como parâmetro; settings no localStorage). Por isso o chat é processado por
 // PONTE: o servidor manda 'remote-chat-request' p/ a janela, o renderer roda com
-// a config já existente do usuário e responde 'remote-chat-reply'. Exposição à
+// a config já existente do usuário e faz streaming de volta (chunk/done). Exposição à
 // internet via Tailscale (`tailscale serve`), nunca port-forward; token aleatório
 // protege toda rota /api. Ver electron/remote-server.js (helpers testados).
 const REMOTE_TOKEN_PATH = path.join(app.getPath('userData'), 'remote-token.txt')
@@ -3389,24 +3389,36 @@ function loadOrCreateRemoteToken() {
 
 // A ponte: encaminha o pedido do celular ao renderer e aguarda a resposta (com
 // timeout — agente/modelo lento não pode pendurar a conexão do celular p/ sempre).
-function remoteChatHandler(payload) {
-  return new Promise((resolve) => {
-    if (!win || win.isDestroyed()) return resolve({ error: 'O app desktop não está aberto no PC.' })
-    const id = `rc${++remoteSeq}`
-    const timer = setTimeout(() => {
-      if (remotePending.has(id)) { remotePending.delete(id); resolve({ error: 'Tempo limite: o desktop não respondeu.' }) }
-    }, 180000)
-    remotePending.set(id, { resolve, timer })
-    try { win.webContents.send('remote-chat-request', { id, ...payload }) }
-    catch (e) { clearTimeout(timer); remotePending.delete(id); resolve({ error: 'Falha ao falar com o desktop: ' + (e.message || e) }) }
-  })
+// Streaming (v2.193.0): o servidor passa callbacks {onChunk,onDone,onError}. A
+// ponte encaminha o pedido ao renderer e repassa os pedaços (remote-chat-chunk)
+// conforme chegam, fechando em remote-chat-done/erro. Timeout só p/ o caso de o
+// renderer nunca responder; cada chunk recebido renova implicitamente a vida da
+// conexão no servidor (heartbeat).
+function remoteChatHandler(payload, cb) {
+  if (!win || win.isDestroyed()) return cb.onError('O app desktop não está aberto no PC.')
+  const id = `rc${++remoteSeq}`
+  const timer = setTimeout(() => {
+    if (remotePending.has(id)) { remotePending.delete(id); cb.onError('Tempo limite: o desktop não respondeu.') }
+  }, 300000)
+  remotePending.set(id, { cb, timer })
+  try { win.webContents.send('remote-chat-request', { id, ...payload }) }
+  catch (e) { clearTimeout(timer); remotePending.delete(id); cb.onError('Falha ao falar com o desktop: ' + (e.message || e)) }
 }
-ipcMain.on('remote-chat-reply', (_e, payload = {}) => {
-  const { id, text, error, model } = payload
-  const p = remotePending.get(id)
+ipcMain.on('remote-chat-chunk', (_e, payload = {}) => {
+  const p = remotePending.get(payload.id)
+  if (p) { try { p.cb.onChunk(payload.delta) } catch { /* */ } }
+})
+ipcMain.on('remote-chat-done', (_e, payload = {}) => {
+  const p = remotePending.get(payload.id)
   if (!p) return
-  clearTimeout(p.timer); remotePending.delete(id)
-  p.resolve({ text, error, model })
+  clearTimeout(p.timer); remotePending.delete(payload.id)
+  try { p.cb.onDone(payload.text, payload.model) } catch { /* */ }
+})
+ipcMain.on('remote-chat-error', (_e, payload = {}) => {
+  const p = remotePending.get(payload.id)
+  if (!p) return
+  clearTimeout(p.timer); remotePending.delete(payload.id)
+  try { p.cb.onError(payload.error) } catch { /* */ }
 })
 
 function getRemoteServer() {

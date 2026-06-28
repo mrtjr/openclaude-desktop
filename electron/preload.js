@@ -232,7 +232,7 @@ contextBridge.exposeInMainWorld('electron', {
   // ─── Servidor remoto p/ o app do celular (PWA) — v2.191.0 ───────────────
   // Liga/desliga o servidor HTTP que serve a PWA e faz a ponte do chat. As
   // chaves/motor ficam aqui no renderer; o main encaminha os pedidos do celular
-  // via 'remote-chat-request' e o renderer responde com remoteChatReply.
+  // via 'remote-chat-request' e o renderer faz streaming de volta (chunk/done/error).
   remoteServerStart: (params) => ipcRenderer.invoke('remote-server-start', params || {}),
   remoteServerStop: () => ipcRenderer.invoke('remote-server-stop'),
   remoteServerStatus: () => ipcRenderer.invoke('remote-server-status'),
@@ -243,5 +243,8 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.on('remote-chat-request', handler)
     return () => ipcRenderer.removeListener('remote-chat-request', handler)
   },
-  remoteChatReply: (data) => ipcRenderer.send('remote-chat-reply', data),
+  // Streaming (v2.193.0): o renderer envia os pedaços conforme a IA escreve.
+  remoteChatChunk: (data) => ipcRenderer.send('remote-chat-chunk', data),
+  remoteChatDone: (data) => ipcRenderer.send('remote-chat-done', data),
+  remoteChatError: (data) => ipcRenderer.send('remote-chat-error', data),
 })

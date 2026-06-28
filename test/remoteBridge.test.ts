@@ -69,22 +69,28 @@ describe('resolveRemoteConfig', () => {
 })
 
 describe('buildRemoteTargets', () => {
-  it('offers the main provider AND the local Ollama when main is a cloud provider', () => {
+  it('puts the ACTIVE desktop provider first (the default) plus the local Ollama', () => {
     const t = buildRemoteTargets(S({ provider: 'openai', openaiModel: 'gpt-4o' }), 'qwen-local')
-    expect(t).toHaveLength(2)
     expect(t[0]).toMatchObject({ id: 'main', provider: 'openai', model: 'gpt-4o' })
-    expect(t[1]).toMatchObject({ id: 'local', provider: 'ollama', model: 'qwen-local' })
-    expect(t[0].label).toContain('Principal')
-    expect(t[1].label).toContain('Local')
+    expect(t.some((x) => x.provider === 'ollama' && x.model === 'qwen-local')).toBe(true)
   })
-  it('offers only one target when the main provider is already Ollama', () => {
+  it('ALWAYS offers every cloud provider that has a key — so Modal stays available even when Ollama is active', () => {
+    const t = buildRemoteTargets(S({ provider: 'ollama', modalApiKey: 'm', modalModel: 'glm' }), 'qwen3:8b')
+    // ollama is active (default), but modal must still be offered
+    expect(t[0]).toMatchObject({ provider: 'ollama', model: 'qwen3:8b' })
+    expect(t.some((x) => x.provider === 'modal' && x.model === 'glm')).toBe(true)
+  })
+  it('does not offer a cloud provider without a key', () => {
+    const t = buildRemoteTargets(S({ provider: 'ollama', openaiModel: 'gpt-4o' }), 'qwen3:8b')
+    expect(t.some((x) => x.provider === 'openai')).toBe(false)
+  })
+  it('dedupes when the active provider is also a keyed cloud provider', () => {
+    const t = buildRemoteTargets(S({ provider: 'modal', modalApiKey: 'm', modalModel: 'glm' }), '')
+    expect(t.filter((x) => x.provider === 'modal' && x.model === 'glm')).toHaveLength(1)
+  })
+  it('falls back to a single ollama target when nothing else is configured', () => {
     const t = buildRemoteTargets(S({ provider: 'ollama' }), 'qwen-local')
     expect(t).toHaveLength(1)
-    expect(t[0]).toMatchObject({ id: 'main', provider: 'ollama', model: 'qwen-local' })
-  })
-  it('omits the local target when no ollama model is selected', () => {
-    const t = buildRemoteTargets(S({ provider: 'anthropic', anthropicModel: 'claude-x' }), '')
-    expect(t).toHaveLength(1)
-    expect(t[0].provider).toBe('anthropic')
+    expect(t[0]).toMatchObject({ provider: 'ollama', model: 'qwen-local' })
   })
 })

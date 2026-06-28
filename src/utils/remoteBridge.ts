@@ -45,20 +45,34 @@ export function defaultModelFor(settings: AppSettings, provider: string, fallbac
 
 export interface RemoteTarget { id: string; label: string; provider: string; model: string }
 
-/** Alvos que o celular pode escolher: a IA PRINCIPAL (provider configurado) e,
- *  se a principal não for local, também a IA LOCAL (Ollama). É o que alimenta o
- *  seletor de modelo no app — exatamente "IA local + principal". */
+const CLOUD_PROVIDERS = ['modal', 'anthropic', 'openai', 'gemini', 'openrouter', 'custom'] as const
+
+/** Alvos que o celular pode escolher. Sempre oferece TODOS os provedores
+ *  configurados (a IA local Ollama + cada provedor de nuvem com chave, ex. Modal)
+ *  — assim o usuário troca livremente no celular. O provedor ATIVO no desktop vem
+ *  primeiro (vira o padrão). A chave nunca vai pro celular; fica no desktop. */
 export function buildRemoteTargets(settings: AppSettings, selectedModel: string): RemoteTarget[] {
-  const provider = settings.provider || 'ollama'
-  const model = provider === 'ollama' ? selectedModel : defaultModelFor(settings, provider, selectedModel)
-  const provLabel = provider === 'ollama' ? 'Ollama' : provider
-  const targets: RemoteTarget[] = [
-    { id: 'main', label: `Principal · ${provLabel}: ${model || '—'}`, provider, model: model || '' },
-  ]
-  if (provider !== 'ollama' && selectedModel) {
-    targets.push({ id: 'local', label: `Local · Ollama: ${selectedModel}`, provider: 'ollama', model: selectedModel })
+  const targets: RemoteTarget[] = []
+  const seen = new Set<string>()
+  const labelFor = (provider: string, model: string) =>
+    provider === 'ollama' ? `Ollama (local): ${model}` : `${provider}: ${model}`
+  const add = (id: string, provider: string, model: string) => {
+    if (!model) return
+    const sig = `${provider}:${model}`
+    if (seen.has(sig)) return
+    seen.add(sig)
+    targets.push({ id, label: labelFor(provider, model), provider, model })
   }
-  return targets
+  // 1) provedor ATIVO no desktop primeiro → é o padrão no celular.
+  const cur = settings.provider || 'ollama'
+  add('main', cur, cur === 'ollama' ? selectedModel : defaultModelFor(settings, cur, selectedModel))
+  // 2) IA local (Ollama) com o modelo selecionado no desktop.
+  if (selectedModel) add('ollama', 'ollama', selectedModel)
+  // 3) cada provedor de nuvem que TEM chave configurada (ex.: Modal/GLM).
+  for (const p of CLOUD_PROVIDERS) {
+    if (providerApiKey(settings as any, p)) add(p, p, defaultModelFor(settings, p, ''))
+  }
+  return targets.length ? targets : [{ id: 'main', label: 'Ollama (local)', provider: 'ollama', model: selectedModel || '' }]
 }
 
 /** Resolve a config de provider para um pedido do celular. O payload pode

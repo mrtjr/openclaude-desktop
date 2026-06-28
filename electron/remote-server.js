@@ -186,13 +186,31 @@ function createRemoteServer(opts) {
         try { raw = await readBody(req, maxBody) } catch (e) { return sendJson(res, 413, { error: e.message || 'corpo muito grande' }) }
         const parsed = parseChatBody(raw)
         if (!parsed.ok) return sendJson(res, 400, { error: parsed.error })
+        // ─── SSE: streaming ao vivo (v2.193.0) ───────────────────────────────
+        // Os tokens chegam conforme a IA escreve. Um heartbeat a cada 10s mantém
+        // a conexão VIVA para respostas longas/lentas (ex.: GLM) — sem isso o iOS
+        // e o túnel cortam a espera ("context canceled"). chatHandler agora recebe
+        // callbacks {onChunk,onDone,onError} em vez de retornar texto.
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        })
+        let closed = false
+        const hb = setInterval(() => { if (!closed) { try { res.write(': hb\n\n') } catch { /* */ } } }, 10000)
+        const end = () => { if (closed) return; closed = true; clearInterval(hb); try { res.end() } catch { /* */ } }
+        const sse = (obj) => { if (!closed) { try { res.write(`data: ${JSON.stringify(obj)}\n\n`) } catch { /* */ } } }
+        // Cliente desligou (fechou o app/perdeu rede) → para os heartbeats e avisa.
+        res.on('close', () => { if (!closed) { closed = true; clearInterval(hb); try { opts.onClientGone && opts.onClientGone(parsed.value) } catch { /* */ } } })
         try {
-          const r = await opts.chatHandler(parsed.value)
-          if (r && r.error) return sendJson(res, 502, { error: r.error })
-          return sendJson(res, 200, { text: (r && r.text) || '', model: r && r.model })
-        } catch (e) {
-          return sendJson(res, 500, { error: (e && e.message) || 'erro interno' })
-        }
+          opts.chatHandler(parsed.value, {
+            onChunk: (delta) => { if (delta) sse({ delta: String(delta) }) },
+            onDone: (text, model) => { sse({ done: true, text: text || '', model }); end() },
+            onError: (error) => { sse({ error: String(error || 'erro') }); end() },
+          })
+        } catch (e) { sse({ error: (e && e.message) || 'erro interno' }); end() }
+        return
       }
       return sendJson(res, 404, { error: 'rota não encontrada' })
     }
