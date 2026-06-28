@@ -21,6 +21,7 @@ const { planScreenshot, SHOT_JPEG_QUALITY } = require('./screenshot-util')
 const { initAutoUpdater, quitAndInstall } = require('./updater')
 const { dedupeResults, formatResults, cacheKey, isFresh } = require('./web-search-util')
 const { htmlToText, extractTitle, looksThin } = require('./web-fetch-util')
+const { createRemoteServer, generateToken } = require('./remote-server')
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -3364,6 +3365,113 @@ if (!gotSingleInstanceLock) {
   })
 }
 
+// ─── Servidor remoto p/ o app do celular (PWA) — v2.191.0 ───────────────────
+// Roda aqui no MAIN: transporte HTTP + autenticação + serve a PWA (mobile/). As
+// CHAVES de API e o motor de chat vivem no RENDERER (provider-chat recebe apiKey
+// como parâmetro; settings no localStorage). Por isso o chat é processado por
+// PONTE: o servidor manda 'remote-chat-request' p/ a janela, o renderer roda com
+// a config já existente do usuário e responde 'remote-chat-reply'. Exposição à
+// internet via Tailscale (`tailscale serve`), nunca port-forward; token aleatório
+// protege toda rota /api. Ver electron/remote-server.js (helpers testados).
+const REMOTE_TOKEN_PATH = path.join(app.getPath('userData'), 'remote-token.txt')
+let remoteServer = null
+let remoteToken = ''
+let remoteConfig = { name: 'OpenClaude', version: app.getVersion(), provider: null, model: null, models: [] }
+const remotePending = new Map() // id -> { resolve, timer }
+let remoteSeq = 0
+
+function loadOrCreateRemoteToken() {
+  try { const t = fs.readFileSync(REMOTE_TOKEN_PATH, 'utf8').trim(); if (t) return t } catch { /* ainda não existe */ }
+  const t = generateToken()
+  try { fs.writeFileSync(REMOTE_TOKEN_PATH, t, { encoding: 'utf8', mode: 0o600 }) } catch (e) { console.error('[remote] persistir token:', e) }
+  return t
+}
+
+// A ponte: encaminha o pedido do celular ao renderer e aguarda a resposta (com
+// timeout — agente/modelo lento não pode pendurar a conexão do celular p/ sempre).
+function remoteChatHandler(payload) {
+  return new Promise((resolve) => {
+    if (!win || win.isDestroyed()) return resolve({ error: 'O app desktop não está aberto no PC.' })
+    const id = `rc${++remoteSeq}`
+    const timer = setTimeout(() => {
+      if (remotePending.has(id)) { remotePending.delete(id); resolve({ error: 'Tempo limite: o desktop não respondeu.' }) }
+    }, 180000)
+    remotePending.set(id, { resolve, timer })
+    try { win.webContents.send('remote-chat-request', { id, ...payload }) }
+    catch (e) { clearTimeout(timer); remotePending.delete(id); resolve({ error: 'Falha ao falar com o desktop: ' + (e.message || e) }) }
+  })
+}
+ipcMain.on('remote-chat-reply', (_e, payload = {}) => {
+  const { id, text, error, model } = payload
+  const p = remotePending.get(id)
+  if (!p) return
+  clearTimeout(p.timer); remotePending.delete(id)
+  p.resolve({ text, error, model })
+})
+
+function getRemoteServer() {
+  if (!remoteServer) {
+    if (!remoteToken) remoteToken = loadOrCreateRemoteToken()
+    remoteServer = createRemoteServer({
+      staticDir: path.join(__dirname, '..', 'mobile'),
+      getToken: () => remoteToken,
+      getInfo: () => ({ name: remoteConfig.name, version: remoteConfig.version, provider: remoteConfig.provider, model: remoteConfig.model, models: remoteConfig.models }),
+      chatHandler: remoteChatHandler,
+    })
+  }
+  return remoteServer
+}
+
+// IPs locais (LAN + Tailscale) p/ a UI montar as URLs de pareamento. Tailscale
+// usa a faixa 100.64/10 (CGNAT) — marcamos p/ recomendar essa na UI.
+function localAddresses() {
+  const out = []
+  const ifaces = os.networkInterfaces()
+  for (const name of Object.keys(ifaces)) {
+    for (const ni of ifaces[name] || []) {
+      if (ni.family === 'IPv4' && !ni.internal) {
+        out.push({ address: ni.address, iface: name, tailscale: /^100\./.test(ni.address) || /tailscale/i.test(name) })
+      }
+    }
+  }
+  return out
+}
+
+ipcMain.handle('remote-server-start', async (_e, { port } = {}) => {
+  try {
+    const srv = getRemoteServer()
+    const r = await srv.start(port || 8765)
+    return { ok: true, port: r.port, token: remoteToken, addresses: localAddresses() }
+  } catch (e) { return { error: (e && e.message) || String(e) } }
+})
+ipcMain.handle('remote-server-stop', async () => {
+  try { if (remoteServer) await remoteServer.stop(); return { ok: true } }
+  catch (e) { return { error: (e && e.message) || String(e) } }
+})
+ipcMain.handle('remote-server-status', async () => ({
+  running: !!(remoteServer && remoteServer.isRunning()),
+  port: remoteServer ? remoteServer.port() : 0,
+  token: remoteToken || '',
+  addresses: localAddresses(),
+}))
+// O renderer espelha aqui o provider/modelo/lista p/ o /api/info do celular.
+ipcMain.handle('remote-server-config', async (_e, cfg = {}) => {
+  remoteConfig = {
+    name: 'OpenClaude',
+    version: app.getVersion(),
+    provider: cfg.provider != null ? String(cfg.provider) : remoteConfig.provider,
+    model: cfg.model != null ? String(cfg.model) : remoteConfig.model,
+    models: Array.isArray(cfg.models) ? cfg.models.slice(0, 100).map(String) : remoteConfig.models,
+  }
+  return { ok: true }
+})
+// Revoga o pareamento atual: gera um token novo (os celulares antigos param).
+ipcMain.handle('remote-server-regen-token', async () => {
+  remoteToken = generateToken()
+  try { fs.writeFileSync(REMOTE_TOKEN_PATH, remoteToken, { encoding: 'utf8', mode: 0o600 }) } catch (e) { console.error('[remote] regen token:', e) }
+  return { token: remoteToken }
+})
+
 app.whenReady().then(() => {
   // The duplicate instance is on its way out — never create a window or touch
   // the data files from it.
@@ -3401,4 +3509,6 @@ app.on('before-quit', () => {
     if (!bw.isDestroyed()) bw.close()
   }
   browserTabs.clear()
+  // Para o servidor remoto (libera a porta; celulares perdem a conexão).
+  if (remoteServer) { try { remoteServer.stop() } catch { /* best-effort */ } }
 })

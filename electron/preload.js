@@ -228,4 +228,20 @@ contextBridge.exposeInMainWorld('electron', {
   // window forward when the user clicks the notification.
   showNotification: (opts) => ipcRenderer.invoke('show-notification', opts),
   isWindowFocused: () => ipcRenderer.invoke('is-window-focused'),
+
+  // ─── Servidor remoto p/ o app do celular (PWA) — v2.191.0 ───────────────
+  // Liga/desliga o servidor HTTP que serve a PWA e faz a ponte do chat. As
+  // chaves/motor ficam aqui no renderer; o main encaminha os pedidos do celular
+  // via 'remote-chat-request' e o renderer responde com remoteChatReply.
+  remoteServerStart: (params) => ipcRenderer.invoke('remote-server-start', params || {}),
+  remoteServerStop: () => ipcRenderer.invoke('remote-server-stop'),
+  remoteServerStatus: () => ipcRenderer.invoke('remote-server-status'),
+  remoteServerConfig: (cfg) => ipcRenderer.invoke('remote-server-config', cfg || {}),
+  remoteServerRegenToken: () => ipcRenderer.invoke('remote-server-regen-token'),
+  onRemoteChatRequest: (callback) => {
+    const handler = (_e, data) => callback(data)
+    ipcRenderer.on('remote-chat-request', handler)
+    return () => ipcRenderer.removeListener('remote-chat-request', handler)
+  },
+  remoteChatReply: (data) => ipcRenderer.send('remote-chat-reply', data),
 })

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { X, Plus, Trash2, Search } from 'lucide-react'
+import { RemoteAccessPanel } from './RemoteAccessPanel'
 import { ProviderList } from './components/settings/ProviderList'
 import { ProviderDetail } from './components/settings/ProviderDetail'
 import { SubagentModelsPicker } from './components/settings/SubagentModelsPicker'
@@ -40,7 +41,7 @@ interface SettingsProps {
   mcpStatus?: McpStatusInfo[]
 }
 
-type SettingsTab = 'general' | 'provider' | 'mcp' | 'hooks'
+type SettingsTab = 'general' | 'provider' | 'mcp' | 'hooks' | 'mobile'
 
 export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus = [] }: SettingsProps) {
   const [local, setLocal] = useState<AppSettings>({ ...settings })
@@ -124,6 +125,7 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
     { id: 'provider', label: local.language === 'pt' ? 'Provedor' : 'Provider' },
     { id: 'mcp', label: 'MCP' },
     { id: 'hooks', label: 'Hooks' },
+    { id: 'mobile', label: local.language === 'pt' ? 'Celular' : 'Mobile' },
   ]
 
   return (
@@ -692,6 +694,10 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
           )}
 
           {/* ── PROVIDER TAB (split view: list + detail) ── */}
+          {activeTab === 'mobile' && (
+            <RemoteAccessPanel pt={local.language === 'pt'} />
+          )}
+
           {activeTab === 'provider' && (
             <div className="provider-split">
               <aside className="provider-split-sidebar">

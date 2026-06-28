@@ -148,5 +148,13 @@ interface Window {
     isWindowFocused?: () => Promise<{ focused: boolean }>
     // OAuth
     oauthGoogleStart?: (params: any) => Promise<any>
+    // Servidor remoto p/ o app do celular (PWA) — v2.191.0
+    remoteServerStart?: (params?: { port?: number }) => Promise<{ ok?: boolean; port?: number; token?: string; addresses?: { address: string; iface: string; tailscale: boolean }[]; error?: string }>
+    remoteServerStop?: () => Promise<{ ok?: boolean; error?: string }>
+    remoteServerStatus?: () => Promise<{ running: boolean; port: number; token: string; addresses: { address: string; iface: string; tailscale: boolean }[] }>
+    remoteServerConfig?: (cfg: { provider?: string; model?: string; models?: string[] }) => Promise<{ ok: boolean }>
+    remoteServerRegenToken?: () => Promise<{ token: string }>
+    onRemoteChatRequest?: (callback: (req: { id: string; messages: { role: string; content: string }[]; model?: string; provider?: string }) => void) => () => void
+    remoteChatReply?: (data: { id: string; text?: string; error?: string; model?: string }) => void
   }
 }

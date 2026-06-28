@@ -69,6 +69,7 @@ const SkillManager = lazy(() => import('./SkillManager'))
 
 // ─── Custom hooks ───────────────────────────────────────────────────
 import { useProviderConfig, getDisplayModel } from './hooks/useProviderConfig'
+import { useRemoteBridge } from './hooks/useRemoteBridge'
 import { useVoice } from './hooks/useVoice'
 import { useConversations } from './hooks/useConversations'
 import { useToolExecution } from './hooks/useToolExecution'
@@ -422,6 +423,10 @@ export default function App() {
   // ─── Custom hooks ──────────────────────────────────────────────
   const providerConfig = useProviderConfig(effectiveSettings, selectedModel)
   const providerHealth = useProviderHealth(settings)
+  // Ponte do app do celular (PWA, v2.191.0): escuta pedidos do servidor remoto e
+  // os roda com a config/chaves atuais. Usa effectiveSettings (a mesma que o chat
+  // usa) p/ o celular ver exatamente o provider/modelo configurado.
+  useRemoteBridge(effectiveSettings, selectedModel)
   // Accent color — writes --accent tokens into :root on mount + changes.
   const accent = useAccentColor()
   const [showAccentPicker, setShowAccentPicker] = useState(false)
