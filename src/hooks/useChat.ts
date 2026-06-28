@@ -22,7 +22,7 @@ import { resolveTurnToolChoice, toolChoiceParam } from '../utils/toolChoice'
 import { collectSources, normalizeSourceUrl, type Source } from '../utils/sources'
 import { imageContentBlocks, type ImageAttachment } from '../utils/multimodal'
 import { docPlusText, type DocAttachment } from '../utils/documentAttach'
-import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress } from '../utils/circuitBreaker'
+import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress, decideHaltAction } from '../utils/circuitBreaker'
 import { applyPlanToolCalls, planIsIncomplete, type LocalTask } from '../utils/planTracker'
 import { resolveAdaptiveEffort } from '../utils/adaptiveEffort'
 import { detectFreshness, buildDateLine, FRESHNESS_RULE, buildFreshnessNudge } from '../utils/freshness'
@@ -698,6 +698,15 @@ export function useChat({
       const useStreaming = isNotOllama ? (cloudStreamingSupported && settings.streamingEnabled) : settings.streamingEnabled
       let steps = 0
       let idleSteps = 0
+      // Finalização graciosa em parada de segurança (v2.190.0): quando os guardas
+      // do loop (idle-guard de 5 passos sem progresso / circuit-breaker de chamadas
+      // repetidas) abortariam logo após uma tool call que FALHOU, o turno morria em
+      // silêncio — o usuário via só comandos falhando e NADA depois ("a IA não
+      // terminou o bash"). Estes flags fazem o loop, nesse caso, rodar UM último
+      // passo SEM ferramentas, com um empurrão para a IA fechar com um resumo
+      // honesto (o que tentou, o que falhou, próximos passos). Ver haltOrFinalize.
+      let forceFinalizeNoTools = false
+      let finalizeNudgeUsed = false
       // Skills carregadas PERSISTEM na conversa (v2.160.0): re-hidrata do que
       // ficou salvo, em vez de zerar — a skill vale a tarefa inteira sem fixar.
       hydrateActiveSkills(conv?.activeSkillNames)
@@ -728,7 +737,9 @@ export function useChat({
       let planFinishNudges = 0
       const PLAN_FINISH_NUDGE_CAP = 3
       const keepGoingToFinishPlan = () => {
-        if (!isAgentMode || stopRequestedRef.current) return false
+        // Em modo de finalização (parada de segurança) não reabrimos o loop para
+        // "concluir o plano": estamos encerrando com um resumo, não retomando.
+        if (!isAgentMode || stopRequestedRef.current || forceFinalizeNoTools) return false
         if (planIsIncomplete(localPlanTasks) && planFinishNudges < PLAN_FINISH_NUDGE_CAP) {
           planFinishNudges++
           nudgeFinishPlan = true
@@ -763,6 +774,31 @@ export function useChat({
       // 2ª categoria de erro mais comum da telemetria, hoje sem retry (v2.36.0).
       let unknownRetriesUsed = 0
       const MAX_UNKNOWN_RETRIES = 1
+      // Parada de segurança → finalização graciosa (v2.190.0). Chamado no LUGAR de
+      // `continueLoop = false` quando computeAgentProgress sinaliza esgotamento
+      // (idle-guard / circuit-breaker). Em vez de encerrar mudo logo após uma
+      // ferramenta que falhou, arma UM passo final SEM ferramentas para a IA
+      // responder ao usuário. One-shot por turno; na 2ª vez (ou fora do modo
+      // agente, ou com Parar pedido) cai no encerramento normal.
+      const haltOrFinalize = (): void => {
+        const action = decideHaltAction({
+          finalizeAlreadyUsed: finalizeNudgeUsed,
+          isAgentMode,
+          stopRequested: stopRequestedRef.current,
+          // Background subagente em voo? Não finaliza aqui: o bloco de drenagem no
+          // fim do loop dará o passo de fecho (com ferramentas) usando os
+          // resultados deles. Evita 2ª bolha final + nudge "travei" enganoso.
+          backgroundPending: backgroundTasks?.hasAny() ?? false,
+        })
+        if (action === 'finalize') {
+          finalizeNudgeUsed = true
+          forceFinalizeNoTools = true
+          idleSteps = 0 // o próprio passo de finalização não pode re-disparar o guarda
+          // continueLoop permanece true → roda mais um passo, agora sem ferramentas.
+        } else {
+          continueLoop = false
+        }
+      }
       // Cadeia de modelos de fallback (v2.91.0): modelos já tentados neste turno,
       // para nunca repetir um que já falhou ao percorrer settings.fallbackModels.
       const triedModels = new Set<string>()
@@ -968,7 +1004,21 @@ export function useChat({
           nudgeFinishPlan = false
         }
 
-        if (isAgentMode && isSmallModel(finalModel)) {
+        // Empurrão de finalização (v2.190.0): pareado com haltOrFinalize. Este passo
+        // roda SEM ferramentas (ver toolsForRequest) — instrui a IA a PARAR de
+        // tentar e fechar com um resumo útil, em vez de o turno morrer em silêncio
+        // após falhas repetidas de comando. Empurrado por último → é a instrução
+        // mais fresca do passo.
+        if (forceFinalizeNoTools) {
+          requestMessages.push({
+            role: 'system',
+            content: lang === 'en'
+              ? "[STOP CALLING TOOLS — WRAP UP] Several attempts did not complete the task, and tools are disabled for this final reply. Do NOT wait or promise to continue later. Tell the user plainly, in your normal language: what you were trying to do, what failed and the most likely reason, what you DID manage to accomplish, and concrete next steps (or exactly what you need from them). It is fine to say you hit a wall."
+              : "[PARE DE CHAMAR FERRAMENTAS — FECHE] Várias tentativas não concluíram a tarefa e as ferramentas estão desativadas nesta resposta final. NÃO espere nem prometa continuar depois. Diga ao usuário com clareza: o que você tentou fazer, o que falhou e o motivo mais provável, o que você CONSEGUIU fazer, e os próximos passos concretos (ou exatamente o que precisa dele). Pode assumir que travou.",
+          })
+        }
+
+        if (isAgentMode && isSmallModel(finalModel) && !forceFinalizeNoTools) {
           requestMessages.push({
             role: 'system',
             content: `[CRITICAL AGENT DIRECTIVE]\nYou are an autonomous Agent with unlimited steps. You MUST keep calling tools until the user's goal is 100% complete.\n- If the goal is NOT fully done, you MUST output a tool call. Do NOT output a text-only response.\n- Use 'update_working_memory' every few steps.\n- Only give a final text answer when every single subtask is done.\n- NEVER say "I'll do X next" — just DO it by calling the tool NOW.`
@@ -1097,7 +1147,7 @@ export function useChat({
             })
             streamCleanupRef.current = cleanup
 
-            let toolsForRequest = toolsDisabledForThisTurn ? [] : (deferralEnabled ? [...toolPartition.eager, toolPartition.metaTool] as any[] : allTools)
+            let toolsForRequest = (toolsDisabledForThisTurn || forceFinalizeNoTools) ? [] : (deferralEnabled ? [...toolPartition.eager, toolPartition.metaTool] as any[] : allTools)
             // Tool-scoping por skill ativa (v2.105.0): allowlist positiva primeiro
             // (só as permitidas + load_skill), depois remove as bloqueadas.
             toolsForRequest = scopeToolsForStep(toolsForRequest, stepSkillAllowed, stepSkillDisallowed)
@@ -1323,7 +1373,7 @@ export function useChat({
             // Mantém o espelho local do plano em dia (plan_tasks / update_task_status).
             trackPlanFromToolCalls(toolCallsData)
             idleSteps = shouldContinue.idleSteps
-            if (!shouldContinue.continue) continueLoop = false
+            if (!shouldContinue.continue) haltOrFinalize()
 
             gatherSources(thinkingMsg) // fontes web do passo (v2.145.0)
             setConversations(prev => prev.map(c =>
@@ -1382,7 +1432,7 @@ export function useChat({
 
         } else {
           // ─── Non-streaming path ────────────────────────────
-          let toolsForRequest = toolsDisabledForThisTurn ? [] : (deferralEnabled ? [...toolPartition.eager, toolPartition.metaTool] as any[] : allTools)
+          let toolsForRequest = (toolsDisabledForThisTurn || forceFinalizeNoTools) ? [] : (deferralEnabled ? [...toolPartition.eager, toolPartition.metaTool] as any[] : allTools)
           // Tool-scoping por skill ativa também AQUI (v2.158.0): antes o caminho
           // não-streaming pulava o filtro por-passo — uma skill carregada via
           // load_skill no meio do turno não tinha allowed/disallowed aplicados.
@@ -1525,7 +1575,7 @@ export function useChat({
             // stream_profile (mede o gap que pode esfriar o container Modal).
             prevStepToolMs = Date.now() - toolStartTime
             idleSteps = shouldContinue.idleSteps
-            if (!shouldContinue.continue) continueLoop = false
+            if (!shouldContinue.continue) haltOrFinalize()
             trackPlanFromToolCalls(toolCalls)
 
             gatherSources(thinkingMsg) // fontes web do passo (v2.145.0)

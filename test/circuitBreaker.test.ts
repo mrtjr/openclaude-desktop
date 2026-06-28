@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { countRecentRepeats, CIRCUIT_WINDOW, isProgressResult, computeAgentProgress } from '../src/utils/circuitBreaker'
+import { countRecentRepeats, CIRCUIT_WINDOW, isProgressResult, computeAgentProgress, decideHaltAction } from '../src/utils/circuitBreaker'
 
 describe('countRecentRepeats', () => {
   it('counts occurrences within the window', () => {
@@ -132,5 +132,35 @@ describe('computeAgentProgress', () => {
       )
       expect(state).toEqual({ idleSteps: 0, continue: true })
     }
+  })
+})
+
+describe('decideHaltAction', () => {
+  const base = { finalizeAlreadyUsed: false, isAgentMode: true, stopRequested: false, backgroundPending: false }
+  it('finalizes the first time a guard halts the loop in agent mode', () => {
+    // The bug: the loop died silently after a failed command. Now the first
+    // halt runs one no-tools turn so the user always gets a closing answer.
+    expect(decideHaltAction({ ...base })).toBe('finalize')
+  })
+  it('halts outright on the SECOND halt (finalization is one-shot per turn)', () => {
+    // Prevents the finalize pass from itself re-arming an endless loop.
+    expect(decideHaltAction({ ...base, finalizeAlreadyUsed: true })).toBe('halt')
+  })
+  it('halts outright outside agent mode (single-shot turns do not finalize)', () => {
+    expect(decideHaltAction({ ...base, isAgentMode: false })).toBe('halt')
+  })
+  it('respects the Stop button: halts now instead of spending another turn', () => {
+    // The user pressed Stop — their intent is to end immediately, not to wait
+    // for one more model round-trip.
+    expect(decideHaltAction({ ...base, stopRequested: true })).toBe('halt')
+  })
+  it('halts (defers to the drain) when a background subagent is still pending', () => {
+    // Regression caught in adversarial review: finalizing here AND letting the
+    // end-of-loop background-drain run its own closing pass produced TWO final
+    // bubbles. With a pending subagent we halt and let the drain close the turn.
+    expect(decideHaltAction({ ...base, backgroundPending: true })).toBe('halt')
+  })
+  it('still finalizes once all background work has drained', () => {
+    expect(decideHaltAction({ ...base, backgroundPending: false })).toBe('finalize')
   })
 })

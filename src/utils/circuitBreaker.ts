@@ -71,3 +71,33 @@ export function computeAgentProgress(
   const next = madeProgress ? 0 : idleSteps + 1
   return { idleSteps: next, continue: next < threshold }
 }
+
+// ─── Graceful finalization on a safety halt ─────────────────────────
+// When the guards above (idle / circuit-breaker) tell the loop to stop, it used
+// to set continueLoop=false right after a FAILED tool call — so the turn died
+// silently and the user saw failing commands and then nothing ("the AI couldn't
+// finish the command"). Instead we run ONE final no-tools turn so the model
+// always closes with a human-facing summary. This pure helper decides between
+// FINALIZE and a plain HALT; the orchestration lives in useChat.
+
+/** Decide what to do when a safety guard halts the agent loop. FINALIZE (one
+ *  last no-tools turn) only when: we haven't already finalized this turn, we're
+ *  in agent mode, the user did NOT press Stop (a Stop means "end now", so we
+ *  respect it and halt), AND there are no background subagents still pending.
+ *  Otherwise HALT outright.
+ *
+ *  The backgroundPending guard matters: when a background subagent is still in
+ *  flight, the loop's end-of-turn drain block already runs one more tools-ENABLED
+ *  pass that injects the subagent's results and produces the closing message
+ *  (pre-existing behavior). Finalizing here too would add a redundant SECOND
+ *  final bubble — and a misleading "I hit a wall" nudge when the background work
+ *  actually completed. So we defer to the drain: HALT, let it close the turn. */
+export function decideHaltAction(state: {
+  finalizeAlreadyUsed: boolean
+  isAgentMode: boolean
+  stopRequested: boolean
+  backgroundPending: boolean
+}): 'finalize' | 'halt' {
+  if (state.finalizeAlreadyUsed || !state.isAgentMode || state.stopRequested || state.backgroundPending) return 'halt'
+  return 'finalize'
+}
