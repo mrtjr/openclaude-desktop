@@ -17,6 +17,7 @@ import { useEffect, useRef } from 'react'
 import type { AppSettings } from '../types'
 import { resolveRemoteConfig, buildRemoteTargets } from '../utils/remoteBridge'
 import { getDisplayModel } from './useProviderConfig'
+import { deltaReasoning } from '../utils/streamPhase'
 
 export function useRemoteBridge(settings: AppSettings, selectedModel: string) {
   const settingsRef = useRef(settings)
@@ -49,24 +50,34 @@ export function useRemoteBridge(settings: AppSettings, selectedModel: string) {
           return
         }
         const maxTokens = Math.min(Number(s.maxTokens) || 4096, 8192)
-        let accumulated = ''
+        let accumulated = ''   // resposta visível (delta.content)
+        let reasoningAcc = ''  // raciocínio (reasoning_content) — modelos como GLM
         let finished = false
+        const finalText = () => accumulated.trim() ? accumulated : (reasoningAcc.trim() || '(sem resposta)')
         // Coleta os pedaços do canal global de stream (igual ao desktop). Os
         // pedidos do celular são sequenciais, então não há colisão na prática.
         const cleanup = el.onStreamChunk((c: any) => {
           if (finished) return
-          if (c?.done) { finished = true; cleanup(); sendDone({ id, text: accumulated, model: cfg.model }); return }
+          if (c?.done) { finished = true; cleanup(); sendDone({ id, text: finalText(), model: cfg.model }); return }
           if (c?.error) { finished = true; cleanup(); sendError({ id, error: String(c.error) }); return }
-          const delta = c?.choices?.[0]?.delta?.content || ''
-          if (delta) { accumulated += delta; sendChunk({ id, delta }) }
+          const delta = c?.choices?.[0]?.delta
+          const content = (delta && delta.content) || ''
+          if (content) { accumulated += content; sendChunk({ id, delta: content }) }
+          else {
+            // GLM e afins mandam o texto em reasoning_content; transmite ao vivo
+            // p/ a tela não ficar vazia, e serve de resposta se não vier content.
+            const rz = deltaReasoning(delta || {})
+            if (rz) { reasoningAcc += rz; sendChunk({ id, delta: rz }) }
+          }
         })
-        const finishOk = () => { if (!finished) { finished = true; cleanup(); sendDone({ id, text: accumulated, model: cfg.model }) } }
+        const finishOk = () => { if (!finished) { finished = true; cleanup(); sendDone({ id, text: finalText(), model: cfg.model }) } }
         const finishErr = (msg: string) => { if (!finished) { finished = true; cleanup(); sendError({ id, error: msg }) } }
         const stream = cfg.isNotOllama
           ? el.providerChatStream({
               provider: cfg.provider, apiKey: cfg.apiKey, model: cfg.model,
               messages, temperature: s.temperature, max_tokens: maxTokens,
               modalHostname: cfg.modalHostname, customBaseUrl: cfg.customBaseUrl,
+              reasoningEffort: s.reasoningEffort, // igual ao desktop (GLM precisa)
             })
           : el.ollamaChatStream({ messages, model: cfg.model, temperature: s.temperature, max_tokens: maxTokens })
         // A invoke resolve quando o stream termina (fallback se o 'done' não vier);
