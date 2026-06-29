@@ -116,6 +116,30 @@ button { font: inherit; color: inherit; }
 .send:disabled { opacity: .35; }
 .send.stop { background: var(--surface); border: 1px solid var(--border); color: var(--text); }
 
+/* mic */
+.mic { flex: none; width: 38px; height: 38px; border-radius: 50%; background: none; border: none; color: var(--text-dim); display: grid; place-items: center; cursor: pointer; }
+.mic:active { background: var(--surface); }
+.mic.rec { color: var(--danger); animation: pulse 1s infinite; }
+.mic.hidden { display: none; }
+
+/* drawer (conversas) */
+.drawer { position: fixed; inset: 0; z-index: 35; }
+.drawer.hidden { display: none; }
+.drawer-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.5); animation: fade .2s; }
+.drawer-panel { position: absolute; left: 0; top: 0; bottom: 0; width: 82%; max-width: 340px; background: var(--bg-soft); border-right: 1px solid var(--border); padding: calc(var(--safe-top) + 12px) 12px calc(var(--safe-bottom) + 12px); display: flex; flex-direction: column; animation: slideRight .26s cubic-bezier(.2,.85,.25,1); }
+@keyframes slideRight { from { transform: translateX(-100%); } }
+.drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 12px; }
+.drawer-title { font-weight: 650; font-size: 17px; }
+.drawer-new { background: var(--accent); color: #fff; border: none; border-radius: 999px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.conv-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.conv-item { display: flex; align-items: center; gap: 8px; padding: 12px 12px; border-radius: 12px; cursor: pointer; }
+.conv-item:active { background: var(--surface); }
+.conv-item.active { background: var(--surface-2); }
+.conv-item .c-title { flex: 1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-item .c-del { flex: none; width: 30px; height: 30px; border-radius: 8px; background: none; border: none; color: var(--text-faint); display: grid; place-items: center; cursor: pointer; }
+.conv-item .c-del:active { background: rgba(255,107,107,.15); color: var(--danger); }
+.conv-empty { color: var(--text-faint); font-size: 13px; text-align: center; padding: 24px; }
+
 /* sheet */
 .sheet { position: fixed; inset: 0; z-index: 30; }
 .sheet.hidden { display: none; }

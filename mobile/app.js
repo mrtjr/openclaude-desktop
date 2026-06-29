@@ -4,12 +4,18 @@
 
 const $ = (id) => document.getElementById(id)
 const LS_TOKEN = 'oc_remote_token', LS_HISTORY = 'oc_remote_history', LS_TARGET = 'oc_remote_target'
+const LS_CONVS = 'oc_conversations', LS_CURRENT = 'oc_current_conv'
 
 const state = {
   token: '', messages: [], targets: [], targetId: '', busy: false,
-  abort: null,        // AbortController do streaming atual
-  lastUser: '',       // última mensagem do usuário (p/ regenerar)
+  abort: null,           // AbortController do streaming atual
+  lastUser: '',          // última mensagem do usuário (p/ regenerar)
+  conversations: [],     // [{id,title,messages,updatedAt}]
+  currentId: '',
 }
+
+const EMPTY_HTML = '<div id="empty" class="empty"><div class="empty-logo">◈</div><p class="empty-title">Como posso ajudar?</p><p class="empty-sub">Sua IA local e a principal do desktop — de qualquer lugar.</p><div id="chips" class="chips"><button class="chip">Resuma esta ideia: </button><button class="chip">Escreva um e-mail para </button><button class="chip">Me explique como </button><button class="chip">Crie um plano para </button></div></div>'
+function showEmpty() { $('messages').innerHTML = EMPTY_HTML }
 
 const haptic = (ms) => { try { navigator.vibrate && navigator.vibrate(ms) } catch (e) {} }
 
@@ -116,12 +122,65 @@ function addActions(row, getText) {
 
 function renderHistory() {
   for (const m of state.messages) {
-    const { row, msg } = addRow(m.role === 'user' ? 'user' : 'assistant', m.content)
+    const { row } = addRow(m.role === 'user' ? 'user' : 'assistant', m.content)
     if (m.role === 'assistant') addActions(row, () => m.content)
   }
 }
-function saveHistory() { try { localStorage.setItem(LS_HISTORY, JSON.stringify(state.messages.slice(-100))) } catch (e) {} }
-function loadHistory() { try { state.messages = JSON.parse(localStorage.getItem(LS_HISTORY) || '[]') || [] } catch (e) { state.messages = [] } }
+
+// ── Conversas (histórico, igual ChatGPT/Claude) ─────────────────────
+const cid = () => 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+const titleFrom = (msgs) => { const u = (msgs || []).find((m) => m.role === 'user'); return u ? u.content.trim().slice(0, 42) : 'Nova conversa' }
+function currentConv() { return state.conversations.find((c) => c.id === state.currentId) || state.conversations[0] }
+function loadConvs() {
+  try { state.conversations = JSON.parse(localStorage.getItem(LS_CONVS) || '[]') || [] } catch (e) { state.conversations = [] }
+  if (!state.conversations.length) {
+    let old = []; try { old = JSON.parse(localStorage.getItem(LS_HISTORY) || '[]') || [] } catch (e) {}
+    state.conversations = [{ id: cid(), title: titleFrom(old), messages: old, updatedAt: Date.now() }]
+    localStorage.removeItem(LS_HISTORY)
+  }
+  state.currentId = localStorage.getItem(LS_CURRENT) || ''
+  if (!state.conversations.some((c) => c.id === state.currentId)) state.currentId = state.conversations[0].id
+  state.messages = currentConv().messages
+}
+function persist() {
+  const c = currentConv()
+  if (c) { c.messages = state.messages; c.updatedAt = Date.now(); if (!c.title || c.title === 'Nova conversa') c.title = titleFrom(state.messages) }
+  try { localStorage.setItem(LS_CONVS, JSON.stringify(state.conversations.slice(0, 60))); localStorage.setItem(LS_CURRENT, state.currentId) } catch (e) {}
+}
+const saveHistory = persist // alias usado no resto do código
+function newConversation() {
+  const cur = currentConv()
+  if (cur && !cur.messages.length) { closeDrawer(); return } // já está numa vazia
+  const c = { id: cid(), title: 'Nova conversa', messages: [], updatedAt: Date.now() }
+  state.conversations.unshift(c); state.currentId = c.id; state.messages = c.messages
+  persist(); showEmpty(); closeDrawer(); haptic(8)
+}
+function switchConv(id) {
+  persist(); state.currentId = id; state.messages = currentConv().messages
+  localStorage.setItem(LS_CURRENT, id); $('messages').innerHTML = ''
+  if (state.messages.length) renderHistory(); else showEmpty()
+  closeDrawer(); haptic(6)
+}
+function deleteConv(id) {
+  state.conversations = state.conversations.filter((c) => c.id !== id)
+  if (!state.conversations.length) state.conversations = [{ id: cid(), title: 'Nova conversa', messages: [], updatedAt: Date.now() }]
+  if (state.currentId === id) { state.currentId = state.conversations[0].id; state.messages = currentConv().messages; $('messages').innerHTML = ''; state.messages.length ? renderHistory() : showEmpty() }
+  persist(); renderDrawer()
+}
+function renderDrawer() {
+  const list = $('convList'); list.innerHTML = ''
+  const sorted = [...state.conversations].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+  if (!sorted.length) { list.innerHTML = '<div class="conv-empty">Nenhuma conversa</div>'; return }
+  for (const c of sorted) {
+    const item = document.createElement('div'); item.className = 'conv-item' + (c.id === state.currentId ? ' active' : '')
+    item.innerHTML = `<span class="c-title">${escapeHtml(c.title || 'Nova conversa')}</span><button class="c-del" aria-label="Apagar">✕</button>`
+    item.onclick = (e) => { if (!e.target.closest('.c-del')) switchConv(c.id) }
+    item.querySelector('.c-del').onclick = (e) => { e.stopPropagation(); deleteConv(c.id) }
+    list.appendChild(item)
+  }
+}
+function openDrawer() { renderDrawer(); $('drawer').classList.remove('hidden') }
+function closeDrawer() { $('drawer').classList.add('hidden') }
 
 // ── Botão enviar/parar ──────────────────────────────────────────────
 function setBusy(on) {
@@ -234,9 +293,30 @@ function wireComposer() {
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('composer').requestSubmit() } })
   $('messages').addEventListener('scroll', updateScrollBtn)
   $('scrollBtn').addEventListener('click', () => scrollToEnd(true))
-  $('newChatBtn').addEventListener('click', () => { if (state.busy) return; state.messages = []; saveHistory(); $('messages').innerHTML = ''; location.reload() })
-  // chips de sugestão
-  document.querySelectorAll('.chip').forEach((c) => c.addEventListener('click', () => { input.value = c.textContent; input.focus(); grow() }))
+  $('newChatBtn').addEventListener('click', () => { if (!state.busy) newConversation() })
+  // chips por delegação (a tela vazia é recriada ao trocar de conversa)
+  $('messages').addEventListener('click', (e) => { const chip = e.target.closest('.chip'); if (chip) { input.value = chip.textContent; input.focus(); grow() } })
+}
+function wireDrawer() {
+  $('menuBtn').addEventListener('click', openDrawer)
+  $('drawer').querySelector('.drawer-backdrop').addEventListener('click', closeDrawer)
+  $('drawerNew').addEventListener('click', newConversation)
+}
+function wireVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+  if (!SR) return // sem suporte → microfone fica escondido
+  $('micBtn').classList.remove('hidden')
+  let rec = null, listening = false
+  $('micBtn').addEventListener('click', () => {
+    if (listening) { try { rec.stop() } catch (e) {} return }
+    rec = new SR(); rec.lang = 'pt-BR'; rec.interimResults = true; rec.continuous = false
+    const base = $('input').value
+    rec.onstart = () => { listening = true; $('micBtn').classList.add('rec'); haptic(10) }
+    rec.onresult = (e) => { let txt = ''; for (let i = 0; i < e.results.length; i++) txt += e.results[i][0].transcript; $('input').value = (base ? base + ' ' : '') + txt; $('input').dispatchEvent(new Event('input')) }
+    rec.onerror = () => {}
+    rec.onend = () => { listening = false; $('micBtn').classList.remove('rec') }
+    try { rec.start() } catch (e) {}
+  })
 }
 
 // copiar bloco de código
@@ -260,7 +340,7 @@ function closeSheet() { $('sheet').classList.add('hidden') }
 function wireSheet() {
   $('modelBtn').addEventListener('click', openSheet)
   $('sheet').querySelector('.sheet-backdrop').addEventListener('click', closeSheet)
-  $('clearBtn').addEventListener('click', () => { state.messages = []; saveHistory(); $('messages').innerHTML = ''; closeSheet() })
+  $('clearBtn').addEventListener('click', () => { state.messages.length = 0; persist(); showEmpty(); closeSheet() })
   $('repairBtn').addEventListener('click', () => { localStorage.removeItem(LS_TOKEN); location.reload() })
 }
 
@@ -272,7 +352,7 @@ function showPair(errMsg) {
     const raw = $('pairToken').value.trim(); if (!raw) return
     let tok = raw; try { const u = new URL(raw); tok = u.searchParams.get('token') || raw } catch (e) {}
     state.token = tok; const c = await checkConnection()
-    if (c.ok) { localStorage.setItem(LS_TOKEN, tok); $('pair').classList.add('hidden'); applyTargets(c.info); setDot('ok'); loadHistory(); renderHistory() }
+    if (c.ok) { localStorage.setItem(LS_TOKEN, tok); $('pair').classList.add('hidden'); applyTargets(c.info); setDot('ok'); loadConvs(); state.messages.length ? renderHistory() : showEmpty() }
     else $('pairErr').textContent = c.network ? 'Sem conexão com o PC (Tailscale / app aberto?).' : 'Código inválido.'
   }
 }
@@ -283,8 +363,8 @@ async function boot() {
   if (!state.token) { setDot('bad'); showPair(''); return }
   const c = await checkConnection()
   if (!c.ok) { setDot('bad'); showPair(c.auth === false ? 'Pareamento expirado. Cole o novo código do desktop.' : c.network ? 'Sem conexão com o PC. Abra o app no PC e ligue o Tailscale.' : 'Falha ao conectar.'); return }
-  setDot('ok'); applyTargets(c.info); loadHistory(); renderHistory()
+  setDot('ok'); applyTargets(c.info); loadConvs(); state.messages.length ? renderHistory() : showEmpty()
 }
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {})
-wireComposer(); wireSheet(); boot()
+wireComposer(); wireSheet(); wireDrawer(); wireVoice(); boot()

@@ -1,6 +1,6 @@
 ﻿{
   "name": "openclaude-desktop",
-  "version": "2.194.1",
+  "version": "2.194.2",
   "description": "Desktop GUI for OpenClaude",
   "author": "OpenClaude",
   "main": "electron/main.js",
@@ -84,4 +84,5 @@
     "react-dom": "^18.3.0"
   }
 }
+
 
