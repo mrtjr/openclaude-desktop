@@ -16,39 +16,50 @@
 <body>
   <div id="app">
     <header class="topbar">
-      <div class="brand">
+      <button id="modelBtn" class="model-pill" aria-label="Trocar modelo">
         <span id="dot" class="dot" title="Conexão"></span>
-        <span class="title">OpenClaude</span>
-      </div>
-      <div class="meta">
-        <button id="modelBtn" class="model-pill" aria-label="Trocar modelo">
-          <span id="model">—</span>
-          <svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>
-        </button>
-      </div>
+        <span id="model">—</span>
+        <svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>
+      </button>
+      <button id="newChatBtn" class="icon-btn" aria-label="Nova conversa" title="Nova conversa">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
+      </button>
     </header>
 
     <main id="messages" class="messages" aria-live="polite">
       <div id="empty" class="empty">
         <div class="empty-logo">◈</div>
-        <p class="empty-title">Conectado ao seu desktop</p>
-        <p class="empty-sub">Converse com a IA local e a principal do seu PC — de qualquer rede.</p>
+        <p class="empty-title">Como posso ajudar?</p>
+        <p class="empty-sub">Sua IA local e a principal do desktop — de qualquer lugar.</p>
+        <div id="chips" class="chips">
+          <button class="chip">Resuma esta ideia: </button>
+          <button class="chip">Escreva um e-mail para </button>
+          <button class="chip">Me explique como </button>
+          <button class="chip">Crie um plano para </button>
+        </div>
       </div>
     </main>
 
-    <div id="typing" class="typing hidden"><span></span><span></span><span></span></div>
+    <button id="scrollBtn" class="scroll-btn hidden" aria-label="Ir para o fim">
+      <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 16l-6-6h12z"/></svg>
+    </button>
+
+    <div id="typing" class="typing hidden">
+      <span class="dots"><span></span><span></span><span></span></span>
+      <span id="elapsed" class="elapsed"></span>
+    </div>
 
     <form id="composer" class="composer">
       <div class="composer-box">
         <textarea id="input" rows="1" placeholder="Mensagem…" autocomplete="off" enterkeyhint="send"></textarea>
         <button id="send" class="send" type="submit" aria-label="Enviar">
-          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M3.4 20.4 21 12 3.4 3.6 3.39 10l12.6 2-12.6 2z"/></svg>
+          <svg class="ic-send" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M3.4 20.4 21 12 3.4 3.6 3.39 10l12.6 2-12.6 2z"/></svg>
+          <svg class="ic-stop hidden" viewBox="0 0 24 24" width="18" height="18"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>
         </button>
       </div>
     </form>
   </div>
 
-  <!-- Bottom sheet: modelo + ações -->
   <div id="sheet" class="sheet hidden">
     <div class="sheet-backdrop"></div>
     <div class="sheet-card">
@@ -62,7 +73,6 @@
     </div>
   </div>
 
-  <!-- Tela de pareamento -->
   <div id="pair" class="pair hidden">
     <div class="pair-card">
       <div class="empty-logo">◈</div>
@@ -73,6 +83,8 @@
       <p id="pairErr" class="pair-err"></p>
     </div>
   </div>
+
+  <div id="toast" class="toast hidden"></div>
 
   <script src="app.js"></script>
 </body>

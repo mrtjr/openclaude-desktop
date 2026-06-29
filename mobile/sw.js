@@ -3,7 +3,7 @@
 // de início. Estratégia: network-first p/ a casca (pega atualizações), com
 // fallback ao cache quando sem rede. NUNCA cacheia /api (chat é sempre ao vivo).
 
-const CACHE = 'oc-pwa-v3'
+const CACHE = 'oc-pwa-v4'
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icon-192.png']
 
 self.addEventListener('install', (e) => {

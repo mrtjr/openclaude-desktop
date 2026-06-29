@@ -3421,11 +3421,34 @@ ipcMain.on('remote-chat-error', (_e, payload = {}) => {
   try { p.cb.onError(payload.error) } catch { /* */ }
 })
 
+// Serve a PWA de uma pasta GRAVÁVEL (userData/mobile-web), copiada da empacotada.
+// Permite atualizar o app do celular "a quente" (escrever os arquivos lá) sem
+// reinstalar o desktop — o usuário só recarrega. Recopia quando a VERSÃO do app
+// muda (reinstalação), preservando edições durante a mesma versão.
+function ensureMobileDir() {
+  const src = path.join(__dirname, '..', 'mobile')
+  const dest = path.join(app.getPath('userData'), 'mobile-web')
+  try {
+    const verFile = path.join(dest, '.appver')
+    let cur = ''
+    try { cur = fs.readFileSync(verFile, 'utf8') } catch { /* ainda não existe */ }
+    if (cur !== app.getVersion()) {
+      fs.mkdirSync(dest, { recursive: true })
+      for (const f of fs.readdirSync(src)) {
+        const s = path.join(src, f)
+        try { if (fs.statSync(s).isFile()) fs.copyFileSync(s, path.join(dest, f)) } catch { /* pula */ }
+      }
+      fs.writeFileSync(verFile, app.getVersion())
+    }
+    return dest
+  } catch (e) { console.error('[remote] mobile dir:', e); return src } // fallback ao empacotado
+}
+
 function getRemoteServer() {
   if (!remoteServer) {
     if (!remoteToken) remoteToken = loadOrCreateRemoteToken()
     remoteServer = createRemoteServer({
-      staticDir: path.join(__dirname, '..', 'mobile'),
+      staticDir: ensureMobileDir(),
       getToken: () => remoteToken,
       getInfo: () => ({ name: remoteConfig.name, version: remoteConfig.version, provider: remoteConfig.provider, model: remoteConfig.model, models: remoteConfig.models, targets: remoteConfig.targets }),
       chatHandler: remoteChatHandler,
