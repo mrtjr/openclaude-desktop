@@ -10,7 +10,7 @@ import { Smartphone, Copy, Check, RefreshCw, Power } from 'lucide-react'
 import QRCode from 'qrcode'
 
 interface Addr { address: string; iface: string; tailscale: boolean }
-interface Status { running: boolean; port: number; token: string; addresses: Addr[] }
+interface Status { running: boolean; port: number; token: string; addresses: Addr[]; autostart?: boolean }
 
 const DEFAULT_PORT = 8765
 
@@ -40,6 +40,24 @@ export function RemoteAccessPanel({ pt }: { pt: boolean }) {
     setBusy(true)
     try { await window.electron?.remoteServerRegenToken?.(); await refresh() }
     finally { setBusy(false) }
+  }
+
+  const toggleAutostart = async () => {
+    setBusy(true)
+    try { await window.electron?.remoteServerSetAutostart?.(!status.autostart); await refresh() }
+    finally { setBusy(false) }
+  }
+
+  // Teste de conexão: bate no /api/health do próprio servidor local.
+  const [testResult, setTestResult] = useState<'' | 'ok' | 'fail' | 'testing'>('')
+  const testConnection = async () => {
+    setTestResult('testing')
+    try {
+      const r = await fetch(`http://127.0.0.1:${status.port || DEFAULT_PORT}/api/health`)
+      const j = await r.json().catch(() => ({}))
+      setTestResult(r.ok && (j as any)?.ok ? 'ok' : 'fail')
+    } catch { setTestResult('fail') }
+    setTimeout(() => setTestResult(''), 4000)
   }
 
   const copy = async (text: string, key: string) => {
@@ -91,6 +109,23 @@ export function RemoteAccessPanel({ pt }: { pt: boolean }) {
         <Power size={15} />
         {busy ? '…' : status.running ? L('Desligar servidor', 'Stop server') : L('Ligar servidor', 'Start server')}
       </button>
+
+      {/* Status + testar conexão + auto-start (v2.195.0) */}
+      <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, fontSize: 12.5 }}>
+        <span style={{ color: status.running ? 'var(--ok, #2ecc71)' : 'var(--text-tertiary, #888)', fontWeight: 600 }}>
+          {status.running ? L(`● No ar · porta ${status.port || DEFAULT_PORT}`, `● Running · port ${status.port || DEFAULT_PORT}`) : L('○ Desligado', '○ Off')}
+        </span>
+        {status.running && (
+          <button onClick={testConnection} disabled={testResult === 'testing'}
+            style={{ background: 'var(--bg-tertiary)', color: testResult === 'ok' ? 'var(--ok, #2ecc71)' : testResult === 'fail' ? 'var(--danger, #e74c3c)' : 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: 7, padding: '4px 10px', cursor: 'pointer', fontSize: 12 }}>
+            {testResult === 'testing' ? L('Testando…', 'Testing…') : testResult === 'ok' ? L('✓ Conexão OK', '✓ OK') : testResult === 'fail' ? L('✗ Falhou', '✗ Failed') : L('Testar conexão', 'Test connection')}
+          </button>
+        )}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: 'var(--text-secondary)' }}>
+          <input type="checkbox" checked={!!status.autostart} onChange={toggleAutostart} disabled={busy} />
+          {L('Ligar sozinho ao abrir o app', 'Auto-start with the app')}
+        </label>
+      </div>
 
       {status.running && (
         <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>

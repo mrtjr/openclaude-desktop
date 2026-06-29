@@ -238,6 +238,7 @@ contextBridge.exposeInMainWorld('electron', {
   remoteServerStatus: () => ipcRenderer.invoke('remote-server-status'),
   remoteServerConfig: (cfg) => ipcRenderer.invoke('remote-server-config', cfg || {}),
   remoteServerRegenToken: () => ipcRenderer.invoke('remote-server-regen-token'),
+  remoteServerSetAutostart: (enabled) => ipcRenderer.invoke('remote-server-set-autostart', { enabled }),
   onRemoteChatRequest: (callback) => {
     const handler = (_e, data) => callback(data)
     ipcRenderer.on('remote-chat-request', handler)

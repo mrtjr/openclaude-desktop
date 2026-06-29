@@ -71,6 +71,21 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 
 ## Features
 
+### 📱 Mobile app (PWA) — your desktop AI from anywhere
+Use the desktop as an AI server from your **phone** — the local (Ollama) and the
+main configured AI — over **any network or mobile data**. The desktop serves a
+Progressive Web App you install to your home screen (no App Store, no Mac needed).
+- **Settings → Mobile**: turn the server on, scan the **QR** to pair (random token
+  auth + security headers), optional **auto-start**, connection test.
+- **Remote access** via [Tailscale](https://tailscale.com/) (private network) or a
+  tunnel — never opens a router port.
+- **Live token streaming** (SSE) that survives long/slow responses; full chat UI:
+  multiple **conversations** (create/switch/rename/search/delete), edit/delete/copy/
+  regenerate messages, **stop** mid-stream, live markdown (tables/code/blockquote),
+  **voice** input, light/dark theme, share, and a local/main model picker.
+- The phone drives the same provider engine the desktop uses; your API keys stay on
+  the desktop and are never sent to the phone.
+
 ### v2.35–2.45 — Capabilities aligned with Claude Code
 - **MCP end-to-end** — `useMcp` connects the configured stdio servers, lists their tools and exposes them to the model namespaced `mcp__<server>__<tool>`; calls are routed back to the right server. MCP tools require approval by default (they can touch files/network). Live connection status (connected / error / tool count) shows in the MCP settings tab; tools of a server that dies mid-session are pruned automatically.
 - **`fetch_url`** — read a page over plain HTTP (title + extracted text) with **no browser window**, the default way to read/scan; the built-in browser now runs **headless by default** and only appears for screenshots / coordinate clicks. Short 5-min cache like `web_search`.

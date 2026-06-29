@@ -151,7 +151,8 @@ interface Window {
     // Servidor remoto p/ o app do celular (PWA) — v2.191.0
     remoteServerStart?: (params?: { port?: number }) => Promise<{ ok?: boolean; port?: number; token?: string; addresses?: { address: string; iface: string; tailscale: boolean }[]; error?: string }>
     remoteServerStop?: () => Promise<{ ok?: boolean; error?: string }>
-    remoteServerStatus?: () => Promise<{ running: boolean; port: number; token: string; addresses: { address: string; iface: string; tailscale: boolean }[] }>
+    remoteServerStatus?: () => Promise<{ running: boolean; port: number; token: string; addresses: { address: string; iface: string; tailscale: boolean }[]; autostart?: boolean }>
+    remoteServerSetAutostart?: (enabled: boolean) => Promise<{ ok?: boolean; autostart?: boolean; error?: string }>
     remoteServerConfig?: (cfg: { provider?: string; model?: string; models?: string[]; targets?: { id: string; label: string; provider: string; model: string }[] }) => Promise<{ ok: boolean }>
     remoteServerRegenToken?: () => Promise<{ token: string }>
     onRemoteChatRequest?: (callback: (req: { id: string; messages: { role: string; content: string }[]; model?: string; provider?: string }) => void) => () => void

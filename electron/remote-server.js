@@ -140,9 +140,13 @@ function createRemoteServer(opts) {
   let server = null
   let listenPort = 0
 
+  // Headers de segurança em TODA resposta (defesa em profundidade — o servidor
+  // fica acessível via túnel). nosniff impede MIME-sniffing; DENY/no-referrer
+  // evitam embed em iframe e vazamento de Referer.
+  const SEC = { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' }
   const sendJson = (res, status, obj) => {
     const body = JSON.stringify(obj)
-    res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+    res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...SEC })
     res.end(body)
   }
   const serveStatic = (res, pathname) => {
@@ -153,12 +157,12 @@ function createRemoteServer(opts) {
         // Fallback SPA: rota desconhecida → index.html (a PWA roteia no cliente).
         fs.readFile(path.join(path.normalize(opts.staticDir), 'index.html'), (e2, d2) => {
           if (e2) return sendJson(res, 404, { error: 'não encontrado' })
-          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', ...SEC })
           res.end(d2)
         })
         return
       }
-      res.writeHead(200, { 'Content-Type': mimeFor(filePath), 'Cache-Control': 'no-store' })
+      res.writeHead(200, { 'Content-Type': mimeFor(filePath), 'Cache-Control': 'no-store', ...SEC })
       res.end(data)
     })
   }
@@ -196,6 +200,7 @@ function createRemoteServer(opts) {
           'Cache-Control': 'no-cache, no-transform',
           'Connection': 'keep-alive',
           'X-Accel-Buffering': 'no',
+          ...SEC,
         })
         let closed = false
         const hb = setInterval(() => { if (!closed) { try { res.write(': hb\n\n') } catch { /* */ } } }, 10000)

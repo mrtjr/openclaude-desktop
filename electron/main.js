@@ -22,6 +22,7 @@ const { initAutoUpdater, quitAndInstall } = require('./updater')
 const { dedupeResults, formatResults, cacheKey, isFresh } = require('./web-search-util')
 const { htmlToText, extractTitle, looksThin } = require('./web-fetch-util')
 const { createRemoteServer, generateToken } = require('./remote-server')
+const { pickLocalAddresses } = require('./net-info')
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -3374,6 +3375,10 @@ if (!gotSingleInstanceLock) {
 // internet via Tailscale (`tailscale serve`), nunca port-forward; token aleatório
 // protege toda rota /api. Ver electron/remote-server.js (helpers testados).
 const REMOTE_TOKEN_PATH = path.join(app.getPath('userData'), 'remote-token.txt')
+// Flag opt-in (v2.195.0): se existir, o servidor do celular liga sozinho ao abrir
+// o app — útil p/ acesso remoto (após reiniciar o PC não precisa religar na mão).
+const REMOTE_AUTOSTART_PATH = path.join(app.getPath('userData'), 'remote-autostart')
+const isRemoteAutostart = () => { try { return fs.existsSync(REMOTE_AUTOSTART_PATH) } catch { return false } }
 let remoteServer = null
 let remoteToken = ''
 let remoteConfig = { name: 'OpenClaude', version: app.getVersion(), provider: null, model: null, models: [], targets: [] }
@@ -3460,16 +3465,7 @@ function getRemoteServer() {
 // IPs locais (LAN + Tailscale) p/ a UI montar as URLs de pareamento. Tailscale
 // usa a faixa 100.64/10 (CGNAT) — marcamos p/ recomendar essa na UI.
 function localAddresses() {
-  const out = []
-  const ifaces = os.networkInterfaces()
-  for (const name of Object.keys(ifaces)) {
-    for (const ni of ifaces[name] || []) {
-      if (ni.family === 'IPv4' && !ni.internal) {
-        out.push({ address: ni.address, iface: name, tailscale: /^100\./.test(ni.address) || /tailscale/i.test(name) })
-      }
-    }
-  }
-  return out
+  return pickLocalAddresses(os.networkInterfaces())
 }
 
 ipcMain.handle('remote-server-start', async (_e, { port } = {}) => {
@@ -3488,7 +3484,21 @@ ipcMain.handle('remote-server-status', async () => ({
   port: remoteServer ? remoteServer.port() : 0,
   token: remoteToken || '',
   addresses: localAddresses(),
+  autostart: isRemoteAutostart(),
 }))
+// Liga/desliga o auto-start (cria/apaga o flag). Se ligar com o servidor parado,
+// já sobe agora também.
+ipcMain.handle('remote-server-set-autostart', async (_e, { enabled } = {}) => {
+  try {
+    if (enabled) {
+      fs.writeFileSync(REMOTE_AUTOSTART_PATH, '1', 'utf8')
+      if (!(remoteServer && remoteServer.isRunning())) { try { await getRemoteServer().start(8765) } catch (e) { /* porta ocupada etc. */ } }
+    } else {
+      try { fs.unlinkSync(REMOTE_AUTOSTART_PATH) } catch { /* já não existe */ }
+    }
+    return { ok: true, autostart: isRemoteAutostart() }
+  } catch (e) { return { error: (e && e.message) || String(e) } }
+})
 // O renderer espelha aqui o provider/modelo/lista p/ o /api/info do celular.
 ipcMain.handle('remote-server-config', async (_e, cfg = {}) => {
   remoteConfig = {
@@ -3521,6 +3531,12 @@ app.whenReady().then(() => {
   if (!gotSingleInstanceLock) return
   createWindow()
   createTray()
+
+  // Auto-start opt-in do servidor do celular (v2.195.0): abre a porta já no
+  // arranque; os pedidos de chat só chegam depois que o renderer carrega (ponte).
+  if (isRemoteAutostart()) {
+    getRemoteServer().start(8765).then((r) => console.log('[remote] autostart na porta', r.port)).catch((e) => console.error('[remote] autostart falhou:', e && e.message))
+  }
 
   // Background auto-update (Claude-style). Wires events + polls GitHub Releases
   // in packaged builds; the renderer shows a "Reiniciar para atualizar" button

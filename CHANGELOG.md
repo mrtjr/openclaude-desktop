@@ -7,6 +7,38 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Added — 📱 App do celular (PWA) conectado ao desktop (2.191.0 – 2.195.0)
+
+Um app para o **iPhone/Android** que conversa com a **IA local (Ollama)** e a
+**principal** já configuradas no desktop, funcionando em **qualquer rede ou dados
+móveis**. Como o app é servido pelo próprio desktop, vira um app na tela de início
+(PWA) — sem App Store, sem Mac.
+
+- **Servidor embutido** (`electron/remote-server.js`): HTTP local, sem dependências
+  novas, com **token de pareamento** aleatório em toda rota `/api`, headers de
+  segurança (`nosniff`/`DENY`), validação de corpo e bloqueio de path-traversal.
+- **Streaming ao vivo** (SSE) token a token, com heartbeat que mantém a conexão
+  viva em respostas longas/lentas (ex.: GLM) — não corta mais.
+- **Acesso remoto via Tailscale** (rede privada) ou túnel; nunca abre porta no
+  roteador.
+- **App (PWA)**: histórico de múltiplas conversas (criar/trocar/renomear/buscar/
+  apagar), editar/apagar/copiar/regenerar mensagem, **parar** no meio, markdown ao
+  vivo (tabelas, código, blockquote), **voz** (Web Speech), tema claro/escuro,
+  compartilhar conversa, seletor de IA local/principal.
+- **Auto-start opcional** do servidor ao abrir o app + **hot-update** da PWA
+  (atualiza sem reinstalar o desktop). Painel **Configurações → Celular** com QR de
+  pareamento, status, teste de conexão e auto-start.
+
+### Fixed — Terminal e loop do agente (2.189.0 – 2.190.0)
+
+- `execute_command` rodava o PowerShell **sem `-NonInteractive`**, então qualquer
+  prompt (confirmação, `Read-Host`, credencial, `$PROFILE` lento) travava até o
+  timeout — a IA "não terminava o comando". Agora roda `-NoProfile -NonInteractive`
+  (alinhado ao handler de background): falha rápido em vez de pendurar.
+- O loop do agente, ao atingir um guarda de segurança (idle/circuit-breaker), podia
+  **encerrar sem resposta**. Agora dá um último passo sem ferramentas para fechar
+  com um resumo — sempre entrega uma resposta.
+
 ## [2.58.0] — 2026-06-15
 
 ### Added — Continuar a partir de outra conversa (importar contexto)
