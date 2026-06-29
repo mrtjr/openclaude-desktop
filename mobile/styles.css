@@ -79,6 +79,10 @@ button { font: inherit; color: inherit; }
 .code-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: rgba(255,255,255,.03); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-faint); }
 .code-copy { background: none; border: none; color: var(--accent-2); font-size: 11px; cursor: pointer; padding: 2px 4px; }
 .msg pre.code code { display: block; padding: 11px 12px; overflow-x: auto; font-family: ui-monospace, "SF Mono", monospace; font-size: 12.5px; line-height: 1.5; white-space: pre; color: #e6e6ee; }
+.md-table { border-collapse: collapse; margin: 8px 0; font-size: 13px; width: 100%; display: block; overflow-x: auto; }
+.md-table th, .md-table td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; white-space: nowrap; }
+.md-table th { background: rgba(255,255,255,.04); font-weight: 650; }
+.msg blockquote { margin: 6px 0; padding: 4px 12px; border-left: 3px solid var(--accent); color: var(--text-dim); }
 
 /* empty + chips */
 .empty { margin: auto; text-align: center; color: var(--text-dim); padding: 24px 18px; max-width: 340px; }

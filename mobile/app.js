@@ -15,17 +15,33 @@ const haptic = (ms) => { try { navigator.vibrate && navigator.vibrate(ms) } catc
 
 // ── Markdown seguro ─────────────────────────────────────────────────
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])) }
+function mdTable(block) {
+  // bloco de linhas que começam/terminam com | → tabela
+  const rows = block.split('\n').filter((l) => l.trim().startsWith('|'))
+  if (rows.length < 2) return null
+  const cells = (l) => l.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim())
+  const head = cells(rows[0])
+  const body = rows.slice(2).map(cells) // pula a linha separadora ---|---
+  const th = head.map((c) => `<th>${escapeHtml(c)}</th>`).join('')
+  const trs = body.map((r) => '<tr>' + r.map((c) => `<td>${escapeHtml(c)}</td>`).join('') + '</tr>').join('')
+  return `<table class="md-table"><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table>`
+}
 function renderMarkdown(md) {
   const blocks = []
   let text = String(md).replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => { blocks.push({ lang: lang || '', code }); return ` B${blocks.length - 1} ` })
+  // tabelas (antes de escapar — extrai e guarda o HTML pronto)
+  const tables = []
+  text = text.replace(/(?:^\|.*\|[ \t]*\n?){2,}/gm, (m) => { const t = mdTable(m); if (!t) return m; tables.push(t); return ` T${tables.length - 1} ` })
   text = escapeHtml(text)
   text = text.replace(/`([^`\n]+)`/g, (_, c) => `<code class="inline">${c}</code>`)
   text = text.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
   text = text.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>')
   text = text.replace(/^### (.*)$/gm, '<h3>$1</h3>').replace(/^##? (.*)$/gm, '<h2>$1</h2>')
+  text = text.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>')
   text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
   text = text.replace(/^\s*[-*] (.+)$/gm, '• $1')
   text = text.replace(/\n/g, '<br>')
+  text = text.replace(/ T(\d+) /g, (_, i) => tables[i])
   text = text.replace(/ B(\d+) /g, (_, i) => {
     const b = blocks[i]
     return `<pre class="code"><div class="code-head"><span>${escapeHtml(b.lang || 'code')}</span><button class="code-copy" data-code="${encodeURIComponent(b.code)}">copiar</button></div><code>${escapeHtml(b.code)}</code></pre>`
@@ -135,7 +151,7 @@ function regenerate() {
   saveHistory(); haptic(8); runChat()
 }
 
-async function runChat() {
+async function runChat(retried) {
   const target = currentTarget()
   setBusy(true); setDot('busy')
   $('typing').classList.remove('hidden')
@@ -145,8 +161,9 @@ async function runChat() {
   const timer = setInterval(() => { $('elapsed').textContent = Math.round((Date.now() - t0) / 1000) + 's' }, 1000)
 
   state.abort = new AbortController()
-  let bubble = null, acc = '', err = null, stopped = false
+  let bubble = null, acc = '', err = null, stopped = false, lastRender = 0
   const ensure = () => { if (bubble) return; clearInterval(timer); $('typing').classList.add('hidden'); const r = addRow('assistant', ''); bubble = r; bubble.msg.classList.add('cursor') }
+  const renderLive = () => { const now = Date.now(); if (now - lastRender > 40) { lastRender = now; bubble.msg.textContent = acc; scrollToEnd() } }
 
   try {
     const r = await api('/api/chat', {
@@ -165,7 +182,7 @@ async function runChat() {
           const line = ev.split('\n').find((l) => l.startsWith('data:')); if (!line) continue
           let obj; try { obj = JSON.parse(line.slice(5).trim()) } catch (e) { continue }
           if (obj.error) { err = obj.error; done = true; break }
-          if (obj.delta) { ensure(); acc += obj.delta; bubble.msg.textContent = acc; scrollToEnd() }
+          if (obj.delta) { ensure(); acc += obj.delta; renderLive() }
           if (obj.done) { acc = obj.text || acc; done = true; break }
         }
       }
@@ -175,6 +192,14 @@ async function runChat() {
   }
 
   clearInterval(timer); $('typing').classList.add('hidden'); state.abort = null; setBusy(false)
+
+  // Auto-retry uma vez em queda de rede SEM nada recebido (provável blip do túnel).
+  if (err && !retried && !acc && /interrompida|Erro 5|conex/i.test(err)) {
+    if (bubble) bubble.row.remove()
+    setDot('busy'); toast('Reconectando…')
+    setTimeout(() => runChat(true), 1300)
+    return
+  }
 
   if (err) {
     if (bubble) bubble.row.remove()
