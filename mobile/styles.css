@@ -18,6 +18,12 @@
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
+[data-theme="light"] {
+  --bg: #f4f4f8; --bg-soft: #ffffff; --surface: #ffffff; --surface-2: #eceef4;
+  --border: #e1e3ea; --border-soft: #e9ebf1;
+  --text: #1a1a1f; --text-dim: #56565f; --text-faint: #8a8a96;
+  --user: linear-gradient(135deg, #ece8ff, #ded5ff);
+}
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body {
   margin: 0; height: 100%;
@@ -83,6 +89,11 @@ button { font: inherit; color: inherit; }
 .md-table th, .md-table td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; white-space: nowrap; }
 .md-table th { background: rgba(255,255,255,.04); font-weight: 650; }
 .msg blockquote { margin: 6px 0; padding: 4px 12px; border-left: 3px solid var(--accent); color: var(--text-dim); }
+.msg hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+.conv-search { margin: 0 6px 8px; padding: 9px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font: inherit; font-size: 14px; outline: none; }
+.conv-search:focus { border-color: var(--accent); }
+.conv-item .c-ren { flex: none; width: 30px; height: 30px; border-radius: 8px; background: none; border: none; color: var(--text-faint); display: grid; place-items: center; cursor: pointer; font-size: 13px; }
+.conv-item .c-ren:active { background: var(--surface); color: var(--text); }
 
 /* empty + chips */
 .empty { margin: auto; text-align: center; color: var(--text-dim); padding: 24px 18px; max-width: 340px; }

@@ -4,7 +4,7 @@
 
 const $ = (id) => document.getElementById(id)
 const LS_TOKEN = 'oc_remote_token', LS_HISTORY = 'oc_remote_history', LS_TARGET = 'oc_remote_target'
-const LS_CONVS = 'oc_conversations', LS_CURRENT = 'oc_current_conv'
+const LS_CONVS = 'oc_conversations', LS_CURRENT = 'oc_current_conv', LS_THEME = 'oc_theme'
 
 const state = {
   token: '', messages: [], targets: [], targetId: '', busy: false,
@@ -14,8 +14,13 @@ const state = {
   currentId: '',
 }
 
-const EMPTY_HTML = '<div id="empty" class="empty"><div class="empty-logo">◈</div><p class="empty-title">Como posso ajudar?</p><p class="empty-sub">Sua IA local e a principal do desktop — de qualquer lugar.</p><div id="chips" class="chips"><button class="chip">Resuma esta ideia: </button><button class="chip">Escreva um e-mail para </button><button class="chip">Me explique como </button><button class="chip">Crie um plano para </button></div></div>'
-function showEmpty() { $('messages').innerHTML = EMPTY_HTML }
+function greeting() { const h = new Date().getHours(); return h < 5 ? 'Boa madrugada' : h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite' }
+function showEmpty() {
+  $('messages').innerHTML = '<div id="empty" class="empty"><div class="empty-logo">◈</div>'
+    + '<p class="empty-title">' + greeting() + '! Como posso ajudar?</p>'
+    + '<p class="empty-sub">Sua IA local e a principal do desktop — de qualquer lugar.</p>'
+    + '<div id="chips" class="chips"><button class="chip">Resuma esta ideia: </button><button class="chip">Escreva um e-mail para </button><button class="chip">Me explique como </button><button class="chip">Crie um plano para </button></div></div>'
+}
 
 const haptic = (ms) => { try { navigator.vibrate && navigator.vibrate(ms) } catch (e) {} }
 
@@ -43,6 +48,7 @@ function renderMarkdown(md) {
   text = text.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
   text = text.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>')
   text = text.replace(/^### (.*)$/gm, '<h3>$1</h3>').replace(/^##? (.*)$/gm, '<h2>$1</h2>')
+  text = text.replace(/^(?:---+|\*\*\*+|___+)$/gm, '<hr>')
   text = text.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>')
   text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
   text = text.replace(/^\s*[-*] (.+)$/gm, '• $1')
@@ -108,22 +114,43 @@ function addRow(role, content) {
   scrollToEnd(true)
   return { row, msg }
 }
-function addActions(row, getText) {
+const ICN = {
+  copy: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="2" d="M9 9h10v10H9zM5 15V5h10"/></svg>',
+  regen: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="2" d="M4 12a8 8 0 1 1 2.3 5.6M4 20v-5h5"/></svg>',
+  edit: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="2" d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/></svg>',
+  del: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="2" d="M5 7h14M9 7V5h6v2M7 7l1 13h8l1-13"/></svg>',
+}
+// Barra de ações por mensagem: Copiar / (Editar|Regenerar) / Apagar.
+function addActions(row, msgObj) {
   if (row.querySelector('.msg-actions')) return
+  const isUser = msgObj && msgObj.role === 'user'
   const bar = document.createElement('div'); bar.className = 'msg-actions'
-  const copy = document.createElement('button'); copy.className = 'msg-act'
-  copy.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="2" d="M9 9h10v10H9zM5 15V5h10"/></svg> Copiar'
-  copy.onclick = () => { navigator.clipboard.writeText(getText()).then(() => { haptic(8); toast('Copiado') }).catch(() => {}) }
-  const regen = document.createElement('button'); regen.className = 'msg-act'
-  regen.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="2" d="M4 12a8 8 0 1 1 2.3 5.6M4 20v-5h5"/></svg> Regenerar'
-  regen.onclick = regenerate
-  bar.appendChild(copy); bar.appendChild(regen); row.appendChild(bar)
+  const mk = (html, fn) => { const b = document.createElement('button'); b.className = 'msg-act'; b.innerHTML = html; b.onclick = fn; bar.appendChild(b) }
+  mk(ICN.copy + ' Copiar', () => { const txt = msgObj ? msgObj.content : row.querySelector('.msg').textContent; navigator.clipboard.writeText(txt).then(() => { haptic(8); toast('Copiado') }).catch(() => {}) })
+  if (isUser) mk(ICN.edit + ' Editar', () => editMessage(msgObj))
+  else mk(ICN.regen + ' Regenerar', regenerate)
+  if (msgObj) mk(ICN.del, () => deleteMessage(msgObj, row))
+  row.appendChild(bar)
+}
+// Editar mensagem do usuário: volta o texto pro campo e corta a conversa daqui.
+function editMessage(msgObj) {
+  if (state.busy) return
+  const idx = state.messages.indexOf(msgObj); if (idx < 0) return
+  $('input').value = msgObj.content; $('input').dispatchEvent(new Event('input'))
+  state.messages.splice(idx); persist()
+  $('messages').innerHTML = ''; state.messages.length ? renderHistory() : showEmpty()
+  $('input').focus(); haptic(8)
+}
+function deleteMessage(msgObj, row) {
+  const idx = state.messages.indexOf(msgObj); if (idx >= 0) state.messages.splice(idx, 1)
+  row.remove(); persist()
+  if (!state.messages.length) showEmpty()
 }
 
 function renderHistory() {
   for (const m of state.messages) {
     const { row } = addRow(m.role === 'user' ? 'user' : 'assistant', m.content)
-    if (m.role === 'assistant') addActions(row, () => m.content)
+    addActions(row, m)
   }
 }
 
@@ -167,14 +194,21 @@ function deleteConv(id) {
   if (state.currentId === id) { state.currentId = state.conversations[0].id; state.messages = currentConv().messages; $('messages').innerHTML = ''; state.messages.length ? renderHistory() : showEmpty() }
   persist(); renderDrawer()
 }
+function renameConv(c) {
+  const name = prompt('Renomear conversa:', c.title || '')
+  if (name && name.trim()) { c.title = name.trim().slice(0, 60); persist(); renderDrawer(); haptic(8) }
+}
 function renderDrawer() {
   const list = $('convList'); list.innerHTML = ''
-  const sorted = [...state.conversations].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
-  if (!sorted.length) { list.innerHTML = '<div class="conv-empty">Nenhuma conversa</div>'; return }
-  for (const c of sorted) {
+  const q = (state.convFilter || '').toLowerCase().trim()
+  let convs = [...state.conversations].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+  if (q) convs = convs.filter((c) => (c.title || '').toLowerCase().includes(q) || (c.messages || []).some((m) => (m.content || '').toLowerCase().includes(q)))
+  if (!convs.length) { list.innerHTML = '<div class="conv-empty">' + (q ? 'Nada encontrado' : 'Nenhuma conversa') + '</div>'; return }
+  for (const c of convs) {
     const item = document.createElement('div'); item.className = 'conv-item' + (c.id === state.currentId ? ' active' : '')
-    item.innerHTML = `<span class="c-title">${escapeHtml(c.title || 'Nova conversa')}</span><button class="c-del" aria-label="Apagar">✕</button>`
-    item.onclick = (e) => { if (!e.target.closest('.c-del')) switchConv(c.id) }
+    item.innerHTML = `<span class="c-title">${escapeHtml(c.title || 'Nova conversa')}</span><button class="c-ren" aria-label="Renomear">✎</button><button class="c-del" aria-label="Apagar">✕</button>`
+    item.onclick = (e) => { if (!e.target.closest('.c-del') && !e.target.closest('.c-ren')) switchConv(c.id) }
+    item.querySelector('.c-ren').onclick = (e) => { e.stopPropagation(); renameConv(c) }
     item.querySelector('.c-del').onclick = (e) => { e.stopPropagation(); deleteConv(c.id) }
     list.appendChild(item)
   }
@@ -196,8 +230,9 @@ function send(text) {
   if (!text.trim() || state.busy) return
   const t = text.trim()
   state.lastUser = t
-  state.messages.push({ role: 'user', content: t })
-  addRow('user', t); saveHistory(); haptic(8)
+  const userMsg = { role: 'user', content: t }
+  state.messages.push(userMsg)
+  const { row } = addRow('user', t); addActions(row, userMsg); saveHistory(); haptic(8)
   runChat()
 }
 
@@ -216,13 +251,15 @@ async function runChat(retried) {
   $('typing').classList.remove('hidden')
   // cronômetro de espera (modelos lentos não parecem travados)
   const t0 = Date.now()
-  $('elapsed').textContent = ''
-  const timer = setInterval(() => { $('elapsed').textContent = Math.round((Date.now() - t0) / 1000) + 's' }, 1000)
+  const tLabel = (target ? target.label.replace(/^Ollama \(local\): /, '').replace(/^[a-z]+: /, '') : '').slice(0, 18)
+  $('elapsed').textContent = tLabel
+  const timer = setInterval(() => { $('elapsed').textContent = (tLabel ? tLabel + ' • ' : '') + Math.round((Date.now() - t0) / 1000) + 's' }, 1000)
 
   state.abort = new AbortController()
   let bubble = null, acc = '', err = null, stopped = false, lastRender = 0
   const ensure = () => { if (bubble) return; clearInterval(timer); $('typing').classList.add('hidden'); const r = addRow('assistant', ''); bubble = r; bubble.msg.classList.add('cursor') }
-  const renderLive = () => { const now = Date.now(); if (now - lastRender > 40) { lastRender = now; bubble.msg.textContent = acc; scrollToEnd() } }
+  // markdown ao vivo (throttle ~9fps; o parse é mais pesado que texto puro)
+  const renderLive = () => { const now = Date.now(); if (now - lastRender > 110) { lastRender = now; bubble.msg.innerHTML = renderMarkdown(acc); scrollToEnd() } }
 
   try {
     const r = await api('/api/chat', {
@@ -275,8 +312,9 @@ async function runChat(retried) {
   bubble.msg.classList.remove('cursor')
   const finalText = acc || (stopped ? '(parado)' : '(sem resposta)')
   bubble.msg.innerHTML = renderMarkdown(finalText)
-  addActions(bubble.row, () => finalText)
-  state.messages.push({ role: 'assistant', content: finalText })
+  const aMsg = { role: 'assistant', content: finalText }
+  state.messages.push(aMsg)
+  addActions(bubble.row, aMsg)
   saveHistory(); scrollToEnd(); haptic(6)
 }
 
@@ -301,6 +339,7 @@ function wireDrawer() {
   $('menuBtn').addEventListener('click', openDrawer)
   $('drawer').querySelector('.drawer-backdrop').addEventListener('click', closeDrawer)
   $('drawerNew').addEventListener('click', newConversation)
+  $('convSearch').addEventListener('input', (e) => { state.convFilter = e.target.value; renderDrawer() })
 }
 function wireVoice() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -342,6 +381,34 @@ function wireSheet() {
   $('sheet').querySelector('.sheet-backdrop').addEventListener('click', closeSheet)
   $('clearBtn').addEventListener('click', () => { state.messages.length = 0; persist(); showEmpty(); closeSheet() })
   $('repairBtn').addEventListener('click', () => { localStorage.removeItem(LS_TOKEN); location.reload() })
+  $('themeBtn').addEventListener('click', toggleTheme)
+  $('shareBtn').addEventListener('click', shareConversation)
+}
+
+// ── Tema (claro/escuro) ─────────────────────────────────────────────
+function applyTheme(t) {
+  document.documentElement.setAttribute('data-theme', t)
+  const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', t === 'light' ? '#f4f4f8' : '#0b0b0d')
+  const btn = document.getElementById('themeBtn'); if (btn) btn.textContent = 'Tema: ' + (t === 'light' ? 'claro' : 'escuro')
+}
+function initTheme() {
+  let t = localStorage.getItem(LS_THEME)
+  if (!t) t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'
+  applyTheme(t)
+}
+function toggleTheme() {
+  const t = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light'
+  localStorage.setItem(LS_THEME, t); applyTheme(t); haptic(8)
+}
+
+// ── Compartilhar conversa ───────────────────────────────────────────
+function shareConversation() {
+  closeSheet()
+  if (!state.messages.length) { toast('Conversa vazia'); return }
+  const text = state.messages.map((m) => (m.role === 'user' ? '🧑 ' : '🤖 ') + m.content).join('\n\n')
+  const title = (currentConv() && currentConv().title) || 'Conversa OpenClaude'
+  if (navigator.share) { navigator.share({ title, text }).catch(() => {}) }
+  else { navigator.clipboard.writeText(text).then(() => toast('Conversa copiada')).catch(() => toast('Não consegui copiar')) }
 }
 
 // ── Pareamento ──────────────────────────────────────────────────────
@@ -367,4 +434,4 @@ async function boot() {
 }
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {})
-wireComposer(); wireSheet(); wireDrawer(); wireVoice(); boot()
+initTheme(); wireComposer(); wireSheet(); wireDrawer(); wireVoice(); boot()
