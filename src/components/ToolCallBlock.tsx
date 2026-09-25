@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import React, { memo, useState } from 'react'
 import { Play, ChevronDown, Wrench, Terminal } from 'lucide-react'
 import type { ToolCall, ToolResult } from '../types'
 import { formatMarkdown } from '../utils/formatting'
@@ -28,35 +28,78 @@ function ToolCallBlockInner({
   tc, result, toolKey, language, collapsedTools, onToggleCollapse,
 }: ToolCallBlockProps) {
   const resultText = result?.result || ''
-  const defaultCollapsed = resultText.length > 200
-  const isCollapsed = collapsedTools.has(toolKey) ? !defaultCollapsed : defaultCollapsed
-  // Header readability (v2.12.52): a run with 10+ execute_commands used
-  // to render identical rows — surface the main arg and flag failures
-  // (isToolError reuses the audit classification, exec markers included).
+  
+  const isPending = !result
+  const failed = !!result && (!!result.error || (!!resultText && isToolError(resultText, tc.name)))
+  const isSuccess = !!result && !failed
+
+  // Se for interagido manualmente, usamos a prop ou state local. 
+  // Mas para não quebrar ChatMessage que passa onToggleCollapse,
+  // vamos usar um estado local puro para gerenciar isso ou derivar de isPending/failed.
+  const [userExpanded, setUserExpanded] = React.useState<boolean | null>(null)
+  
+  // Logica de Expansão Padrão: 
+  // pendente ou erro -> expandido. sucesso -> colapsado.
+  const autoExpanded = isPending || failed
+  const isExpanded = userExpanded !== null ? userExpanded : autoExpanded
+
   const summary = toolCallSummary(tc.name, tc.arguments)
-  const failed = !!resultText && isToolError(resultText, tc.name)
+  
+  let statusIcon = ''
+  let statusText = ''
+  let statusClasses = ''
+  
+  if (isPending) {
+    statusIcon = '🔄'
+    statusText = 'executando...'
+    statusClasses = 'border-l-4 border-blue-400 animate-pulse bg-blue-50/10'
+  } else if (failed) {
+    statusIcon = '❌'
+    statusText = 'falhou'
+    statusClasses = 'border-l-4 border-red-500 bg-red-50/10'
+  } else {
+    statusIcon = '✅'
+    statusText = 'concluída'
+    statusClasses = 'border-l-4 border-green-500 bg-green-50/10'
+  }
+
   return (
-    <div className="tool-call">
-      <button className="tool-call-header" onClick={() => onToggleCollapse(toolKey)}>
-        {isCollapsed ? <Play size={10} className="tool-play" /> : <ChevronDown size={14} />}
-        <Wrench size={12} className="tool-icon" /><span>{tc.name}</span>
-        {summary && <span className="tool-call-summary" title={summary}>{summary}</span>}
-        {failed && <span className="tool-call-badge-error">{language === 'en' ? 'error' : 'erro'}</span>}
-      </button>
-      {!isCollapsed && (
-        <>
-          <pre className="tool-call-args">{JSON.stringify(tc.arguments, null, 2)}</pre>
+    <div className={`tool-call my-2 p-2 rounded-md shadow-sm transition-all duration-300 ${statusClasses}`}>
+      <details 
+        className="group" 
+        open={isExpanded} 
+        onToggle={(e) => {
+          const isOpen = (e.target as HTMLDetailsElement).open;
+          if (isOpen !== isExpanded) setUserExpanded(isOpen);
+        }}
+      >
+        <summary className="tool-call-header cursor-pointer list-none flex items-center gap-2 font-medium text-sm select-none" onClick={(e) => e.preventDefault() /* prevent default toggle to use state controlled toggle */}>
+          <div onClick={() => setUserExpanded(!isExpanded)} className="flex items-center gap-2 w-full">
+            <span className="text-base">{statusIcon}</span>
+            <span className="font-semibold text-gray-700 dark:text-gray-200">Ferramenta: {tc.name}</span>
+            <span className="text-xs opacity-75 italic">({statusText})</span>
+            {summary && <span className="tool-call-summary ml-auto truncate max-w-xs text-xs opacity-60" title={summary}>{summary}</span>}
+            <ChevronDown size={14} className={`ml-auto transform transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+          </div>
+        </summary>
+        
+        <div className="mt-3 text-sm">
+          <div className="font-mono text-xs bg-black/5 dark:bg-white/5 p-2 rounded mb-2 overflow-x-auto">
+            <span className="opacity-50 select-none">// Argumentos:</span>
+            <pre className="tool-call-args m-0 mt-1">{JSON.stringify(tc.arguments, null, 2)}</pre>
+          </div>
           {result && (
             shouldRenderToolResultAsMarkdown(tc.name)
-              // Saída de prosa/markdown autoral (web_search, rag_search,
-              // compare_models, visão): renderiza como markdown — links
-              // clicáveis, títulos por modelo, citações de fonte. As demais
-              // (logs/código) ficam em <pre> literal. Ver toolDisplay.ts.
-              ? <div className="tool-result tool-result-search" dangerouslySetInnerHTML={{ __html: formatMarkdown(result.result || '') }} />
-              : <div className="tool-result"><Terminal size={12} /><pre>{result.result}</pre></div>
+              ? <div className="tool-result tool-result-search border-t border-black/10 dark:border-white/10 pt-2" dangerouslySetInnerHTML={{ __html: formatMarkdown(result.result || '') }} />
+              : (
+                <div className="tool-result border-t border-black/10 dark:border-white/10 pt-2">
+                  <div className="flex items-center gap-1 opacity-50 mb-1"><Terminal size={12} /> <span className="text-xs">Output:</span></div>
+                  <pre className="overflow-x-auto bg-black/5 dark:bg-white/5 p-2 rounded text-xs max-h-96">{result.result}</pre>
+                </div>
+              )
           )}
-        </>
-      )}
+        </div>
+      </details>
     </div>
   )
 }
