@@ -45,6 +45,7 @@ import { logInsight, beginInsightTurn, bumpInsightStep, endInsightTurn } from '.
 import { buildEpisodeSummary } from '../utils/episodeMemory'
 import { createContextEngine, getModelContextLimit, effectiveContextLimit, isKnownModelLimit, countToolSchemas, computeMessageBudget, AUTOCOMPACT_BUFFER_RATIO } from '../services/contextEngine'
 import type { ProviderConfig } from './useProviderConfig'
+import { trimContextWindow } from '../utils/contextTrimmer'
 
 // The engine is pure and stateless — create once at module load.
 const contextEngine = createContextEngine()
@@ -1207,17 +1208,20 @@ export function useChat({
             toolsForRequest = scopeToolsForStep(toolsForRequest, stepSkillAllowed, stepSkillDisallowed)
             // tool_choice por passo (v2.141.0): 'require' só no 1º passo; só quando há ferramentas.
             const stepToolChoice = toolsForRequest.length ? toolChoiceParam(finalProvider, resolveTurnToolChoice(turnToolChoiceMode, steps)) : undefined
+            
+            const trimmedMessages = trimContextWindow(requestMessages, 80000)
+            
             const streamCall = isNotOllama
               ? window.electron.providerChatStream({
                   provider: finalProvider, apiKey: finalApiKey, model: finalModel,
-                  messages: requestMessages, tools: toolsForRequest,
+                  messages: trimmedMessages, tools: toolsForRequest,
                   temperature: settings.temperature, max_tokens: settings.maxTokens,
                   modalHostname, customBaseUrl,
                   reasoningEffort: effectiveEffort, // esforço de raciocínio (v2.25.0; auto-resolvido v2.50.0)
                   toolChoice: stepToolChoice
                 })
               : window.electron.ollamaChatStream({
-                  model: finalModel, messages: requestMessages, tools: toolsForRequest,
+                  model: finalModel, messages: trimmedMessages, tools: toolsForRequest,
                   temperature: settings.temperature, max_tokens: settings.maxTokens,
                   numCtx: modelLimit, // janela real do local (evita timeout por contexto gigante)
                   reasoningEffort: effectiveEffort,
@@ -1493,11 +1497,12 @@ export function useChat({
           toolsForRequest = scopeToolsForStep(toolsForRequest, stepSkillAllowed, stepSkillDisallowed)
           // tool_choice por passo (v2.141.0): 'require' só no 1º passo; só quando há ferramentas.
           const stepToolChoice = toolsForRequest.length ? toolChoiceParam(finalProvider, resolveTurnToolChoice(turnToolChoiceMode, steps)) : undefined
+          const trimmedMessagesSync = trimContextWindow(requestMessages, 80000)
           let response: any
           if (isNotOllama) {
             response = await window.electron.providerChat({
               provider: finalProvider, apiKey: finalApiKey, model: finalModel,
-              messages: requestMessages, tools: toolsForRequest,
+              messages: trimmedMessagesSync, tools: toolsForRequest,
               temperature: settings.temperature, max_tokens: settings.maxTokens,
               modalHostname, customBaseUrl,
               reasoningEffort: effectiveEffort, // esforço de raciocínio (v2.25.0; auto-resolvido v2.50.0)
@@ -1505,7 +1510,7 @@ export function useChat({
             })
           } else {
             response = await window.electron.ollamaChat({
-              model: finalModel, messages: requestMessages, tools: toolsForRequest,
+              model: finalModel, messages: trimmedMessagesSync, tools: toolsForRequest,
               temperature: settings.temperature, max_tokens: settings.maxTokens,
               numCtx: modelLimit, // janela real do local (evita timeout por contexto gigante)
               reasoningEffort: effectiveEffort,
