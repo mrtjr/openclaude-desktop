@@ -33,7 +33,7 @@ interface ChatMessageProps {
   /** Keys the user toggled away from their default collapsed state. */
   collapsedTools: Set<string>
   onToggleCollapse: (toolKey: string) => void
-  onOpenArtifact: (artifact: Artifact) => void
+  onOpenArtifact: (artifact: { type: string, content: string }) => void
   onRegenerate: () => void
   /** v2.208.0 — reverte os arquivos que ESTE turno alterou (rewind). */
   onRevertCheckpoint?: (msgId: string, seq: number, files: number) => void
@@ -123,7 +123,7 @@ function ChatMessageInner({
         )}
         {artifacts.length > 0 && (
           <button
-            onClick={() => onOpenArtifact(artifacts[0])}
+            onClick={() => onOpenArtifact({ type: artifacts[0].lang, content: artifacts[0].code })}
             title={language === 'pt' ? 'Renderizar o artefato em preview ao vivo' : 'Render the artifact in a live preview'}
             style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', border: '1px solid rgba(127,127,127,0.3)', background: 'transparent', color: 'inherit', opacity: 0.85 }}
           >

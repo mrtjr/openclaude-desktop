@@ -42,7 +42,7 @@ import type { Project, Conversation } from './types'
 // Saves ~1MB from initial bundle; each chunk loads async when user opens the modal.
 const AnalyticsDashboard = lazy(() => import('./Analytics'))
 const DevInsightsPanel = lazy(() => import('./DevInsightsPanel'))
-const ArtifactPanel = lazy(() => import('./ArtifactPanel'))
+const ArtifactRenderer = lazy(() => import('./components/ArtifactRenderer'))
 const ParliamentMode = lazy(() => import('./Parliament'))
 const PromptVault = lazy(() => import('./PromptVault'))
 const PersonaEngine = lazy(() => import('./PersonaEngine'))
@@ -191,7 +191,7 @@ export default function App() {
   const [isAgentMode, setIsAgentMode] = useState(false)
   const [showAnalytics, setShowAnalytics] = useState(false)
   const [showDevInsights, setShowDevInsights] = useState(false)
-  const [openArtifact, setOpenArtifact] = useState<Artifact | null>(null)
+  const [activeArtifact, setActiveArtifact] = useState<{ type: string, content: string } | null>(null)
   const [showParliament, setShowParliament] = useState(false)
   // ── Feature states ────────────────────────────────────────────────
   const [showVault, setShowVault] = useState(false)
@@ -2004,11 +2004,7 @@ export default function App() {
             onClose={() => setRewindTarget(null)}
           />
         )}
-        {openArtifact && (
-          <Suspense fallback={null}>
-            <ArtifactPanel artifact={openArtifact} onClose={() => setOpenArtifact(null)} language={settings.language} />
-          </Suspense>
-        )}
+        {/* ArtifactRenderer is now inline in the right panel */}
         {showParliament && (
           <ParliamentMode settings={settings} ollamaModels={models} onClose={() => setShowParliament(false)}
             onInsertToChat={(text) => { setInput(prev => (prev ? prev + '\n\n' : '') + text); setShowParliament(false) }} />
@@ -2534,7 +2530,7 @@ export default function App() {
                     mathReady={mathReady}
                     collapsedTools={collapsedTools}
                     onToggleCollapse={handleToggleToolCollapse}
-                    onOpenArtifact={setOpenArtifact}
+                    onOpenArtifact={setActiveArtifact}
                     onRegenerate={handleRegenerate}
                     onRevertCheckpoint={handleRevertCheckpoint}
                     onBranch={handleBranchFrom}
@@ -2965,7 +2961,9 @@ export default function App() {
             <PanelResizeHandle className="resize-handle" style={{ width: '4px', background: 'var(--border-color, rgba(127,127,127,0.2))', cursor: 'col-resize', transition: 'background 0.2s' }} />
             <Panel minSize={30}>
               <div id="artifact-canvas" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-secondary, #1e1e1e)', color: 'var(--text-secondary, #a1a1aa)' }}>
-                Artifact Canvas
+                <Suspense fallback={null}>
+                  <ArtifactRenderer artifact={activeArtifact} />
+                </Suspense>
               </div>
             </Panel>
           </PanelGroup>
