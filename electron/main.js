@@ -3014,45 +3014,40 @@ const PARLIAMENT_ROLE_PROMPTS = {
 
 // ─── Parliament Mode IPC Handler ─────────────────────────────────────────────
 ipcMain.handle('parliament-debate', async (event, { problem, roles, coordinator }) => {
-  // Run all role agents in parallel
+  // Run all role agents in parallel using allSettled to prevent total failure
   const rolePromises = roles.map(async (role) => {
     const systemPrompt = PARLIAMENT_ROLE_PROMPTS[role.id] || `Voce e ${role.name}. Analise o problema com seu papel especifico.`
     const messages = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `PROBLEMA / QUESTAO:\n\n${problem}` }
     ]
-    try {
-      const response = await callProviderOnce({
-        provider: role.provider,
-        apiKey: role.apiKey || '',
-        model: role.model,
-        messages,
-        modalHostname: role.modalHostname
-      })
-      const result = { roleId: role.id, roleName: role.name, emoji: role.emoji, response, status: 'done' }
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('parliament-role-done', result)
-      }
-      return result
-    } catch (err) {
-      const result = { roleId: role.id, roleName: role.name, emoji: role.emoji, response: '', error: err.message, status: 'error' }
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('parliament-role-done', result)
-      }
-      return result
+    const response = await callProviderOnce({
+      provider: role.provider,
+      apiKey: role.apiKey || '',
+      model: role.model,
+      messages,
+      modalHostname: role.modalHostname
+    })
+    const result = { roleId: role.id, roleName: role.name, emoji: role.emoji, response, status: 'done' }
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('parliament-role-done', result)
     }
+    return result
   })
 
-  const roleResults = await Promise.all(rolePromises)
+  const settledResults = await Promise.allSettled(rolePromises)
+  const roleResults = settledResults
+    .filter(r => r.status === 'fulfilled' && r.value)
+    .map(r => (r as PromiseFulfilledResult<any>).value)
 
   // Notify frontend that coordinator is starting
   if (win && !win.isDestroyed()) {
     win.webContents.send('parliament-coordinator-start', {})
   }
 
-  // Build coordinator context
+  // Build coordinator context only with successful reports (ignoring failures)
   const rolesContext = roleResults.map(r =>
-    `## ${r.emoji} ${r.roleName}\n\n${r.response || `[Erro: ${r.error || 'sem resposta'}]`}`
+    `## ${r.emoji} ${r.roleName}\n\n${r.response}`
   ).join('\n\n---\n\n')
 
   const coordinatorMessages = [
