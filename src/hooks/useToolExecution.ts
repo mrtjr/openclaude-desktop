@@ -499,6 +499,13 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         const res = await window.electron.workspaceTree(targetPath)
         return formatProjectTree(res, targetPath)
       }
+      if (name === 'take_screenshot') {
+        const res = await window.electron.takeScreenshot()
+        if (res.error || !res.base64) {
+          return `Erro ao capturar tela: ${res.error || 'Nenhum base64 retornado'}`
+        }
+        return `[Imagem Capturada com Sucesso: data:image/png;base64,${res.base64}]`
+      }
       if (name === 'write_file') {
         // Recuperação de escrita TRUNCADA (v2.161.0): se a chamada foi cortada
         // pelo limite de tokens, o JSON chegou quebrado (raw_invalid_json) e

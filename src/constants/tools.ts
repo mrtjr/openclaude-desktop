@@ -8,6 +8,17 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'take_screenshot',
+      description: 'Captura uma imagem da tela atual do usuário e retorna a string em Base64 para análise visual.',
+      parameters: {
+        type: 'object',
+        properties: {}
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'update_working_memory',
       description: 'Update your short-term memory to avoid losing context. Call this when you complete a step or change goals.',
       parameters: {
@@ -910,7 +921,7 @@ export const SAFE_TOOLS = new Set([
   'capture_screen', 'analyze_image', 'compare_models', 'set_persona', 'project_tree', 'glob_files',
   'search_conversations', 'get_command_output', 'kill_background_command',
   'memory_read', 'memory_write', 'memory_append', 'memory_list',
-  'recent_chats', 'conversation_search', 'read_conversation'
+  'recent_chats', 'conversation_search', 'read_conversation', 'take_screenshot'
 ])
 
 export const DANGEROUS_TOOLS = new Set([

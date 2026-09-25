@@ -3294,6 +3294,21 @@ ipcMain.handle('rag-stats', async () => {
   } catch (e) { return { count: 0, sources: [], error: e.message } }
 })
 
+// ─── Native Vision (Screenshot Tool) ─────────────────────────────────────────
+ipcMain.handle('take-screenshot', async () => {
+  try {
+    const { desktopCapturer, screen } = require('electron')
+    const display = screen.getPrimaryDisplay()
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: display.bounds.width, height: display.bounds.height }
+    })
+    if (!sources.length) return { base64: null, error: 'Nenhuma fonte de tela encontrada' }
+    const dataUrl = sources[0].thumbnail.toDataURL()
+    return { base64: dataUrl, error: null }
+  } catch (e) { return { base64: null, error: e.message } }
+})
+
 // ─── Vision Mode: Screen Capture ─────────────────────────────────────────────
 ipcMain.handle('capture-screen', async () => {
   try {
