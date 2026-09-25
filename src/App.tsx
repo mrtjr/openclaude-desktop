@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore, Suspense, lazy } from 'react'
 import 'highlight.js/styles/github-dark.css'
 import { Virtuoso } from 'react-virtuoso'
+import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels'
 import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, ArrowDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, MicOff, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder, Wrench, BrainCircuit, Check, Pencil, Archive, ArchiveRestore, ChevronLeft, BookOpen } from 'lucide-react'
 import { loadSettings, type AppSettings } from './settingsConfig'
 import { BackgroundSubagentRegistry } from './utils/backgroundSubagents'
@@ -2422,7 +2423,9 @@ export default function App() {
 
         {/* Chat area */}
         <div className="chat-area">
-          {settings.permissionLevel === 'ignore' && (
+          <PanelGroup orientation="horizontal" style={{ height: '100%', width: '100%' }}>
+            <Panel defaultSize={60} minSize={30} style={{ display: 'flex', flexDirection: 'column' }}>
+              {settings.permissionLevel === 'ignore' && (
             <div className="ignore-warning-banner">
               <AlertCircle size={14} />
               <span>{settings.language === 'en' ? 'Bypass Mode Active: All tools will be auto-approved' : 'Modo Bypass Ativo: Ferramentas serão aprovadas automaticamente'}</span>
@@ -2958,6 +2961,14 @@ export default function App() {
               </div>
             </div>
           </div>
+            </Panel>
+            <PanelResizeHandle className="resize-handle" style={{ width: '4px', background: 'var(--border-color, rgba(127,127,127,0.2))', cursor: 'col-resize', transition: 'background 0.2s' }} />
+            <Panel minSize={30}>
+              <div id="artifact-canvas" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-secondary, #1e1e1e)', color: 'var(--text-secondary, #a1a1aa)' }}>
+                Artifact Canvas
+              </div>
+            </Panel>
+          </PanelGroup>
         </div>
       </div>
     </div>
