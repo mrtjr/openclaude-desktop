@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore, Suspense, lazy } from 'react'
 import 'highlight.js/styles/github-dark.css'
+import { Virtuoso } from 'react-virtuoso'
 import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, ArrowDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, MicOff, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder, Wrench, BrainCircuit, Check, Pencil, Archive, ArchiveRestore, ChevronLeft, BookOpen } from 'lucide-react'
 import { loadSettings, type AppSettings } from './settingsConfig'
 import { BackgroundSubagentRegistry } from './utils/backgroundSubagents'
@@ -2501,42 +2502,49 @@ export default function App() {
                 )}
               </div>
             ) : (
-              renderItems.map(item => item.kind === 'steps' ? (
-                <AgentStepsGroup
-                  key={item.key}
-                  msgs={item.msgs}
-                  groupKey={item.key}
-                  language={settings.language}
-                  live={item.key === liveGroupKey}
-                  expanded={item.key === liveGroupKey ? !toggledStepGroups.has(item.key) : toggledStepGroups.has(item.key)}
-                  onToggleExpanded={handleToggleStepGroup}
-                  mathReady={mathReady}
-                  showThinking={settings.showThinking !== false}
-                  collapsedTools={collapsedTools}
-                  onToggleCollapse={handleToggleToolCollapse}
-                />
-              ) : (
-                <ChatMessage
-                  key={item.msg.id}
-                  msg={item.msg}
-                  language={settings.language}
-                  showThinking={settings.showThinking !== false}
-                  mathReady={mathReady}
-                  collapsedTools={collapsedTools}
-                  onToggleCollapse={handleToggleToolCollapse}
-                  onOpenArtifact={setOpenArtifact}
-                  onRegenerate={handleRegenerate}
-                  onRevertCheckpoint={handleRevertCheckpoint}
-                  onBranch={handleBranchFrom}
-                  onDelete={handleDeleteMessage}
-                  onEditResend={handleEditResend}
-                  onContinue={handleContinue}
-                  onFollowup={handleFollowup}
-                  onVerify={handleVerify}
-                  showToast={showToast}
-                  displayTransforms={displayTransforms}
-                />
-              ))
+              <Virtuoso
+                style={{ flex: 1 }}
+                data={renderItems}
+                initialTopMostItemIndex={renderItems.length - 1}
+                followOutput="smooth"
+                alignToBottom={true}
+                itemContent={(index, item) => item.kind === 'steps' ? (
+                  <AgentStepsGroup
+                    key={item.key}
+                    msgs={item.msgs}
+                    groupKey={item.key}
+                    language={settings.language}
+                    live={item.key === liveGroupKey}
+                    expanded={item.key === liveGroupKey ? !toggledStepGroups.has(item.key) : toggledStepGroups.has(item.key)}
+                    onToggleExpanded={handleToggleStepGroup}
+                    mathReady={mathReady}
+                    showThinking={settings.showThinking !== false}
+                    collapsedTools={collapsedTools}
+                    onToggleCollapse={handleToggleToolCollapse}
+                  />
+                ) : (
+                  <ChatMessage
+                    key={item.msg.id}
+                    msg={item.msg}
+                    language={settings.language}
+                    showThinking={settings.showThinking !== false}
+                    mathReady={mathReady}
+                    collapsedTools={collapsedTools}
+                    onToggleCollapse={handleToggleToolCollapse}
+                    onOpenArtifact={setOpenArtifact}
+                    onRegenerate={handleRegenerate}
+                    onRevertCheckpoint={handleRevertCheckpoint}
+                    onBranch={handleBranchFrom}
+                    onDelete={handleDeleteMessage}
+                    onEditResend={handleEditResend}
+                    onContinue={handleContinue}
+                    onFollowup={handleFollowup}
+                    onVerify={handleVerify}
+                    showToast={showToast}
+                    displayTransforms={displayTransforms}
+                  />
+                )}
+              />
             )}
             {/* Streaming text — only show in the conversation that is actively streaming */}
             {chat.isStreaming && chat.streamingText && isActiveConvLoading && (
