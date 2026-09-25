@@ -67,6 +67,7 @@
     "wait-on": "^8.0.0"
   },
   "dependencies": {
+    "@nut-tree-fork/nut-js": "^4.2.6",
     "@supabase/supabase-js": "^2.103.3",
     "@types/dompurify": "^3.0.5",
     "dompurify": "^3.1.0",

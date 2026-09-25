@@ -506,6 +506,21 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         }
         return `[Imagem Capturada com Sucesso: data:image/png;base64,${res.base64}]`
       }
+      if (name === 'mouse_move') {
+        const res = await window.electron.mouseMove({ x: args.x, y: args.y })
+        if (res.error) return `Erro ao mover mouse: ${res.error}`
+        return `Mouse movido para (${args.x}, ${args.y})`
+      }
+      if (name === 'mouse_click') {
+        const res = await window.electron.mouseClick({ button: args.button })
+        if (res.error) return `Erro ao clicar: ${res.error}`
+        return `Clique com botão ${args.button} efetuado.`
+      }
+      if (name === 'keyboard_type') {
+        const res = await window.electron.keyboardType({ text: args.text })
+        if (res.error) return `Erro ao digitar: ${res.error}`
+        return `Texto digitado com sucesso.`
+      }
       if (name === 'write_file') {
         // Recuperação de escrita TRUNCADA (v2.161.0): se a chamada foi cortada
         // pelo limite de tokens, o JSON chegou quebrado (raw_invalid_json) e

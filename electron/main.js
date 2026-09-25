@@ -3294,6 +3294,36 @@ ipcMain.handle('rag-stats', async () => {
   } catch (e) { return { count: 0, sources: [], error: e.message } }
 })
 
+// ─── Native Motor Control (Mouse & Keyboard) ───────────────────────────────
+ipcMain.handle('mouse-move', async (event, { x, y }) => {
+  try {
+    const { mouse, Point } = require('@nut-tree-fork/nut-js')
+    await mouse.setPosition(new Point(x, y))
+    return { success: true }
+  } catch (e) { return { error: e.message } }
+})
+
+ipcMain.handle('mouse-click', async (event, { button }) => {
+  try {
+    const { mouse, Button } = require('@nut-tree-fork/nut-js')
+    let btn = Button.LEFT
+    if (button === 'right') btn = Button.RIGHT
+    if (button === 'middle') btn = Button.MIDDLE
+    await mouse.click(btn)
+    return { success: true }
+  } catch (e) { return { error: e.message } }
+})
+
+ipcMain.handle('keyboard-type', async (event, { text }) => {
+  try {
+    const { keyboard } = require('@nut-tree-fork/nut-js')
+    // Atraso configurado para melhor compatibilidade
+    keyboard.config.autoDelayMs = 10
+    await keyboard.type(text)
+    return { success: true }
+  } catch (e) { return { error: e.message } }
+})
+
 // ─── Native Vision (Screenshot Tool) ─────────────────────────────────────────
 ipcMain.handle('take-screenshot', async () => {
   try {

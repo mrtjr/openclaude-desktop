@@ -129,6 +129,10 @@ interface Window {
     workspaceTree: (dirPath: string) => Promise<{ tree: import('./CodeWorkspace').TreeNode[]; error: string | null }>
     // Vision Mode
     captureScreen: () => Promise<{ base64: string | null; error: string | null }>
+    takeScreenshot: () => Promise<{ base64: string | null; error: string | null }>
+    mouseMove: (params: { x: number; y: number }) => Promise<{ success?: boolean; error?: string }>
+    mouseClick: (params: { button: string }) => Promise<{ success?: boolean; error?: string }>
+    keyboardType: (params: { text: string }) => Promise<{ success?: boolean; error?: string }>
     visionChat: (params: { provider: string; apiKey: string; model: string; prompt: string; imageBase64: string; modalHostname?: string }) => Promise<{ response: string | null; error: string | null }>
     // RAG
     ragEmbed: (params: { model: string; text: string }) => Promise<{ embedding: number[]; error: string | null }>

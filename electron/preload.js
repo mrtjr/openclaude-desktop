@@ -206,6 +206,9 @@ contextBridge.exposeInMainWorld('electron', {
   // Vision Mode & Screen capture
   captureScreen: () => ipcRenderer.invoke('capture-screen'),
   takeScreenshot: () => ipcRenderer.invoke('take-screenshot'),
+  mouseMove: (params) => ipcRenderer.invoke('mouse-move', params),
+  mouseClick: (params) => ipcRenderer.invoke('mouse-click', params),
+  keyboardType: (params) => ipcRenderer.invoke('keyboard-type', params),
   visionChat: (params) => ipcRenderer.invoke('vision-chat', params),
 
   // RAG Local

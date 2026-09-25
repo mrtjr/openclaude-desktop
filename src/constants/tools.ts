@@ -8,6 +8,49 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'mouse_move',
+      description: 'Move o cursor do mouse para a posição exata de x e y na tela.',
+      parameters: {
+        type: 'object',
+        properties: {
+          x: { type: 'number' },
+          y: { type: 'number' }
+        },
+        required: ['x', 'y']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'mouse_click',
+      description: 'Clica na posição atual do mouse usando o botão especificado (left, right, middle).',
+      parameters: {
+        type: 'object',
+        properties: {
+          button: { type: 'string', enum: ['left', 'right', 'middle'] }
+        },
+        required: ['button']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'keyboard_type',
+      description: 'Digita o texto fornecido sequencialmente no teclado.',
+      parameters: {
+        type: 'object',
+        properties: {
+          text: { type: 'string' }
+        },
+        required: ['text']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'take_screenshot',
       description: 'Captura uma imagem da tela atual do usuário e retorna a string em Base64 para análise visual.',
       parameters: {
@@ -927,6 +970,7 @@ export const SAFE_TOOLS = new Set([
 export const DANGEROUS_TOOLS = new Set([
   'execute_command', 'run_command_background', 'write_file', 'edit_file', 'open_file_or_url', 'git_command', 'git_worktree',
   'computer_open_app', 'computer_type_text', 'computer_press_keys',
+  'mouse_move', 'mouse_click', 'keyboard_type',
   // ORION no chat (v2.78.0): clique/scroll no desktop real — gateados pela
   // permissão como os demais computer_* (bypass libera p/ power users).
   'computer_click', 'computer_scroll',
