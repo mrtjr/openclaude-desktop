@@ -851,6 +851,47 @@ export const TOOLS = [
         properties: {}
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'recent_chats',
+      description: 'Retorna os IDs, timestamps e títulos das últimas n conversas/chats do usuário.',
+      parameters: {
+        type: 'object',
+        properties: {
+          n: { type: 'number', description: 'Número de conversas recentes a retornar (padrão: 5)' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'conversation_search',
+      description: 'Busca por uma palavra-chave nas mensagens de todas as conversas/chats salvos. Retorna os IDs dos chats e snippets das mensagens.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Palavra-chave para buscar nas conversas passadas' }
+        },
+        required: ['query']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_conversation',
+      description: 'Lê e retorna o histórico de mensagens completo (raw messages) de um chat específico, dado o seu ID.',
+      parameters: {
+        type: 'object',
+        properties: {
+          conversation_id: { type: 'string', description: 'ID da conversa a ser lida' }
+        },
+        required: ['conversation_id']
+      }
+    }
   }
 ]
 
@@ -868,7 +909,8 @@ export const SAFE_TOOLS = new Set([
   'remember_fact', 'remember_fresh_fact', 'load_skill', 'manage_skills', 'rag_search',
   'capture_screen', 'analyze_image', 'compare_models', 'set_persona', 'project_tree', 'glob_files',
   'search_conversations', 'get_command_output', 'kill_background_command',
-  'memory_read', 'memory_write', 'memory_append', 'memory_list'
+  'memory_read', 'memory_write', 'memory_append', 'memory_list',
+  'recent_chats', 'conversation_search', 'read_conversation'
 ])
 
 export const DANGEROUS_TOOLS = new Set([

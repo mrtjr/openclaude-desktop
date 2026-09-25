@@ -782,6 +782,44 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         const matches = searchConversations(all as any, query, { excludeId: convId || undefined, max })
         return formatConversationMatches(matches, query, new Date())
       }
+      if (name === 'recent_chats') {
+        const n = Math.min(Math.max(Number(args.n) || 5, 1), 50)
+        const all: any[] = await window.electron.loadConversations() || []
+        const sorted = all.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        const top = sorted.slice(0, n)
+        return top.map(c => `ID: ${c.id} | Timestamp: ${c.createdAt} | Título: ${c.title}`).join('\n') || 'Nenhuma conversa encontrada.'
+      }
+      if (name === 'conversation_search') {
+        const query = String(args.query ?? '').trim().toLowerCase()
+        if (!query) return 'Faltou o parâmetro "query".'
+        const all: any[] = await window.electron.loadConversations() || []
+        const matches: string[] = []
+        for (const chat of all) {
+          if (!chat.messages) continue
+          for (const msg of chat.messages) {
+            if (msg.content && typeof msg.content === 'string' && msg.content.toLowerCase().includes(query)) {
+              const contentStr = msg.content
+              const idx = contentStr.toLowerCase().indexOf(query)
+              const start = Math.max(0, idx - 40)
+              const end = Math.min(contentStr.length, idx + query.length + 40)
+              const snippet = contentStr.substring(start, end).replace(/\n/g, ' ')
+              matches.push(`[Chat ID: ${chat.id}] (Msg: ${msg.role}) ...${snippet}...`)
+              if (matches.length >= 20) break
+            }
+          }
+          if (matches.length >= 20) break
+        }
+        return matches.length > 0 ? matches.join('\n') : `Nenhum resultado para "${query}".`
+      }
+      if (name === 'read_conversation') {
+        const cid = String(args.conversation_id ?? '').trim()
+        if (!cid) return 'Faltou o parâmetro "conversation_id".'
+        const all: any[] = await window.electron.loadConversations() || []
+        const chat = all.find(c => c.id === cid)
+        if (!chat) return `Conversa ${cid} não encontrada.`
+        if (!chat.messages || chat.messages.length === 0) return `A conversa ${cid} está vazia.`
+        return chat.messages.map((m: any) => `[${(m.role || 'unknown').toUpperCase()}] ${m.content}`).join('\n\n')
+      }
       if (name === 'list_directory') {
         const result = await window.electron.listDirectory(args.path)
         if (result.items) {
