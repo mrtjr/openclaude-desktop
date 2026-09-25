@@ -3013,32 +3013,56 @@ const PARLIAMENT_ROLE_PROMPTS = {
 }
 
 // ─── Parliament Mode IPC Handler ─────────────────────────────────────────────
+const { logAgentMetrics } = require('./telemetry')
+
 ipcMain.handle('parliament-debate', async (event, { problem, roles, coordinator }) => {
   // Run all role agents in parallel using allSettled to prevent total failure
   const rolePromises = roles.map(async (role) => {
+    const startMs = Date.now()
     const systemPrompt = PARLIAMENT_ROLE_PROMPTS[role.id] || `Voce e ${role.name}. Analise o problema com seu papel especifico.`
     const messages = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `PROBLEMA / QUESTAO:\n\n${problem}` }
     ]
-    const response = await callProviderOnce({
-      provider: role.provider,
-      apiKey: role.apiKey || '',
-      model: role.model,
-      messages,
-      modalHostname: role.modalHostname
-    })
-    const result = { roleId: role.id, roleName: role.name, emoji: role.emoji, response, status: 'done' }
-    if (win && !win.isDestroyed()) {
-      win.webContents.send('parliament-role-done', result)
+    try {
+      const response = await callProviderOnce({
+        provider: role.provider,
+        apiKey: role.apiKey || '',
+        model: role.model,
+        messages,
+        modalHostname: role.modalHostname
+      })
+      const result = { roleId: role.id, roleName: role.name, emoji: role.emoji, response, status: 'done', startMs }
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('parliament-role-done', result)
+      }
+      return result
+    } catch (err) {
+      const result = { roleId: role.id, roleName: role.name, emoji: role.emoji, response: '', error: err.message, status: 'error', startMs }
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('parliament-role-done', result)
+      }
+      throw result
     }
-    return result
   })
 
   const settledResults = await Promise.allSettled(rolePromises)
   const roleResults = settledResults
     .filter(r => r.status === 'fulfilled' && r.value)
-    .map(r => (r as PromiseFulfilledResult<any>).value)
+    .map(r => r.value)
+
+  // Fire telemetry asynchronously
+  settledResults.forEach(r => {
+    const data = r.status === 'fulfilled' ? r.value : r.reason
+    if (data && data.roleId) {
+      logAgentMetrics({
+        agent: data.roleId,
+        duration_ms: Date.now() - data.startMs,
+        status: r.status === 'fulfilled' ? 'SUCCESS' : 'FAIL',
+        error: r.status === 'rejected' ? data.error : undefined
+      }).catch(() => {})
+    }
+  })
 
   // Notify frontend that coordinator is starting
   if (win && !win.isDestroyed()) {
