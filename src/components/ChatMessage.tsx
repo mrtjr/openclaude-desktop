@@ -119,7 +119,16 @@ function ChatMessageInner({
             </div>
           </div>
         ) : (
-          msg.content && <div className="message-text" dangerouslySetInnerHTML={{ __html: formatMarkdown(displayContent) }} />
+          msg.content && <div className="message-text" dangerouslySetInnerHTML={{ __html: formatMarkdown(displayContent) }} onClick={(e) => {
+            const target = e.target as HTMLElement;
+            if (target.classList.contains('canvas-btn')) {
+              const type = target.getAttribute('data-lang');
+              const content = target.getAttribute('data-content');
+              if (type && content && onOpenArtifact) {
+                onOpenArtifact({ type, content: decodeURIComponent(content) });
+              }
+            }
+          }} />
         )}
         {artifacts.length > 0 && (
           <button
