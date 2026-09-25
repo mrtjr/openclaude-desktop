@@ -106,10 +106,12 @@ body {
   align-items: center;
   justify-content: space-between;
   height: 42px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
+  background: rgba(19, 19, 31, 0.7);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
   -webkit-app-region: drag;
+  z-index: 999;
 }
 .titlebar-drag { display: flex; align-items: center; padding: 0 12px; gap: 12px; min-width: 0; }
 .titlebar-logo { display: flex; align-items: center; gap: 8px; color: var(--text-primary); font-weight: 600; font-size: 13px; letter-spacing: -0.2px; flex-shrink: 0; }
