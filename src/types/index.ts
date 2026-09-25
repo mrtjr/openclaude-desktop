@@ -35,6 +35,12 @@ export interface Message {
   /** v2.136.0 — mensagem do usuário reenviada após edição (lápis ou ↑).
    *  Mostra o selo "editado" na bolha, estilo ChatGPT. */
   edited?: boolean
+  /** v2.208.0 — âncora de rewind deste turno: `seq` do snapshot no INÍCIO do
+   *  turno e quantos arquivos ele alterou. Guardar na MENSAGEM (e não só numa
+   *  variável do turno) é o que permite reverter depois — antes o "Reverter" só
+   *  existia num toast de 15s e sumia. Persiste com a conversa e sobrevive ao
+   *  restart, porque o índice de snapshots agora também está em disco. */
+  checkpoint?: { seq: number; files: number }
   timestamp: Date
 }
 

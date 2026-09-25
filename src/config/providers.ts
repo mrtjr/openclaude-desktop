@@ -141,6 +141,23 @@ export const PROVIDERS: ProviderMeta[] = [
     supportsKeyPool: true,
   },
   {
+    id: 'sensenova',
+    label: 'SenseNova',
+    tagline: { pt: 'SenseNova 6.8, wire OpenAI', en: 'SenseNova 6.8, OpenAI wire' },
+    accent: '#f43f5e',
+    docUrl: 'https://token.sensenova.ai',
+    keyPlaceholder: 'sk-...',
+    // Modelos de CHAT documentados no gateway. `sensenova-u1-fast` fica de
+    // fora de propósito: é geração de imagem, noutro endpoint
+    // (/v1/images/generations) — escolhê-lo aqui só daria erro. O catálogo
+    // real da conta vem do "Testar conexão" (GET /v1/models).
+    defaultModels: ['sensenova-6.8-flash-lite', 'deepseek-v4-flash'],
+    fields: {
+      apiKeySetting: 'sensenovaApiKey',
+      modelSetting: 'sensenovaModel',
+    },
+  },
+  {
     id: 'custom',
     label: 'Custom (OpenAI-compatible)',
     tagline: { pt: 'Groq, Together, Fireworks, DeepInfra…', en: 'Groq, Together, Fireworks, DeepInfra…' },

@@ -7,12 +7,13 @@ import {
 } from 'lucide-react'
 
 interface AppSettings {
-  provider: 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'custom'
+  provider: 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'sensenova' | 'custom'
   openaiApiKey: string; openaiModel: string
   geminiApiKey: string; geminiModel: string
   anthropicApiKey: string; anthropicModel: string
   openrouterApiKey: string; openrouterModel: string
   modalApiKey: string; modalModel: string; modalHostname: string
+  sensenovaApiKey: string; sensenovaModel: string
   language: 'pt' | 'en'
   temperature: number; maxTokens: number
 }
@@ -110,6 +111,7 @@ function getApiKey(settings: AppSettings): string {
     case 'anthropic': return settings.anthropicApiKey
     case 'openrouter': return settings.openrouterApiKey
     case 'modal': return settings.modalApiKey
+    case 'sensenova': return settings.sensenovaApiKey
     default: return ''
   }
 }
@@ -843,7 +845,7 @@ export default function WorkflowBuilder({ settings, onClose, onInsertToChat }: W
                         value={selectedNode.config.provider}
                         onChange={e => updateNodeConfig(selectedNode.id, { provider: e.target.value })}
                       >
-                        {(['ollama','openai','gemini','anthropic','openrouter','modal'] as const).map(p => (
+                        {(['ollama','openai','gemini','anthropic','openrouter','modal','sensenova'] as const).map(p => (
                           <option key={p} value={p}>{p}</option>
                         ))}
                       </select>

@@ -36,6 +36,9 @@ export const PROVIDER_MODEL_SUGGESTIONS: Record<string, string[]> = {
     'deepseek/deepseek-chat',
     'qwen/qwen-2.5-72b-instruct',
   ],
+  sensenova: [
+    'sensenova-6.8-flash-lite',
+  ],
   modal: [
     // Modal Research only exposes specific HuggingFace-style model ids
     // (see https://api.us-west-2.modal.direct/v1/models). The previous

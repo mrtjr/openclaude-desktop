@@ -16,7 +16,7 @@ interface ProfilesPanelProps {
   language: 'pt' | 'en'
 }
 
-const PROVIDERS: Provider[] = ['ollama', 'openai', 'gemini', 'anthropic', 'openrouter', 'modal']
+const PROVIDERS: Provider[] = ['ollama', 'openai', 'gemini', 'anthropic', 'openrouter', 'modal', 'sensenova']
 const PERMISSIONS: PermissionLevel[] = ['ask', 'auto_edits', 'planning', 'ignore']
 
 const EMPTY_FORM = {

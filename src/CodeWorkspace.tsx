@@ -319,6 +319,7 @@ Respond with ONLY a unified diff in a \`\`\`diff\`\`\` code block. Do NOT includ
           case 'anthropic': return settings.anthropicApiKey
           case 'openrouter': return settings.openrouterApiKey
           case 'modal': return settings.modalApiKey
+          case 'sensenova': return settings.sensenovaApiKey
           default: return ''
         }
       })()
@@ -329,6 +330,7 @@ Respond with ONLY a unified diff in a \`\`\`diff\`\`\` code block. Do NOT includ
           case 'anthropic': return settings.anthropicModel
           case 'openrouter': return settings.openrouterModel
           case 'modal': return settings.modalModel
+          case 'sensenova': return settings.sensenovaModel
           default: return ''
         }
       })()

@@ -50,4 +50,22 @@ function isBlockedPath(resolved, homedir, platform) {
   return false
 }
 
-module.exports = { isUncPath, isWithin, blockedList, isBlockedPath }
+/** Guard COMPLETO: resolve o caminho (seguindo symlink, para um link
+ *  `docs/evil -> /` nao driblar a lista) e diz se pode ser tocado. Mora aqui, e
+ *  nao no main.js, porque handlers em outros modulos (ipc-document) precisam da
+ *  MESMA regra — ter duas copias e como as portas de leitura divergem. */
+function isPathSafe(filePath) {
+  const fs = require('fs')
+  const os = require('os')
+  let resolved = path.resolve(String(filePath || ''))
+  try {
+    resolved = fs.realpathSync(resolved)
+  } catch (e) {
+    // Nao existe ainda (write/edit de arquivo novo): resolve o PAI real.
+    try { resolved = path.join(fs.realpathSync(path.dirname(resolved)), path.basename(resolved)) }
+    catch (e2) { /* pai tambem nao existe — usa o resolved literal */ }
+  }
+  return !isBlockedPath(resolved, os.homedir(), process.platform)
+}
+
+module.exports = { isUncPath, isWithin, blockedList, isBlockedPath, isPathSafe }

@@ -23,6 +23,8 @@ interface ProviderTestButtonProps {
   language: 'pt' | 'en'
   onResult?: (r: TestResult) => void
   onModels?: (models: string[]) => void
+  /** Janelas de contexto REAIS que o provider informou (v2.207.0). */
+  onLimits?: (limits: Record<string, number>) => void
 }
 
 export function ProviderTestButton({
@@ -34,6 +36,7 @@ export function ProviderTestButton({
   language,
   onResult,
   onModels,
+  onLimits,
 }: ProviderTestButtonProps) {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<TestResult | null>(null)
@@ -60,6 +63,9 @@ export function ProviderTestButton({
         setResult(r)
         onResult?.(r)
         onModels?.(models)
+        // O mesmo /v1/models já trouxe a janela real de cada modelo — guardar
+        // aqui é o que dispensa manter a tabela fixa em dia.
+        if (res?.limits && Object.keys(res.limits).length) onLimits?.(res.limits)
       }
     } catch (e: any) {
       const latency = Math.round(performance.now() - started)

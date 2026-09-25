@@ -6,7 +6,7 @@
 // Usado pelo PersonaEngine (painel) E pela ferramenta set_persona / router do
 // chat (fusão do PersonaEngine — ver utils/personas.ts).
 
-export type Provider = 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'custom'
+export type Provider = 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'sensenova' | 'custom'
 
 export interface Persona {
   id: string

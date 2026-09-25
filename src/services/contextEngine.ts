@@ -165,6 +165,25 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   'glm-4.5': 128_000,
   'glm-4': 128_000,
   'glm': 128_000,
+  // SenseNova (token.sensenova.ai, v2.196.0). Sem estas chaves o id
+  // "sensenova-6.8-flash-lite" caía no default 8192 — num modelo de janela
+  // 262k, o orçamento de mensagens era calculado contra 1/32 do tamanho real e
+  // a história era podada quase inteira TODO turno (o modelo "esquecia" o que
+  // acabara de ler). Mesma classe do bug do GLM logo acima.
+  'sensenova-6.8-flash-lite': 262_144,
+  'sensenova-6.7-flash-lite': 262_144,
+  'sensenova': 262_144,
+  // deepseek-v4-flash é revendido no MESMO gateway do SenseNova. As fontes de
+  // terceiros divergem (262k vs 1M): fica no MENOR de propósito — subestimar só
+  // faz compactar mais cedo; superestimar devolve HTTP 400 do provider.
+  'deepseek-v4-flash': 262_144,
+  // Ids HIFENIZADOS (OpenRouter/Modal). As chaves 'llama3.1/3.2/3.3' abaixo só
+  // casam o estilo Ollama (sem hífen), então "meta-llama/llama-3.3-70b-instruct"
+  // e "deepseek-ai/DeepSeek-V3" — ambos modelos padrão que o app SUGERE — também
+  // caíam em 8192.
+  'deepseek-v3': 128_000,
+  'llama-3.3': 128_000,
+  'llama-3.1': 128_000,
   // Common Ollama models. Ordem específico → genérico: 'llama3' (8k) é PREFIXO
   // de 'llama3.1/3.2/3.3' e o getModelContextLimit retorna o 1º match parcial —
   // se 'llama3' viesse antes, "llama3.1" casaria 8k em vez de 128k.
@@ -245,12 +264,14 @@ export const DEFAULT_OLLAMA_NUM_CTX = 8192
 
 /** Limite de contexto EFETIVO do backend ativo. Nuvem usa a janela do modelo;
  *  Ollama (local) usa o num_ctx configurado — não a janela teórica. */
-export function effectiveContextLimit(provider: string, model: string, ollamaNumCtx?: number): number {
+export function effectiveContextLimit(provider: string, model: string, ollamaNumCtx?: number, learned?: LearnedLimits): number {
   if (provider === 'ollama') {
+    // Ollama é o num_ctx que o USUÁRIO escolheu (limite de VRAM, não do modelo)
+    // — nada aprendido da API pode sobrepor isso.
     const n = Number(ollamaNumCtx)
     return Number.isFinite(n) && n > 0 ? n : DEFAULT_OLLAMA_NUM_CTX
   }
-  return getModelContextLimit(model)
+  return getModelContextLimit(model, learned)
 }
 
 /** Limite de contexto + se o modelo foi RECONHECIDO na tabela (v2.127.0). Um
@@ -258,7 +279,24 @@ export function effectiveContextLimit(provider: string, model: string, ollamaNum
  *  o caller NÃO tratar como "modelo pequeno de verdade" (ex.: não disparar
  *  deferral de tool à toa — um GLM/modelo novo de 200k que só não está na tabela
  *  era forçado a um tool_search desnecessário, a classe do bug v2.12.39). */
-export function getModelContextLimitInfo(model: string): { limit: number; known: boolean } {
+/** Janelas APRENDIDAS do próprio provider (v2.207.0) — o `/v1/models` já
+ *  informa o tamanho real (`max_input_tokens` na Anthropic, `context_length` no
+ *  OpenRouter, `inputTokenLimit` no Gemini) e o app descartava. Elas VENCEM a
+ *  tabela abaixo: são a verdade da conta do usuário, não um palpite mantido à
+ *  mão. A tabela continua como fallback offline e para quem nunca testou a
+ *  conexão. */
+export type LearnedLimits = Record<string, number> | undefined
+
+function learnedLimit(model: string, learned: LearnedLimits): number | null {
+  if (!learned) return null
+  const exact = Number(learned[model])
+  if (Number.isFinite(exact) && exact > 0) return Math.floor(exact)
+  return null
+}
+
+export function getModelContextLimitInfo(model: string, learned?: LearnedLimits): { limit: number; known: boolean } {
+  const fromApi = learnedLimit(model, learned)
+  if (fromApi) return { limit: fromApi, known: true }
   // Exact match first
   if (MODEL_CONTEXT_LIMITS[model]) return { limit: MODEL_CONTEXT_LIMITS[model], known: true }
   // Partial match (e.g., "gpt-4o-2024-08-06" matches "gpt-4o")
@@ -272,14 +310,14 @@ export function getModelContextLimitInfo(model: string): { limit: number; known:
 }
 
 /** Get approximate context limit for a model. Returns 8192 as safe default. */
-export function getModelContextLimit(model: string): number {
-  return getModelContextLimitInfo(model).limit
+export function getModelContextLimit(model: string, learned?: LearnedLimits): number {
+  return getModelContextLimitInfo(model, learned).limit
 }
 
 /** O modelo está na tabela de limites (exato/parcial)? Ollama (num_ctx do
  *  usuário) é sempre "conhecido". */
-export function isKnownModelLimit(provider: string, model: string): boolean {
-  return provider === 'ollama' || getModelContextLimitInfo(model).known
+export function isKnownModelLimit(provider: string, model: string, learned?: LearnedLimits): boolean {
+  return provider === 'ollama' || getModelContextLimitInfo(model, learned).known
 }
 
 // ─── Message budget ──────────────────────────────────────────────

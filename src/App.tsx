@@ -16,7 +16,7 @@ import OnboardingModal from './components/OnboardingModal'
 import ChatMessage from './components/ChatMessage'
 import AgentStepsGroup from './components/AgentStepsGroup'
 import { groupMessages } from './utils/messageGroups'
-import { sliceBeforeMessage, classifyEdit, lastUserMessage } from './utils/conversationEdit'
+import { sliceBeforeMessage, classifyEdit, lastUserMessage, turnStartIndex, rewindMessageCount } from './utils/conversationEdit'
 import { continuationPrompt } from './utils/continuation'
 import { nextToolChoiceMode, toolChoiceLabel } from './utils/toolChoice'
 import { verificationPrompt } from './utils/verification'
@@ -31,6 +31,7 @@ import { ThinkingTimer } from './components/ThinkingTimer'
 import { StreamRateMeter } from './components/StreamRateMeter'
 import ProjectsBar from './components/ProjectsBar'
 import ProjectEditModal from './components/ProjectEditModal'
+import { RewindDialog } from './components/RewindDialog'
 import { useProjects } from './hooks/useProjects'
 import { conversationsInProject, countByProject, removeProject, projectInstructionsAddition, projectCwdAddition, workingDirAddition } from './utils/projects'
 import type { Project, Conversation } from './types'
@@ -313,6 +314,7 @@ export default function App() {
           gemini: settings.geminiApiKey || '',
           openrouter: settings.openrouterApiKey || '',
           modal: settings.modalApiKey || '',
+          sensenova: settings.sensenovaApiKey || '',
           customApiKey: (settings as any).customApiKey || '',
         },
       }
@@ -350,6 +352,7 @@ export default function App() {
           geminiApiKey: k(keys.gemini, settings.geminiApiKey),
           openrouterApiKey: k(keys.openrouter, settings.openrouterApiKey),
           modalApiKey: k(keys.modal, settings.modalApiKey),
+          sensenovaApiKey: k(keys.sensenova, settings.sensenovaApiKey),
           ...(validApiKey(keys.customApiKey) ? { customApiKey: keys.customApiKey } : {}),
         } as any
         setSettings(next); localStorage.setItem('openclaude-settings', JSON.stringify(next))
@@ -406,6 +409,7 @@ export default function App() {
       else if (prov === 'gemini') eff.geminiModel = p.model
       else if (prov === 'openrouter') eff.openrouterModel = p.model
       else if (prov === 'modal') eff.modalModel = p.model
+      else if (prov === 'sensenova') eff.sensenovaModel = p.model
     }
     return eff
   }, [settings, profiles.activeProfile])
@@ -862,7 +866,7 @@ export default function App() {
   // into the system prompt as a compact manifest.
   const toolPartition = useMemo(() =>
     partitionTools(TOOLS as any, decideDeferral(
-      settings.toolDeferralMode, getModelContextLimit(selectedModel), countToolSchemas(TOOLS as any),
+      settings.toolDeferralMode, getModelContextLimit(selectedModel, settings.modelLimits), countToolSchemas(TOOLS as any),
     ).enabled),
     [settings.toolDeferralMode, selectedModel])
   // Persistent memory text for the panel accounting — loaded via the same
@@ -893,7 +897,7 @@ export default function App() {
     model: providerConfig.model,
     // Ollama: janela REAL (num_ctx), não a teórica — alinha o painel com o que
     // o chat realmente envia e evita o falso "106%" do modelo local (v2.24.0).
-    limit: effectiveContextLimit(settings.provider, providerConfig.model, settings.ollamaNumCtx),
+    limit: effectiveContextLimit(settings.provider, providerConfig.model, settings.ollamaNumCtx, settings.modelLimits),
     inputText: input,
     systemPrompt: settings.systemPrompt || '',
     memoryText,
@@ -1302,6 +1306,7 @@ export default function App() {
           : prov === 'gemini' ? 'geminiModel'
           : prov === 'openrouter' ? 'openrouterModel'
           : prov === 'modal' ? 'modalModel'
+          : prov === 'sensenova' ? 'sensenovaModel'
           : null
         if (key) {
           const next = { ...settings, [key]: modelOverride } as typeof settings
@@ -1312,6 +1317,47 @@ export default function App() {
     // Directly call sendMessage instead of fragile DOM querySelector
     setTimeout(() => sendMessageRef.current(lastUserContent), 80)
   }, [activeConv, isActiveConvLoading, convManager, settings])
+
+  // Rewind (v2.208.0; escolha de escopo em v2.209.0): reverte o que UM turno
+  // fez, a qualquer momento — não só nos 15s do toast. O `seq` é a marca do
+  // snapshot no início daquele turno; o main restaura tudo com seq maior, do
+  // mais novo ao mais antigo. O clique só ABRE o diálogo: são três saídas
+  // (cancelar / só arquivos / arquivos + conversa) e um confirm() expressa duas.
+  const [rewindTarget, setRewindTarget] = useState<{ msgId: string; seq: number; files: number; messages: number } | null>(null)
+
+  const handleRevertCheckpoint = useCallback((msgId: string, seq: number, files: number) => {
+    const messages = rewindMessageCount(convManager.activeConv?.messages ?? [], msgId)
+    setRewindTarget({ msgId, seq, files, messages })
+  }, [convManager.activeConv])
+
+  const applyRewind = useCallback(async (scope: 'files' | 'files+chat') => {
+    const target = rewindTarget
+    setRewindTarget(null)
+    if (!target) return
+    const en = settings.language === 'en'
+    try {
+      const r = await window.electron.checkpointRestore(target.seq)
+      convManager.setConversations(prev => prev.map(c => {
+        if (c.id !== convManager.activeConvId) return c
+        if (scope === 'files') {
+          return { ...c, messages: c.messages.map(m => m.id === target.msgId ? { ...m, checkpoint: undefined } : m) }
+        }
+        // Rebobina: corta o turno inteiro (a pergunta do usuário e tudo que veio
+        // depois). O selo some junto, porque a mensagem que o carregava saiu.
+        const start = turnStartIndex(c.messages, target.msgId)
+        if (start < 0) return c
+        return { ...c, messages: c.messages.slice(0, start) }
+      }))
+      const base = r.errors?.length
+        ? (en ? `Reverted ${r.count}, ${r.errors.length} error(s)` : `Revertido ${r.count}, ${r.errors.length} erro(s)`)
+        : (en ? `Reverted ${r.count} file(s)` : `Revertido(s) ${r.count} arquivo(s)`)
+      showToast(scope === 'files+chat'
+        ? (en ? `${base} · conversation rewound` : `${base} · conversa rebobinada`)
+        : base)
+    } catch (e: any) {
+      showToast(en ? `Revert failed: ${e?.message || e}` : `Falha ao reverter: ${e?.message || e}`)
+    }
+  }, [rewindTarget, settings.language, convManager, showToast])
 
   // ─── Stable handlers for the memoized <ChatMessage> list ────────
   // Each prop handed to ChatMessage must keep a permanent identity — one
@@ -1947,6 +1993,15 @@ export default function App() {
           </div>
         )}
         {editingProject && <ProjectEditModal project={editingProject} onSave={handleSaveProject} onClose={() => setEditingProject(null)} />}
+        {rewindTarget && (
+          <RewindDialog
+            files={rewindTarget.files}
+            messages={rewindTarget.messages}
+            language={settings.language === 'en' ? 'en' : 'pt'}
+            onConfirm={applyRewind}
+            onClose={() => setRewindTarget(null)}
+          />
+        )}
         {openArtifact && (
           <Suspense fallback={null}>
             <ArtifactPanel artifact={openArtifact} onClose={() => setOpenArtifact(null)} language={settings.language} />
@@ -2471,6 +2526,7 @@ export default function App() {
                   onToggleCollapse={handleToggleToolCollapse}
                   onOpenArtifact={setOpenArtifact}
                   onRegenerate={handleRegenerate}
+                  onRevertCheckpoint={handleRevertCheckpoint}
                   onBranch={handleBranchFrom}
                   onDelete={handleDeleteMessage}
                   onEditResend={handleEditResend}

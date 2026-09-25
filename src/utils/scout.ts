@@ -1,28 +1,53 @@
-// ─── Scout proativo (pesquisa especulativa em ociosidade) — v2.69.0 ──
+// ─── Scout proativo (pesquisa especulativa inteligente) — v2.200.0 ────
 //
-// Quando a IA principal está em trabalho AGÊNTICO mas com subagentes ociosos, um
-// "scout" pesquisa por conta própria DADOS ATUAIS (com a data de hoje) e
-// CAMINHOS ALTERNATIVOS sobre o que ela está fazendo, e injeta isso no contexto
-// dela — resolvendo o gap de conhecimento desatualizado do treino. O tema é
-// inferido AO VIVO a cada passo: se a IA muda de assunto, o scout encerra e
-// recomeça; se delega algo explícito, o scout PAUSA (cede a vaga) e retoma
-// depois. Só roda em vaga ociosa do semáforo (nunca bloqueia delegações).
+// Quando a IA principal está em trabalho AGÊNTICO com subagentes ociosos E
+// em Esforço Alto/Ultracode, um "scout" pesquisa por conta própria DADOS ATUAIS E
+// CONHECIMENTO TÉCNICO ESPECULATIVO (com a data de hoje) sobre a tarefa.
 //
-// Helpers puros + um controller testável (runScout é injetado).
+// Melhores práticas do Scout Inteligente:
+// 1. Filtra tarefas locais puras (edição de arquivo, formatação, leitura mecânica).
+// 2. Classifica a intenção (só dispara em erro, documentação, frameworks, APIs, comparações).
+// 3. Formata buscas técnicas limpas e precisas (sem caminhos de arquivo locais ou verbosidades).
+// 4. Descarta respostas vazias ou ruidosas ("não encontrei", "sem tópicos").
 
-/** Stopwords PT+EN (forma normalizada) para extrair palavras de CONTEÚDO do foco
- *  — reaproveita a ideia do recallFreshFacts. */
+/** Stopwords e comandos meta/continuação PT+EN. */
 const STOP = new Set([
   'como', 'para', 'pela', 'pelo', 'qual', 'quais', 'onde', 'quando', 'porque',
   'sobre', 'entre', 'depois', 'antes', 'ainda', 'aqui', 'isso', 'isto', 'esse',
   'essa', 'este', 'esta', 'mesmo', 'muito', 'pouco', 'mais', 'menos', 'todo',
   'toda', 'cada', 'outro', 'outra', 'entao', 'assim', 'tambem', 'apenas', 'uma',
   'agora', 'hoje', 'atual', 'voce', 'fazer', 'usar', 'quero', 'preciso', 'vou',
+  'continue', 'continuar', 'continua', 'prossiga', 'prosseguir', 'seguinte',
+  'avancar', 'avance', 'siga', 'repetir', 'resumir', 'resumo', 'iniciar', 'inicie',
+  'parar', 'cancelar', 'ajuda', 'favor', 'pode', 'vamos', 'bora', 'editar',
+  'escrever', 'formata', 'formatar', 'renomear', 'alinhar', 'criar', 'deletar',
   'what', 'when', 'where', 'which', 'that', 'this', 'with', 'from', 'your',
   'about', 'into', 'than', 'then', 'them', 'they', 'have', 'will', 'would',
   'could', 'should', 'much', 'more', 'most', 'some', 'here', 'there', 'current',
-  'today', 'using', 'make', 'want', 'need',
+  'today', 'using', 'make', 'want', 'need', 'next', 'more', 'repeat', 'resume',
+  'retry', 'start', 'stop', 'cancel', 'please', 'going', 'edit', 'write', 'format',
 ])
+
+// Os dois conjuntos sao testados contra o texto NORMALIZADO (sem acento, ver
+// `norm`), entao bastam as formas sem acento — "comentario" casa "comentario".
+
+/** Tarefa puramente local/mecanica: nao ha o que pesquisar na web. */
+const LOCAL_MECHANICAL_PATTERNS = [
+  /^\s*(formate?|formatar|renomeie|rename|renomear|indente?|indent|alinh\w*)\b/,
+  /^\s*(read_file|write_file|edit_file|list_directory|project_tree|glob_files|search_files)\b/,
+  /\b(adicione?|coloque|insira|escreva)\s+(um\s+|uma\s+)?(comentario|log|console\.log|docstring)\b/,
+  /\b(leia|abra|mostre|exiba|liste)\s+(o\s+|a\s+|esse\s+|este\s+|essa\s+)?(arquivo|diretorio|pasta)\b/,
+]
+
+/** Sinal REAL de que pesquisa externa ajuda. Sem um destes, o scout nao roda. */
+const SPECULATIVE_WORTHY_PATTERNS = [
+  /\b(erro|error|exception|stacktrace|traceback|panic|segfault|failed|falha|bug|unhandled)\b/,
+  /\b(versao|version|latest|atualiza\w*|upgrade|release|changelog|deprecated|obsolet\w*|breaking)\b/,
+  /\b(docs?|documentacao|api|sdk|library|framework|package|npm|pnpm|yarn|pip|pypi|cargo|crate)\b/,
+  // sufixo livre: 'diferenca' nao casava 'diferencas' (plural). O teste antigo
+  // passava so por causa do catch-all que foi removido — o padrao nunca casou.
+  /\b(diferenc\w*|differen\w*|vs|versus|compar\w*|benchmark|melhor forma|best way|alternativa\w*)\b/,
+]
 
 function norm(s: string): string {
   return (s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
@@ -35,6 +60,103 @@ export function topicKey(text: string): Set<string> {
   )
 }
 
+
+/** Sinal FRACO: sozinho nao justifica busca ("como formatar esse arquivo"),
+ *  mas justifica quando vem com um token TECNICO junto. */
+const HOW_TO_PATTERN = /\b(como|how to|implementar|implement|configurar|configure|integrar|integrate|tutorial)\b/
+/** Token tecnico: CamelCase interno (WebSocket, TypeScript) ou identificador
+ *  pontuado/hifenizado (react-dom, node.js). Testado no texto ORIGINAL — o
+ *  normalizado ja perdeu a caixa. */
+const TECH_TOKEN = /[a-z][A-Z]|\b[a-z0-9]+[.-][a-z0-9]+\b/
+
+/** Classifica se o texto do foco/atividade justifica pesquisa proativa na web. */
+export function isSpeculativeSearchWorthy(text: string): boolean {
+  const t = String(text || '').trim()
+  if (!t || t.length < 5) return false
+  const n = norm(t)
+
+  // Tarefa local VENCE. Antes um `&& !isWorthy` deixava escapar qualquer texto
+  // que contivesse um termo "digno" — e como a lista tinha "como", quase toda
+  // frase em portugues passava: "como formatar esse arquivo" disparava busca.
+  if (LOCAL_MECHANICAL_PATTERNS.some((p) => p.test(n))) return false
+
+  // Sinal real e OBRIGATORIO. Antes havia o escape `keys.size >= 2`, verdadeiro
+  // para praticamente qualquer frase — na pratica o classificador devolvia true
+  // quase sempre e as duas listas acima eram decorativas.
+  if (SPECULATIVE_WORTHY_PATTERNS.some((p) => p.test(n))) return topicKey(t).size > 0
+
+  // "Como implementar WebSocket em TypeScript" É pesquisa; "como formatar esse
+  // arquivo" não é. A diferença não está no "como" — está em haver um token
+  // técnico junto. Por isso o sinal fraco só conta acompanhado.
+  if (HOW_TO_PATTERN.test(n) && TECH_TOKEN.test(t)) return topicKey(t).size > 0
+
+  return false
+}
+
+// Regex de limpeza da query (nomeados p/ manter stripPathNoise legivel).
+const WIN_PATH = /^[A-Za-z]:[\\/]/
+const POSIX_PATH = /^\/(?:[\w.-]+\/)+[\w.-]*$/
+const URL_HOST = /^[a-z][a-z0-9+.-]*:\/\/([^/\s]+)/i
+const TOOL_PREFIX = /\b(read_file|write_file|edit_file|execute_command|web_search|list_directory):/gi
+const WS = /\s+/g
+
+/** Tira ruido de CAMINHO sem destruir o que da valor a busca. A regra antiga
+ *  apagava tudo depois de QUALQUER barra, entao:
+ *    "https://react.dev/blog" -> "https"  (o dominio, o termo util, sumia)
+ *    "@types/node"            -> "types"
+ *    "next/image vs img"      -> ""       (a query inteira virava "comparar")
+ *  A decisao agora e por TOKEN, previsivel: caminho de disco sai, URL vira o
+ *  host, e nome de pacote com barra fica intacto. */
+function stripPathNoise(text: string): string {
+  return String(text || '')
+    .split(/[ 	]+/)
+    .map((tok) => {
+      if (WIN_PATH.test(tok)) return ''            // C:PATH de disco
+      if (POSIX_PATH.test(tok)) return ''          // /home/user/app/src
+      const url = tok.match(URL_HOST)              // URL -> so o host
+      if (url) return url[1]
+      return tok
+    })
+    .join(' ')
+}
+
+/** Formata uma query de pesquisa limpa e tecnica para o scout. */
+export function buildScoutQuery(objective: string, activity: string): string {
+  const combined = [objective, activity].map((s) => (s || '').trim()).filter(Boolean).join(' ')
+  const cleaned = combined
+    ? stripPathNoise(combined)
+        .replace(TOOL_PREFIX, '')
+        .replace(WS, ' ')
+        .trim()
+    : ''
+
+  const keys = Array.from(topicKey(cleaned))
+  if (!keys.length) return ''
+
+  return keys.slice(0, 6).join(' ')
+}
+
+/** Valida a resposta do worker do scout, descartando ruídos e respostas vazias. */
+export function validateScoutResult(text: string | null | undefined): string | null {
+  if (!text) return null
+  const t = String(text).trim()
+  if (t.length < 25) return null
+
+  const noisePatterns = [
+    /n[ãa]o consigo determinar/i,
+    /n[ãa]o foi poss[íi]vel/i,
+    /sem t[óo]pico ou pergunta/i,
+    /no information found/i,
+    /unclear query/i,
+    /n[ãa]o encontrei/i,
+    /sem resposta do modelo/i,
+    /insufficient info/i,
+  ]
+
+  if (noisePatterns.some((p) => p.test(t))) return null
+  return t
+}
+
 /** Sobreposição (Jaccard) entre duas chaves de tema. */
 export function keyOverlap(a: Set<string>, b: Set<string>): number {
   if (!a.size || !b.size) return 0
@@ -43,27 +165,22 @@ export function keyOverlap(a: Set<string>, b: Set<string>): number {
   return inter / (a.size + b.size - inter)
 }
 
-/** O tema mudou o bastante para encerrar a pesquisa atual e recomeçar? Limiar
- *  conservador (só recomeça em mudança clara) para não ficar reiniciando à toa. */
+/** O tema mudou o bastante para encerrar a pesquisa atual e recomeçar? */
 export function shouldRestart(newKey: Set<string>, runningKey: Set<string> | null): boolean {
   if (!runningKey || !runningKey.size) return true
   return keyOverlap(newKey, runningKey) < 0.34
 }
 
-/** Monta o foco a pesquisar a partir do objetivo do turno + a atividade atual da
- *  IA (última ação/trecho). */
+/** Monta o foco a pesquisar a partir do objetivo do turno + a atividade atual da IA. */
 export function inferScoutFocus(objective: string, activity: string): string {
+  const query = buildScoutQuery(objective, activity)
+  if (query) return query
   return [objective, activity].map((s) => (s || '').trim()).filter(Boolean).join(' — ').slice(0, 400)
 }
 
 export interface ScoutMsgLike { role?: string; content?: string; tool_calls?: any[] }
 
-/** "O que a IA está fazendo AGORA" = a ÚLTIMA ferramenta chamada NESTE turno
- *  (nome + resumo do argumento), olhando só de `baseLen` em diante. A PROSA do
- *  assistente é IGNORADA de propósito: ela é conversa ("Excelente!", "Agora
- *  vou…", "O domínio…") e fazia o scout pesquisar lixo (v2.86.0). A ação é o
- *  sinal real do que está sendo feito. `summarize` é injetado (toolCallSummary).
- *  Devolve '' quando não houve ação ainda — aí o foco fica só no objetivo. */
+/** "O que a IA está fazendo AGORA" = a ÚLTIMA ferramenta chamada NESTE turno (nome + resumo). */
 export function pickScoutActivity(
   messages: ScoutMsgLike[] | undefined,
   baseLen: number,
@@ -97,29 +214,21 @@ export function scoutSystemPrompt(lang: string, todayISO: string): string {
 }
 
 export interface ScoutResult { topic: string; text: string }
-/** Executa um scout sobre `topic`; resolve com o texto (ou null se abortado/sem
- *  vaga). Injetado pelo App/useToolExecution (tem acesso ao worker/semáforo). */
 export type RunScout = (topic: string, signal: AbortSignal) => Promise<string | null>
 
-/** Teto de pesquisas proativas por turno (rede contra custo infinito). */
 export const SCOUT_MAX_PER_TURN = 6
 
-/** Orquestra o scout ao longo de um turno agêntico: (re)inicia conforme o tema,
- *  pausa em delegações, guarda o resultado para o loop injetar. Testável com um
- *  runScout falso. */
+/** Orquestra o scout ao longo de um turno agêntico. */
 export class ScoutController {
   enabled = false
   private paused = false
   private runningKey: Set<string> | null = null
-  /** Tema do ÚLTIMO scout lançado (persiste após terminar) — usado para NÃO
-   *  re-pesquisar o mesmo tema em loop quando a IA não mudou de rota (v2.87.0). */
   private lastKey: Set<string> | null = null
   private abort: AbortController | null = null
   private inFlight = false
   private result: ScoutResult | null = null
   private launched = 0
 
-  /** Início de turno: zera e define se está ligado. */
   reset(enabled: boolean): void {
     this.cancel()
     this.enabled = enabled
@@ -129,66 +238,53 @@ export class ScoutController {
     this.lastKey = null
   }
 
-  /** Delegação explícita assume o recurso → pausa e aborta a pesquisa atual. */
   pause(): void { this.paused = true; this.cancel() }
-  /** Delegação terminou → libera o scout para retomar no próximo passo. */
   resume(): void { this.paused = false }
 
-  /** O loop consome o resultado pronto (1x) para injetar no contexto. */
   takeResult(): ScoutResult | null { const r = this.result; this.result = null; return r }
 
-  /** Há um scout rodando agora? */
   get busy(): boolean { return this.inFlight }
 
-  /** Chamado a cada passo. `focus` é o que será PESQUISADO (objetivo + ação, dá
-   *  contexto); `steer` é o sinal que decide a (re)inicialização — a AÇÃO ATUAL
-   *  da IA (não o objetivo estático, que travava o scout num tema só). Assim o
-   *  scout ACOMPANHA a IA quando ela muda de rota, e NÃO re-pesquisa o mesmo
-   *  tema em loop (v2.87.0). */
   step(focus: string, steer: string, runScout: RunScout, canStart: () => boolean): void {
     if (!this.enabled || this.paused) return
     if (this.launched >= SCOUT_MAX_PER_TURN) return
-    // A chave de (re)steer vem da AÇÃO (steer); só cai no foco completo se a IA
-    // ainda não agiu (steer vazio) — aí pesquisa o objetivo.
-    const key = topicKey(steer || focus)
+
+    const candidateText = steer || focus
+    if (!isSpeculativeSearchWorthy(candidateText)) return
+
+    const query = buildScoutQuery(focus, steer)
+    const key = topicKey(query)
     if (!key.size) return
+
     if (this.inFlight) {
-      // Rodando: só interrompe se a AÇÃO mudou claramente (a IA mudou de rota).
       if (!shouldRestart(key, this.runningKey)) return
     } else {
-      // Parado com resultado ainda não consumido → espera o loop injetar.
       if (this.result) return
-      // Mesmo tema do ÚLTIMO scout já lançado → NÃO re-pesquisa (anti-loop):
-      // só dispara de novo quando a ação muda de verdade.
       if (this.lastKey && !shouldRestart(key, this.lastKey)) return
     }
     if (!canStart()) return
-    this.launch(focus, key, runScout)
+    this.launch(query || focus, key, runScout)
   }
 
   private launch(focus: string, key: Set<string>, runScout: RunScout): void {
     this.cancel()
     this.runningKey = key
-    this.lastKey = key // registra o tema pesquisado (anti-loop / steer)
+    this.lastKey = key
     this.inFlight = true
     this.launched++
     const ac = new AbortController()
     this.abort = ac
     runScout(focus, ac.signal).then(
       (text) => {
-        // Run abortado = foi SUPERSEDIDO por um launch novo (ou cancelado): o
-        // estado (inFlight/abort) já pertence ao run atual; não tocar nele,
-        // senão a resolução tardia deste run zerava o inFlight do run novo —
-        // quebrava "um scout por vez" e relançava/abortava à toa.
         if (ac.signal.aborted) return
         this.inFlight = false
-        if (text && text.trim()) this.result = { topic: focus, text }
+        const valid = validateScoutResult(text)
+        if (valid) this.result = { topic: focus, text: valid }
       },
       () => { if (!ac.signal.aborted) this.inFlight = false },
     )
   }
 
-  /** Aborta a pesquisa em voo (se houver) e limpa o tema rodando. */
   cancel(): void {
     this.abort?.abort()
     this.abort = null
@@ -196,6 +292,5 @@ export class ScoutController {
     this.inFlight = false
   }
 
-  /** Fim de turno / Parar: aborta e zera tudo. */
   clear(): void { this.cancel(); this.result = null; this.paused = false; this.lastKey = null }
 }

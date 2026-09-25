@@ -27,7 +27,8 @@ export interface ParallelChatTask {
   id: string
   messages: Array<{ role: string; content: string }>
   tools?: unknown[]
-  /** Optional per-task API key (used by Modal pool dispatch). */
+  /** Optional per-task API key (Modal pool dispatch; SenseNova reusa a
+   *  MESMA key em todas as tasks — não há pool). */
   apiKey?: string
 }
 
@@ -40,7 +41,7 @@ export interface ParallelChatResult {
 
 export interface ProviderParallelChatParams {
   tasks: ParallelChatTask[]
-  provider: 'modal' | 'ollama'
+  provider: 'modal' | 'ollama' | 'sensenova'
   model: string
   hostname?: string
   temperature?: number

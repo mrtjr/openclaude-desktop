@@ -20,6 +20,7 @@ export interface CompareSettingsLike {
   provider?: string
   openaiApiKey?: string; geminiApiKey?: string; anthropicApiKey?: string
   openrouterApiKey?: string; modalApiKey?: string; customApiKey?: string
+  sensenovaApiKey?: string
 }
 
 /** Normaliza `args.models` (lista de strings OU de {model, provider?}) em specs
@@ -61,6 +62,7 @@ export function providerApiKey(s: CompareSettingsLike | undefined, provider: str
     case 'anthropic': return s?.anthropicApiKey || ''
     case 'openrouter': return s?.openrouterApiKey || ''
     case 'modal': return s?.modalApiKey || ''
+    case 'sensenova': return s?.sensenovaApiKey || ''
     case 'custom': return s?.customApiKey || ''
     default: return '' // ollama
   }

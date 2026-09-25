@@ -48,6 +48,7 @@ function getModelForProvider(provider: Provider, settings: AppSettings, ollamaMo
     case 'anthropic': return settings.anthropicModel
     case 'openrouter': return settings.openrouterModel
     case 'modal': return settings.modalModel
+    case 'sensenova': return settings.sensenovaModel
     default: return ''
   }
 }
@@ -59,6 +60,7 @@ function getApiKeyForProvider(provider: Provider, settings: AppSettings): string
     case 'anthropic': return settings.anthropicApiKey
     case 'openrouter': return settings.openrouterApiKey
     case 'modal': return settings.modalApiKey
+    case 'sensenova': return settings.sensenovaApiKey
     default: return ''
   }
 }
@@ -70,6 +72,7 @@ const PROVIDERS: { id: Provider; label: string }[] = [
   { id: 'anthropic', label: 'Anthropic' },
   { id: 'openrouter', label: 'OpenRouter' },
   { id: 'modal', label: 'Modal' },
+  { id: 'sensenova', label: 'SenseNova' },
 ]
 
 const DEFAULT_ROLES: Omit<ParliamentRoleConfig, 'provider' | 'model'>[] = [

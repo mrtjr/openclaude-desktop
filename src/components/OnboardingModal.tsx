@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Bot, Check, ExternalLink, Sparkles, Loader2, ChevronRight, X } from 'lucide-react'
 import type { AppSettings } from '../Settings'
 
-type ProviderOption = 'ollama' | 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'modal'
+type ProviderOption = 'ollama' | 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'modal' | 'sensenova'
 
 export interface ProviderInfo {
   id: ProviderOption
@@ -25,6 +25,7 @@ export const PROVIDERS: ProviderInfo[] = [
   { id: 'gemini', name: 'Gemini', tagline: 'Google — contexto gigante', keyField: 'geminiApiKey', keyPlaceholder: 'AIza...', keyUrl: 'https://aistudio.google.com/apikey', icon: '💎' },
   { id: 'modal', name: 'Modal', tagline: 'Modelos OSS, pool paralelo (GLM, Qwen)', keyField: 'modalApiKey', keyPlaceholder: 'modalresearch_...', keyUrl: 'https://modal.com', hostnameField: 'modalHostname', hostnameDefault: 'api.us-west-2.modal.direct', icon: '🟣' },
   { id: 'openrouter', name: 'OpenRouter', tagline: '100+ modelos, 1 API', keyField: 'openrouterApiKey', keyPlaceholder: 'sk-or-...', keyUrl: 'https://openrouter.ai/keys', icon: '🔀' },
+  { id: 'sensenova', name: 'SenseNova', tagline: 'SenseNova 6.8 — wire OpenAI', keyField: 'sensenovaApiKey', keyPlaceholder: 'sk-...', keyUrl: 'https://token.sensenova.ai', icon: '🌏' },
 ]
 
 /** Build the settings patch written on finish — pure so it's unit-tested. */

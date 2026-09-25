@@ -6,7 +6,7 @@
 // modal itself load lazily (v2.12.20) instead of riding in the boot bundle.
 // Settings.tsx re-exports everything below for backward compatibility.
 
-export type Provider = 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'custom'
+export type Provider = 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'sensenova' | 'custom'
 export type Language = 'pt' | 'en'
 export type PermissionLevel = 'ask' | 'auto_edits' | 'planning' | 'ignore'
 import type { PermissionRule } from './utils/permissionRules'
@@ -68,6 +68,14 @@ export interface AppSettings {
   modalPoolFallbackOllama: boolean
   modalModel: string
   modalHostname: string
+  // ── SenseNova (OpenAI-wire, endpoint fixo https://token.sensenova.ai/v1)
+  sensenovaApiKey: string
+  sensenovaModel: string
+  /** v2.207.0 — janela de contexto REAL por modelo, aprendida do `/v1/models`
+   *  do provider ao "Testar conexão". Vence a tabela fixa do contextEngine, que
+   *  vira só fallback offline. Sem isto, um modelo fora da tabela caía em 8192
+   *  e a história era podada quase inteira todo turno. */
+  modelLimits?: Record<string, number>
   // ── Custom OpenAI-compatible provider (Groq, Together, DeepInfra, Fireworks…)
   customApiKey: string
   customModel: string
@@ -127,7 +135,7 @@ export interface AppSettings {
    *  grátis (split orquestrador-worker — o modelo forte planeja, workers
    *  locais pesquisam). 'modal': usa o pool de keys do Modal. Ver
    *  researchWorker.ts. */
-  subagentExecutor?: 'ollama' | 'modal'
+  subagentExecutor?: 'ollama' | 'modal' | 'sensenova'
   /** v2.63.0 — modelo Ollama padrão dos workers de pesquisa (fallback quando
    *  `subagentModels` está vazio). Pequeno/rápido é o ideal. */
   subagentModel?: string
@@ -248,6 +256,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   modalPoolFallbackOllama: false,
   modalModel: 'zai-org/GLM-5.1-FP8',
   modalHostname: 'api.us-west-2.modal.direct',
+  sensenovaApiKey: '',
+  sensenovaModel: 'sensenova-6.8-flash-lite',
+  modelLimits: {},
   customApiKey: '',
   customModel: '',
   customBaseUrl: '',

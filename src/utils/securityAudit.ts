@@ -123,10 +123,10 @@ export function runSecurityAudit(settings: AppSettings): AuditFinding[] {
 export function maskSecrets(text: string): string {
   if (!text || typeof text !== 'string') return text
   let masked = text
-  // OpenAI
-  masked = masked.replace(/sk-[a-zA-Z0-9-]{20,}/g, 'sk-***')
   // Anthropic
   masked = masked.replace(/sk-ant-api[a-zA-Z0-9-_]{20,}/g, 'sk-ant-api***')
+  // OpenAI
+  masked = masked.replace(/sk-[a-zA-Z0-9-]{20,}/g, 'sk-***')
   // Google Gemini (AIza)
   masked = masked.replace(/AIza[0-9A-Za-z-_]{35}/g, 'AIza***')
   // Slack Tokens

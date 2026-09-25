@@ -2,6 +2,7 @@
 // Extracted from App.tsx
 
 import { subagentRolesHint } from './subagents'
+import { ROOT_FANOUT_CAP } from '../utils/researchWorker'
 
 export const TOOLS = [
   {
@@ -636,7 +637,7 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'delegate_subtasks',
-      description: `Run multiple research subtasks IN PARALLEL. Each subtask is an independent subagent that runs its OWN read-only tool loop (web_search, fetch_url, read_file, search_files, list_directory) — it searches/reads on its own and returns a synthesis. It CANNOT write, edit, or run commands. Use this to fan out independent research/exploration (e.g. "investigate area A", "find where X is defined", "check the latest version of Y") and get all answers at once. Give each subtask a self-contained prompt. Pick a specialized role via "agent". Roles: ${subagentRolesHint()}.`,
+      description: `[HIGH/ULTRACODE EFFORT TOOL] Run multiple research subtasks IN PARALLEL. Offered only when High/Ultracode effort mode is active. Use this ONLY to fan out complex, independent research or multi-angle exploration (e.g. "investigate area A", "find where X is defined", "check the latest version of Y"). Do NOT use for simple or single-step tasks that you can perform directly. Prefer 2-6 subtasks; at most ${ROOT_FANOUT_CAP} run per batch and extras are DROPPED. Each subtask is an independent subagent running its OWN read-only tool loop (web_search, fetch_url, read_file, search_files, list_directory, glob_files, project_tree) and returning a synthesis. Workers CANNOT write, edit, or run commands. Give each subtask a clear, detailed, self-contained prompt. Pick a specialized role via "agent". Roles: ${subagentRolesHint()}.`,
       parameters: {
         type: 'object',
         properties: {
@@ -658,6 +659,31 @@ export const TOOLS = [
         required: ['subtasks']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delegate_implementers',
+      description: `Run implementation subtasks IN PARALLEL, each in its OWN isolated git worktree. Unlike delegate_subtasks (research, read-only), these subagents CAN write files and run commands — but only inside their own worktree, never your main tree. Each returns a DIFF for you to review; nothing is applied automatically. Use for independent changes that do not overlap (e.g. "add tests for module A", "fix the lint errors in B"). Requires a project folder and a git repository. Prefer 2-4 subtasks. Do NOT use for one small edit you can make yourself with edit_file — the worktree setup costs more than the edit.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          subtasks: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'Short label; becomes the worktree/branch name.' },
+                prompt: { type: 'string', description: 'Self-contained instruction: what to change and how to verify it.' },
+              },
+            },
+            description: 'Independent implementation subtasks, one worktree each.',
+          },
+          allowCommands: { type: 'boolean', description: 'Let each subagent run build/test commands inside its own worktree to verify its work. Default true — code nobody ran is not done.' },
+        },
+        required: ['subtasks'],
+      },
+    },
   },
   {
     type: 'function',
@@ -712,7 +738,7 @@ export const TOOLS = [
     function: {
       name: 'compare_models',
       // Fusão do ModelArena no chat (v2.75.0): roda o mesmo prompt em N modelos.
-      description: 'Run the SAME prompt across 2-4 models and get their answers side by side to compare/synthesize (which is more correct/complete, where they diverge). Use when the user asks to compare models, benchmark, get a "second opinion", or wants a best-of-N answer on a critical question. Each model can be just a name (uses the current provider) or {model, provider} for cross-provider (ollama/openai/gemini/anthropic/openrouter/modal). Note: cloud models cost money per call.',
+      description: 'Run the SAME prompt across 2-4 models and get their answers side by side to compare/synthesize (which is more correct/complete, where they diverge). Use when the user asks to compare models, benchmark, get a "second opinion", or wants a best-of-N answer on a critical question. Each model can be just a name (uses the current provider) or {model, provider} for cross-provider (ollama/openai/gemini/anthropic/openrouter/modal/sensenova). Note: cloud models cost money per call.',
       parameters: {
         type: 'object',
         properties: {
@@ -796,6 +822,9 @@ export const DANGEROUS_TOOLS = new Set([
   // permissão como os demais computer_* (bypass libera p/ power users).
   'computer_click', 'computer_scroll',
   'browser_navigate', 'browser_click', 'browser_type', 'delegate_subtasks',
+  // Subagentes que ESCREVEM e rodam comandos (em worktree isolado, mas ainda
+  // assim escrita + execução) → aprovação do usuário, como o execute_command.
+  'delegate_implementers',
   // run_workflow pode rodar comandos/escrever arquivos → aprovação como unidade
   'run_workflow',
   // Computer Use — vision-based coordinate interaction

@@ -3757,6 +3757,85 @@ a:focus-visible {
   background: color-mix(in srgb, #ef4444 15%, transparent);
 }
 
+.msg-revert-btn:hover { color: #f59e0b; }
+
+/* ── Diálogo de rewind ────────────────────────────────────────── */
+.rewind-modal {
+  background: var(--bg-elevated, var(--bg, #1a1a1a));
+  border: 1px solid var(--border, rgba(128,128,128,0.3));
+  border-radius: 12px;
+  width: min(440px, 92vw);
+  padding: 18px;
+  box-shadow: 0 18px 48px rgba(0,0,0,0.45);
+}
+.rewind-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.rewind-header h3 { margin: 0; font-size: 1rem; }
+.rewind-close {
+  background: transparent; border: 0; color: var(--text-muted, #888);
+  cursor: pointer; padding: 4px; border-radius: 6px; display: flex;
+}
+.rewind-close:hover { color: var(--text, inherit); }
+.rewind-body { font-size: 0.82rem; color: var(--text-muted, #888); margin: 10px 0 14px; line-height: 1.45; }
+.rewind-actions { display: flex; flex-direction: column; gap: 8px; }
+.rewind-opt {
+  display: flex; align-items: flex-start; gap: 10px; text-align: left;
+  padding: 11px 12px; border-radius: 9px; cursor: pointer;
+  border: 1px solid var(--border, rgba(128,128,128,0.3));
+  background: transparent; color: var(--text, inherit); width: 100%;
+}
+.rewind-opt:hover:not(:disabled) { border-color: var(--accent); background: rgba(var(--accent-rgb),0.08); }
+.rewind-opt:disabled { opacity: 0.45; cursor: not-allowed; }
+.rewind-opt svg { margin-top: 2px; flex-shrink: 0; }
+.rewind-opt-body { display: flex; flex-direction: column; gap: 3px; }
+.rewind-opt-body strong { font-size: 0.86rem; font-weight: 600; }
+.rewind-opt-body small { font-size: 0.75rem; color: var(--text-muted, #888); line-height: 1.4; }
+.rewind-cancel {
+  margin-top: 12px; width: 100%; padding: 8px; border-radius: 8px; cursor: pointer;
+  background: transparent; border: 0; color: var(--text-muted, #888); font-size: 0.82rem;
+}
+.rewind-cancel:hover { color: var(--text, inherit); }
+
+
+
+.provider-ctx-hint {
+  font-size: 0.74rem;
+  color: var(--text-muted, #888);
+  margin: 6px 0 0 0;
+}
+.provider-ctx-hint strong { color: var(--text, inherit); font-weight: 600; }
+
+/* ── Catálogo de modelos buscado (chips) ─────────────────────── */
+
+.provider-model-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.provider-model-chip {
+  font-size: 0.74rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border, rgba(128,128,128,0.3));
+  background: transparent;
+  color: var(--text-muted, #888);
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.provider-model-chip:hover {
+  border-color: var(--accent);
+  color: var(--text, inherit);
+}
+.provider-model-chip.selected {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
 /* ── Modal pool editor ────────────────────────────────────────── */
 
 .provider-pool-hint {

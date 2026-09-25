@@ -33,6 +33,7 @@ export function providerConfigured(settings: AppSettings, p: string): boolean {
     case 'openai': return !!settings.openaiApiKey
     case 'openrouter': return !!settings.openrouterApiKey
     case 'gemini': return !!settings.geminiApiKey
+    case 'sensenova': return !!settings.sensenovaApiKey
     case 'custom': return !!settings.customBaseUrl
     default: return false
   }
@@ -44,6 +45,7 @@ const CLOUD: Array<{ p: string; group: string; modelKey: keyof AppSettings }> = 
   { p: 'openai', group: 'OpenAI', modelKey: 'openaiModel' },
   { p: 'openrouter', group: 'OpenRouter', modelKey: 'openrouterModel' },
   { p: 'gemini', group: 'Gemini', modelKey: 'geminiModel' },
+  { p: 'sensenova', group: 'SenseNova', modelKey: 'sensenovaModel' },
   { p: 'custom', group: 'Custom', modelKey: 'customModel' },
 ]
 

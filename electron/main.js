@@ -36,18 +36,9 @@ let activeProviderStream = null
 // parte impura: resolver symlinks (realpath) ANTES de checar — assim um link
 // apontando para fora não escapa. Para arquivo a ser CRIADO (ainda não existe),
 // resolve a pasta-pai real + basename.
-const { isBlockedPath } = require('./path-safety')
-function isPathSafe(filePath) {
-  let resolved = path.resolve(filePath)
-  try {
-    resolved = fs.realpathSync(resolved)
-  } catch (e) {
-    // não existe ainda (write/edit de arquivo novo): resolve o pai real.
-    try { resolved = path.join(fs.realpathSync(path.dirname(resolved)), path.basename(resolved)) }
-    catch (e2) { /* pai também não existe — usa o resolved literal */ }
-  }
-  return !isBlockedPath(resolved, os.homedir(), process.platform)
-}
+const { isPathSafe } = require('./path-safety')
+// isPathSafe mora em path-safety.js: o ipc-document.js precisa da MESMA regra,
+// e duas cópias é como as portas de leitura divergem (v2.205.0).
 
 const CONVERSATIONS_PATH = path.join(app.getPath('userData'), 'conversations.json')
 const ANALYTICS_PATH = path.join(app.getPath('userData'), 'analytics.json')
@@ -581,8 +572,13 @@ app.on('before-quit', () => {
 // ─── IPC: Git command (sandboxed to git only) ──────────────────────
 ipcMain.handle('git-command', async (event, { command, cwd }) => {
   return new Promise((resolve) => {
-    // Security: only allow git subcommands, no pipes/chains
-    if (/[;&|`$]/.test(command)) {
+    // Security: so subcomandos git, sem pipe/encadeamento.
+    // A QUEBRA DE LINHA faltava e era furo real: o shell aqui e o PowerShell,
+    // onde uma nova linha separa comandos igual ao ";". Verificado na mao —
+    // "git --version" + nova linha + "echo X" passava pelo filtro e executava
+    // OS DOIS. Bloquear ;&|`$ sem bloquear a nova linha e anunciar uma protecao
+    // que nao existe. O CR entra junto (CRLF do Windows).
+    if (/[;&|`$\r\n]/.test(command)) {
       return resolve({ stdout: '', stderr: '', error: 'Invalid characters in git command' })
     }
     exec(`git ${command}`, {
@@ -615,8 +611,49 @@ ipcMain.handle('read-file', async (event, filePath) => {
 
 // ─── IPC: Write file (with auto-snapshot for undo) ──────────────────
 const SNAPSHOTS_DIR = path.join(app.getPath('userData'), 'snapshots')
-const fileSnapshots = [] // Stack: [{filePath, backupPath, created, seq, timestamp}]
+// Índice PERSISTIDO (v2.208.0). Os backups sempre foram para o disco, mas o
+// índice vivia só em RAM: fechar o app tornava todo rewind impossível E vazava
+// os backups — a poda de 50 conta o array, que reiniciava vazio, então os
+// arquivos antigos nunca mais eram apagados. Com o índice em disco, o rewind
+// sobrevive ao restart e a poda volta a alcançar o que ficou para trás.
+const SNAPSHOT_INDEX_PATH = path.join(SNAPSHOTS_DIR, 'index.json')
+const SNAPSHOT_CAP = 200 // cabe várias sessões; era 50 e só valia para a sessão viva
+let fileSnapshots = []   // Stack: [{filePath, backupPath, created, seq, timestamp}]
 let snapshotSeq = 0      // monotônico — âncora dos checkpoints (rewind por turno)
+
+/** Grava o índice. Chamado após cada mudança na pilha; o array é pequeno
+ *  (<= SNAPSHOT_CAP entradas de metadados), então o custo é irrelevante perto
+ *  de já estarmos copiando o arquivo. */
+function saveSnapshotIndex() {
+  try {
+    fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true })
+    atomicWriteJSON(SNAPSHOT_INDEX_PATH, { seq: snapshotSeq, snapshots: fileSnapshots }, false)
+  } catch (e) { console.warn('[snapshots] index save:', e.message) }
+}
+
+/** Carrega o índice no boot e RECONCILIA com o disco: descarta entrada cujo
+ *  backup sumiu (senão o rewind falharia no meio) e apaga backup órfão que o
+ *  índice não referencia (o vazamento que o cap em memória deixava passar). */
+function loadSnapshotIndex() {
+  try {
+    const data = readJSONWithFallback(SNAPSHOT_INDEX_PATH, null)
+    const list = Array.isArray(data && data.snapshots) ? data.snapshots : []
+    fileSnapshots = list.filter(s =>
+      s && typeof s.filePath === 'string' && typeof s.seq === 'number' &&
+      (s.created === true || (typeof s.backupPath === 'string' && fs.existsSync(s.backupPath))))
+    const maxSeq = fileSnapshots.reduce((m, s) => Math.max(m, s.seq || 0), 0)
+    // O seq NUNCA pode recuar: um checkpoint antigo guardado numa conversa
+    // compara `> marca`, e reiniciar a contagem reverteria escritas erradas.
+    snapshotSeq = Math.max(Number(data && data.seq) || 0, maxSeq)
+    const referenced = new Set(fileSnapshots.map(s => s.backupPath).filter(Boolean))
+    for (const f of fs.existsSync(SNAPSHOTS_DIR) ? fs.readdirSync(SNAPSHOTS_DIR) : []) {
+      const full = path.join(SNAPSHOTS_DIR, f)
+      if (full === SNAPSHOT_INDEX_PATH || full === SNAPSHOT_INDEX_PATH + '.bak') continue
+      if (!referenced.has(full)) { try { fs.unlinkSync(full) } catch { /* best-effort */ } }
+    }
+  } catch (e) { console.warn('[snapshots] index load:', e.message) }
+}
+loadSnapshotIndex()
 
 // Back up a file before overwriting so undo_last_write / checkpoint-restore can
 // restore it. Shared by write-file and edit-file. Para arquivo NOVO (não existe
@@ -632,10 +669,11 @@ function snapshotFile(filePath) {
     fs.copyFileSync(filePath, backupPath)
     fileSnapshots.push({ filePath, backupPath, created: false, seq, timestamp: Date.now() })
   }
-  while (fileSnapshots.length > 50) {
+  while (fileSnapshots.length > SNAPSHOT_CAP) {
     const old = fileSnapshots.shift()
     if (old.backupPath) { try { fs.unlinkSync(old.backupPath) } catch (e) { /* best-effort cleanup */ } }
   }
+  saveSnapshotIndex()
 }
 
 // Restaura UM snapshot (pop já feito pelo chamador): arquivo criado → apaga;
@@ -714,6 +752,7 @@ ipcMain.handle('undo-last-write', async () => {
     return { error: 'No snapshots available', restored: null }
   }
   const r = restoreSnapshot(fileSnapshots.pop())
+  saveSnapshotIndex()
   return r.error ? { error: r.error, restored: null } : { error: null, restored: r.filePath }
 })
 
@@ -740,6 +779,7 @@ ipcMain.handle('checkpoint-restore', async (event, { seq } = {}) => {
     const r = restoreSnapshot(fileSnapshots.pop())
     if (r.error) errors.push(r.error); else restored.add(r.filePath)
   }
+  saveSnapshotIndex()
   return { restored: [...restored], count: restored.size, errors }
 })
 
@@ -1046,6 +1086,14 @@ ipcMain.handle('fetch-url', async (event, url) => {
 // ─── IPC: List directory ─────────────────────────────────────────────
 ipcMain.handle('list-directory', async (event, dirPath) => {
   try {
+    // Guard de caminho (v2.205.0): read-file/write-file/edit-file/search-files
+    // já barravam diretório protegido, mas LISTAR passava livre — e listar
+    // ~/.ssh ou ~/.aws já entrega quais chaves/perfis existem, mesmo sem ler o
+    // conteúdo. Vale mais desde que os subagentes ganharam ferramentas de
+    // mapeamento (v2.201.0).
+    if (!isPathSafe(dirPath)) {
+      return { items: null, error: 'Access denied: path is in a protected directory' }
+    }
     const entries = fs.readdirSync(dirPath, { withFileTypes: true })
     const items = entries.map(entry => {
       let size = 0
@@ -1435,6 +1483,13 @@ ipcMain.handle('provider-chat', async (event, { provider, apiKey, model, message
         'User-Agent': 'OpenClaude-Desktop'
       }
       bodyObj = { model, messages, tools: tools || undefined, stream: false, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
+    } else if (provider === 'sensenova') {
+      // SenseNova — wire OpenAI num endpoint FIXO (não é o provider `custom`,
+      // que pede baseUrl do usuário). Ver https://token.sensenova.ai/v1.
+      hostname = 'token.sensenova.ai'
+      apiPath = '/v1/chat/completions'
+      headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'User-Agent': 'OpenClaude-Desktop' }
+      bodyObj = { model, messages, tools: tools || undefined, stream: false, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
     } else if (provider === 'custom') {
       const cfg = parseCustomBase(customBaseUrl)
       if (!cfg) return resolve({ error: 'Custom provider: invalid baseUrl' })
@@ -1541,6 +1596,9 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
     // do turno se perdia e caía no fallback heurístico). Para esses, encerramos
     // só no `[DONE]`/fim de resposta, garantindo a entrega do usage antes.
     const expectsTrailingUsage = provider === 'openai' || provider === 'openrouter' || provider === 'modal'
+      // SenseNova manda um evento SÓ de usage antes de encerrar (doc oficial),
+      // mesmo sem stream_options — esperar o [DONE] preserva o custo real.
+      || provider === 'sensenova'
 
     if (provider === 'openai') {
       hostname = 'api.openai.com'
@@ -1580,6 +1638,14 @@ ipcMain.handle('provider-chat-stream', async (event, { provider, apiKey, model, 
       headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }
       // Opus 4.7/4.8/Fable 5 rejeitam temperature (400) — só envia onde é aceita.
       bodyObj = { model, max_tokens: max_tokens || 4096, messages: anthropicMsgs, ...(systemMsg ? { system: cachedSystem(systemMsg.content) } : {}), ...(anthropicAcceptsTemperature(model) ? { temperature: temperature ?? 0.7 } : {}), stream: true, ...(anthropicTools ? { tools: withCachedTools(anthropicTools) } : {}) }
+    } else if (provider === 'sensenova') {
+      hostname = 'token.sensenova.ai'
+      apiPath = '/v1/chat/completions'
+      headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'User-Agent': 'OpenClaude-Desktop' }
+      // SEM `stream_options`: não consta na doc do SenseNova, e um parâmetro
+      // desconhecido pode virar 400. Não faz falta — o gateway já emite um
+      // evento SÓ de usage antes de encerrar (ver expectsTrailingUsage).
+      bodyObj = { model, messages, tools: tools?.length ? tools : undefined, stream: true, temperature: temperature ?? 0.7, max_tokens: max_tokens || 4096 }
     } else if (provider === 'custom') {
       const cfg = parseCustomBase(customBaseUrl)
       if (!cfg) return resolve({ error: 'Custom provider: invalid baseUrl' })
@@ -1789,6 +1855,10 @@ ipcMain.handle('list-provider-models', async (event, { provider, apiKey, modalHo
       hostname = 'generativelanguage.googleapis.com'
       apiPath = `/v1beta/models?key=${apiKey}`
       headers = { 'User-Agent': 'OpenClaude-Desktop' }
+    } else if (provider === 'sensenova') {
+      hostname = 'token.sensenova.ai'
+      apiPath = '/v1/models'
+      headers = { 'Authorization': `Bearer ${apiKey}`, 'User-Agent': 'OpenClaude-Desktop' }
     } else if (provider === 'custom') {
       const cfg = parseCustomBase(customBaseUrl)
       if (!cfg) return resolve({ error: 'Custom provider: invalid baseUrl' })
@@ -1821,19 +1891,39 @@ ipcMain.handle('list-provider-models', async (event, { provider, apiKey, modalHo
             return resolve({ error: `API error ${res.statusCode}: ${JSON.stringify(parsed)}` })
           }
 
-          let models = []
-          if (provider === 'openai' || provider === 'openrouter' || provider === 'modal' || provider === 'custom') {
-            models = (parsed.data || []).map(m => m.id).sort()
-          } else if (provider === 'anthropic') {
-            models = (parsed.data || []).map(m => m.id).sort()
-          } else if (provider === 'gemini') {
-            // Filter models that support generateContent
-            models = (parsed.models || [])
-              .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
-              .map(m => m.name.replace('models/', ''))
-              .sort()
+          // Janela de contexto REAL, quando o provider a informa (v2.207.0).
+          // Ela já vinha nesta mesma resposta e era jogada fora — só o `id` era
+          // aproveitado — então o app caía na tabela fixa do contextEngine e um
+          // modelo ausente dela virava 8192. Foi exatamente assim que o
+          // sensenova-6.8-flash-lite (262k) passou a ter o orçamento calculado
+          // contra 1/32 do tamanho real. Cada provider chama o campo de um jeito.
+          const pickLimit = (m) => {
+            const v = m && (m.max_input_tokens ?? m.context_length ?? m.context_window
+              ?? m.max_context_length ?? m.inputTokenLimit)
+            const n = Number(v)
+            return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
           }
-          resolve({ models, error: null })
+          const limits = {}
+          let models = []
+          if (provider === 'gemini') {
+            const list = (parsed.models || []).filter(m => m.supportedGenerationMethods?.includes('generateContent'))
+            models = list.map(m => m.name.replace('models/', '')).sort()
+            for (const m of list) {
+              const id = String(m.name || '').replace('models/', '')
+              const n = pickLimit(m)
+              if (id && n) limits[id] = n
+            }
+          } else {
+            // openai / openrouter / modal / custom / sensenova / anthropic — shape
+            // OpenAI (`data: [{id, ...}]`).
+            const list = parsed.data || []
+            models = list.map(m => m.id).filter(Boolean).sort()
+            for (const m of list) {
+              const n = pickLimit(m)
+              if (m && m.id && n) limits[m.id] = n
+            }
+          }
+          resolve({ models, limits, error: null })
         } catch (e) { resolve({ error: e.message }) }
       })
     })
@@ -2528,14 +2618,19 @@ const modalKeepAliveAgent = new https.Agent({
 ipcMain.handle('provider-parallel-chat', async (event, { tasks, provider, model, temperature, max_tokens, hostname }) => {
   const executeTask = (task) => {
     return new Promise((resolve) => {
-      const body = JSON.stringify({
+      const bodyObj = {
         model,
         messages: task.messages,
         tools: task.tools || [],
         stream: false,
         temperature: temperature ?? 0.7,
         ...(max_tokens ? { max_tokens } : {})
-      })
+      }
+      // `tools: []` não consta na doc do SenseNova e vários gateways
+      // OpenAI-compat respondem 400 a um array vazio. Omite só nesse caso —
+      // modal/ollama seguem exatamente como antes.
+      if (provider === 'sensenova' && !bodyObj.tools.length) delete bodyObj.tools
+      const body = JSON.stringify(bodyObj)
 
       let options
       if (provider === 'modal') {
@@ -2552,6 +2647,21 @@ ipcMain.handle('provider-parallel-chat', async (event, { tasks, provider, model,
             'Connection': 'keep-alive'
           }
         }
+      } else if (provider === 'sensenova') {
+        // Sem pool: a MESMA key vai em todas as tasks. O teto de paralelismo
+        // é o semáforo do renderer (e, na prática, o rate limit da conta).
+        options = {
+          hostname: 'token.sensenova.ai',
+          port: 443,
+          path: '/v1/chat/completions',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(body),
+            'Authorization': `Bearer ${task.apiKey || ''}`,
+            'User-Agent': 'OpenClaude-Desktop'
+          }
+        }
       } else {
         // Default: Ollama local
         options = {
@@ -2563,7 +2673,7 @@ ipcMain.handle('provider-parallel-chat', async (event, { tasks, provider, model,
         }
       }
 
-      const client = (provider === 'modal') ? https : http
+      const client = (provider === 'modal' || provider === 'sensenova') ? https : http
       const req = client.request(options, (res) => {
         let data = ''
         res.setEncoding('utf8') // decode UTF-8 com estado entre chunks (evita ç/ã/é → U+FFFD)
@@ -2799,6 +2909,10 @@ async function callProviderOnce({ provider, apiKey, model, messages, modalHostna
       hostname = modalHostname || 'api.us-west-2.modal.direct'; apiPath = '/v1/chat/completions'
       headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
       bodyObj = { model, messages, stream: false, temperature: 0.7, max_tokens: 4096 }
+    } else if (provider === 'sensenova') {
+      hostname = 'token.sensenova.ai'; apiPath = '/v1/chat/completions'
+      headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+      bodyObj = { model, messages, stream: false, temperature: 0.7, max_tokens: 4096 }
     } else {
       return resolve(`Provider "${provider}" nao suportado`)
     }
@@ -2832,48 +2946,70 @@ async function callProviderOnce({ provider, apiKey, model, messages, modalHostna
 
 // ─── Parliament Mode: System Prompts ────────────────────────────────────────
 const PARLIAMENT_ROLE_PROMPTS = {
-  arquiteto: `Voce e o ARQUITETO no Parliament Mode. Analise o problema exclusivamente pelo prisma de DESIGN DE SISTEMAS E ARQUITETURA.
+  arquiteto: `<system_prompt>
+  <role>ARQUITETO no Parliament Mode</role>
+  <mission>Propor apenas a estrutura, arquivos afetados e dependências.</mission>
+  <rules>
+    <rule>Ação Direta: ZERO meta-comentários. Nunca inicie o texto com saudações, introduções ou dizendo 'Aqui está a minha análise'. Cuspa apenas o dado técnico.</rule>
+    <rule>Foque em: estrutura e componentes, padrões arquiteturais (MVC, microservices, event-driven, etc.), escalabilidade e manutenabilidade, trade-offs de design e justificativas.</rule>
+    <rule>Use diagramas textuais (ASCII) quando ajudar. Seja técnico e preciso.</rule>
+  </rules>
+</system_prompt>`,
 
-Foque em: estrutura e componentes, padroes arquiteturais (MVC, microservices, event-driven, etc.), escalabilidade e manutenabilidade, trade-offs de design e justificativas.
-Use diagramas textuais (ASCII) quando ajudar. Seja tecnico e preciso.`,
+  implementador: `<system_prompt>
+  <role>IMPLEMENTADOR no Parliament Mode</role>
+  <mission>Escrever o código cru, sem explicar o que o código faz (o código deve se explicar).</mission>
+  <rules>
+    <rule>Ação Direta: ZERO meta-comentários. Nunca inicie o texto com saudações, introduções ou dizendo 'Aqui está a minha análise'. Cuspa apenas o dado técnico.</rule>
+    <rule>Foque em: como implementar concretamente (linguagens, bibliotecas, APIs), passos práticos e ordem de implementação, blockers técnicos e como resolvê-los, exemplos de código.</rule>
+    <rule>Seja específico e orientado a execução imediata.</rule>
+  </rules>
+</system_prompt>`,
 
-  implementador: `Voce e o IMPLEMENTADOR no Parliament Mode. Analise o problema exclusivamente pelo prisma de IMPLEMENTACAO PRATICA.
+  seguranca: `<system_prompt>
+  <role>REVISOR DE SEGURANÇA no Parliament Mode</role>
+  <mission>Foco exclusivo em apontar vulnerabilidades (injeção, permissões locais, leitura de arquivos sensíveis).</mission>
+  <rules>
+    <rule>Ação Direta: ZERO meta-comentários. Nunca inicie o texto com saudações, introduções ou dizendo 'Aqui está a minha análise'. Cuspa apenas o dado técnico.</rule>
+    <rule>Foque em: vulnerabilidades potenciais e superfícies de ataque, dados sensíveis e proteção, conformidade regulatória, medidas de mitigação concretas.</rule>
+    <rule>Seja crítico e não ignore riscos por parecerem improváveis. Pior caso primeiro.</rule>
+  </rules>
+</system_prompt>`,
 
-Foque em: como implementar concretamente (linguagens, bibliotecas, APIs), passos praticos e ordem de implementacao, blockers tecnicos e como resolve-los, exemplos de codigo quando relevante.
-Seja especifico e orientado a execucao imediata.`,
+  testador: `<system_prompt>
+  <role>TESTADOR no Parliament Mode</role>
+  <mission>Exigir cenários de falha (edge cases) e testes unitários.</mission>
+  <rules>
+    <rule>Ação Direta: ZERO meta-comentários. Nunca inicie o texto com saudações, introduções ou dizendo 'Aqui está a minha análise'. Cuspa apenas o dado técnico.</rule>
+    <rule>Foque em: estratégia de testes (unitário, integração, e2e, carga), casos de borda e cenários de falha, métricas de qualidade e cobertura.</rule>
+    <rule>Seja sistemático. Considere sempre o caso infeliz.</rule>
+  </rules>
+</system_prompt>`,
 
-  seguranca: `Voce e o REVISOR DE SEGURANCA no Parliament Mode. Analise o problema exclusivamente pelo prisma de SEGURANCA E RISCO.
+  diabo: `<system_prompt>
+  <role>ADVOGADO DO DIABO no Parliament Mode</role>
+  <mission>Proibido de concordar. Tentar destruir a proposta apontando gargalos de performance e escalabilidade.</mission>
+  <rules>
+    <rule>Ação Direta: ZERO meta-comentários. Nunca inicie o texto com saudações, introduções ou dizendo 'Aqui está a minha análise'. Cuspa apenas o dado técnico.</rule>
+    <rule>Foque em: premissas questionáveis ou falsas, alternativas que podem ser superiores, complexidade desnecessária (over-engineering), o que poderia dar completamente errado.</rule>
+    <rule>Seja cético e direto. Você fortalece a solução através da crítica construtiva. Não valide o que não merece validação.</rule>
+  </rules>
+</system_prompt>`,
 
-Foque em: vulnerabilidades potenciais e superficies de ataque, dados sensiveis e protecao, conformidade regulatoria (LGPD, GDPR, OWASP), medidas de mitigacao concretas.
-Seja critico e nao ignore riscos por parecerem improvaveis. Pior caso primeiro.`,
-
-  testador: `Voce e o TESTADOR no Parliament Mode. Analise o problema exclusivamente pelo prisma de QUALIDADE E TESTES.
-
-Foque em: estrategia de testes (unitario, integracao, e2e, carga), casos de borda e cenarios de falha, metricas de qualidade e cobertura, automatizacao e CI/CD.
-Seja sistematico. Considere sempre o caso infeliz.`,
-
-  diabo: `Voce e o ADVOGADO DO DIABO no Parliament Mode. Seu papel e QUESTIONAR e DESAFIAR tudo.
-
-Foque em: premissas questionaveis ou falsas, alternativas que podem ser superiores, complexidade desnecessaria (over-engineering), o que poderia dar completamente errado.
-Seja cetico e direto. Voce fortalece a solucao atraves da critica construtiva. Nao valide o que nao merece validacao.`,
-
-  coordenador: `Voce e o COORDENADOR FINAL do Parliament Mode. Voce recebeu analises de 5 especialistas distintos e deve sintetizar tudo em uma visao consolidada e acionavel.
-
-SUA RESPOSTA DEVE TER EXATAMENTE ESTA ESTRUTURA:
-
-## Consensos
-(Pontos em que os especialistas concordam — o que e solido e deve ser feito)
-
-## Divergencias
-(Visoes conflitantes — explique cada lado e por que existe o conflito)
-
-## Sintese e Recomendacao
-(Sua decisao final, balanceando todas as perspectivas com justificativa)
-
-## Proximos Passos
-(3 a 5 acoes concretas, priorizadas, com responsavel sugerido por cada acao)
-
-Seja decisivo. Nao fique em cima do muro. O objetivo e uma decisao clara e fundamentada.`
+  coordenador: `<system_prompt>
+  <role>COORDENADOR FINAL no Parliament Mode</role>
+  <mission>Sintetizar o debate extraindo APENAS a decisão final e o plano de execução (\`plan_tasks\`), ignorando ruídos.</mission>
+  <rules>
+    <rule>Ação Direta: ZERO meta-comentários. Nunca inicie o texto com saudações, introduções ou dizendo 'Aqui está a minha análise'. Cuspa apenas o dado técnico.</rule>
+    <rule>SUA RESPOSTA DEVE TER EXATAMENTE ESTA ESTRUTURA:
+      ## Consensos (o que é sólido e deve ser feito)
+      ## Divergências (visões conflitantes e o porquê)
+      ## Síntese e Recomendação (decisão final justificada)
+      ## Próximos Passos (3 a 5 ações priorizadas com responsável)
+    </rule>
+    <rule>Seja decisivo. Não fique em cima do muro. O objetivo é uma decisão clara e fundamentada.</rule>
+  </rules>
+</system_prompt>`
 }
 
 // ─── Parliament Mode IPC Handler ─────────────────────────────────────────────
@@ -3024,6 +3160,14 @@ ipcMain.handle('workflow-save', async (event, workflows) => {
 
 // ─── Code Workspace: Recursive directory tree ─────────────────────────────────
 ipcMain.handle('workspace-tree', async (event, dirPath) => {
+  // Guard ANTES de qualquer coisa. Este handler serve project_tree E
+  // glob_files — os dois liberados aos subagentes em v2.201.0. O filtro de
+  // entradas que começam com '.' logo abaixo NÃO protege: ele esconde ~/.ssh
+  // como FILHO, mas passar ~/.ssh direto como raiz listava
+  // id_rsa/known_hosts/config, que não começam com ponto.
+  if (!isPathSafe(dirPath)) {
+    return { tree: [], error: 'Access denied: path is in a protected directory' }
+  }
   const IGNORE = new Set(['node_modules', '.git', 'dist', 'release', 'build', '.cache', '__pycache__'])
   function buildTree(p, depth = 0) {
     if (depth > 6) return []
@@ -3179,9 +3323,10 @@ ipcMain.handle('vision-chat', async (event, { provider, apiKey, model, prompt, i
 
     let hostname, apiPath, headers, bodyObj
 
-    if (provider === 'openai' || provider === 'openrouter' || provider === 'modal') {
+    if (provider === 'openai' || provider === 'openrouter' || provider === 'modal' || provider === 'sensenova') {
       hostname = provider === 'openai' ? 'api.openai.com'
                 : provider === 'openrouter' ? 'openrouter.ai'
+                : provider === 'sensenova' ? 'token.sensenova.ai'
                 : (modalHostname || 'api.us-west-2.modal.direct')
       apiPath = provider === 'openrouter' ? '/api/v1/chat/completions' : '/v1/chat/completions'
       headers = {

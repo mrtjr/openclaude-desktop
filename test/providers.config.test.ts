@@ -3,10 +3,10 @@ import { PROVIDERS, getProviderMeta } from '../src/config/providers'
 import { DEFAULT_SETTINGS } from '../src/Settings'
 
 describe('providers.config', () => {
-  it('exports all 7 known providers', () => {
+  it('exports all 8 known providers', () => {
     const ids = PROVIDERS.map(p => p.id).sort()
     expect(ids).toEqual(
-      ['anthropic', 'custom', 'gemini', 'modal', 'ollama', 'openai', 'openrouter']
+      ['anthropic', 'custom', 'gemini', 'modal', 'ollama', 'openai', 'openrouter', 'sensenova']
     )
   })
 
@@ -48,6 +48,15 @@ describe('providers.config', () => {
   it('getProviderMeta returns correct entry by id', () => {
     expect(getProviderMeta('openai').label).toBe('OpenAI')
     expect(getProviderMeta('modal').supportsKeyPool).toBe(true)
+  })
+
+  it('sensenova is a fixed-endpoint OpenAI-wire provider (not isCustomBaseUrl)', () => {
+    const s = getProviderMeta('sensenova')
+    expect(s.label).toBe('SenseNova')
+    expect(s.isCustomBaseUrl).toBeUndefined()
+    expect(s.fields?.extra).toBeUndefined()
+    expect(s.fields?.apiKeySetting).toBe('sensenovaApiKey')
+    expect(s.fields?.modelSetting).toBe('sensenovaModel')
   })
 
   it('getProviderMeta falls back to first provider on unknown id', () => {

@@ -36,6 +36,8 @@ interface AppSettings {
   modalApiKey: string
   modalModel: string
   modalHostname: string
+  sensenovaApiKey: string
+  sensenovaModel: string
   language: 'pt' | 'en'
 }
 
@@ -68,6 +70,7 @@ const PROVIDER_LABELS: Record<Provider, string> = {
   openrouter: 'OpenRouter',
   custom: 'Custom (OpenAI-compatible)',
   modal: 'Modal',
+  sensenova: 'SenseNova',
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -849,6 +852,7 @@ function defaultModelForProvider(provider: Provider, settings: AppSettings, olla
     case 'anthropic':  return settings.anthropicModel || 'claude-3-5-sonnet-20241022'
     case 'openrouter': return settings.openrouterModel || 'meta-llama/llama-3.1-70b-instruct'
     case 'modal':      return settings.modalModel || 'zai-org/GLM-5.1-FP8'
+    case 'sensenova':  return settings.sensenovaModel || 'sensenova-6.8-flash-lite'
     default:           return ''
   }
 }
