@@ -478,6 +478,27 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         if (result.content == null) return result.error || ''
         return paginateFileContent(result.content, args.offset, args.limit)
       }
+      if (name === 'memory_write' || name === 'memory_append') {
+        const pCwd = projectCwdRef.current || '.'
+        const cleanPath = String(args.path || '').replace(/^[\/\\]+/, '')
+        const targetPath = `${pCwd}/.claude/memory/${cleanPath}`
+        const append = name === 'memory_append'
+        const result = await window.electron.writeFile({ filePath: targetPath, content: String(args.content || ''), append })
+        return result.error ? `Erro: ${result.error}` : `Arquivo salvo em .claude/memory/${cleanPath}`
+      }
+      if (name === 'memory_read') {
+        const pCwd = projectCwdRef.current || '.'
+        const cleanPath = String(args.path || '').replace(/^[\/\\]+/, '')
+        const targetPath = `${pCwd}/.claude/memory/${cleanPath}`
+        const result = await window.electron.readFile(targetPath)
+        return result.content != null ? result.content : (result.error || '')
+      }
+      if (name === 'memory_list') {
+        const pCwd = projectCwdRef.current || '.'
+        const targetPath = `${pCwd}/.claude/memory`
+        const res = await window.electron.workspaceTree(targetPath)
+        return formatProjectTree(res, targetPath)
+      }
       if (name === 'write_file') {
         // Recuperação de escrita TRUNCADA (v2.161.0): se a chamada foi cortada
         // pelo limite de tokens, o JSON chegou quebrado (raw_invalid_json) e

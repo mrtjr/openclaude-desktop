@@ -796,6 +796,61 @@ export const TOOLS = [
         }
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'memory_write',
+      description: 'Escreve conteúdo num arquivo de memória do LLM. O arquivo é salvo fisicamente no diretório .claude/memory.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Caminho do arquivo (ex: /profile.md)' },
+          content: { type: 'string', description: 'Conteúdo a ser salvo' }
+        },
+        required: ['path', 'content']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'memory_read',
+      description: 'Lê o conteúdo de um arquivo da memória do LLM.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Caminho do arquivo (ex: /profile.md)' }
+        },
+        required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'memory_append',
+      description: 'Adiciona texto ao final de um arquivo de memória existente.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Caminho do arquivo (ex: /profile.md)' },
+          content: { type: 'string', description: 'Conteúdo a ser adicionado' }
+        },
+        required: ['path', 'content']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'memory_list',
+      description: 'Lista todos os arquivos de memória recursivamente.',
+      parameters: {
+        type: 'object',
+        properties: {}
+      }
+    }
   }
 ]
 
@@ -812,7 +867,8 @@ export const SAFE_TOOLS = new Set([
   'update_working_memory', 'plan_tasks', 'update_task_status', 'undo_last_write',
   'remember_fact', 'remember_fresh_fact', 'load_skill', 'manage_skills', 'rag_search',
   'capture_screen', 'analyze_image', 'compare_models', 'set_persona', 'project_tree', 'glob_files',
-  'search_conversations', 'get_command_output', 'kill_background_command'
+  'search_conversations', 'get_command_output', 'kill_background_command',
+  'memory_read', 'memory_write', 'memory_append', 'memory_list'
 ])
 
 export const DANGEROUS_TOOLS = new Set([
