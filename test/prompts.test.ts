@@ -44,27 +44,35 @@ describe('AGENT_SYSTEM_PROMPT', () => {
         expect(p).toMatch(lang === 'pt' ? /Complex/i : /Complex/i)
       })
 
+      // O prompt foi reescrito em XML (commit 3f39d4b) com redação nova. Os
+      // COMPORTAMENTOS se mantiveram; as regex abaixo casam o radical (eficien-,
+      // pesquis-, reutiliz-/reuse) em vez da frase exata, para que trocar um
+      // sinônimo não derrube o teste — mas sumir com o conceito, sim.
       it('pushes EFFICIENCY (the point of the v2.12.65 rewrite)', () => {
-        expect(p).toMatch(lang === 'pt' ? /EFICIENTE/i : /EFFICIENT/i)
+        expect(p).toMatch(lang === 'pt' ? /EFICI[ÊE]N/i : /EFFICIEN/i)
+        // eficiência concreta: parar de pesquisar quando já há fatos suficientes
+        expect(p).toMatch(lang === 'pt' ? /PARE de pesquisar/i : /STOP searching/i)
         // and no longer tells the model speed does not matter
         expect(p).not.toMatch(/TEMPO ILIMITADO|UNLIMITED TIME/i)
         expect(p).not.toMatch(/qualidade.*mais importante que velocidade|matters more than speed/i)
       })
 
       it('keeps the persistence guarantees (do real work, do not stop midway, deliver)', () => {
-        expect(p).toMatch(lang === 'pt' ? /N[ÃA]O PARE NO MEIO/i : /DON'T STOP MIDWAY/i)
+        expect(p).toMatch(lang === 'pt' ? /N[ÃA]O PARE NO MEIO/i : /(DON'T|DO NOT) STOP MIDWAY/i)
         expect(p).toMatch(lang === 'pt' ? /ENTREGUE/i : /DELIVER/i)
         expect(p).toMatch(/update_working_memory/)
       })
 
       it('adds research discipline + verification', () => {
-        expect(p).toMatch(lang === 'pt' ? /PESQUISE/i : /RESEARCH/i)
+        expect(p).toMatch(lang === 'pt' ? /PESQUIS/i : /RESEARCH/i)
         expect(p).toMatch(lang === 'pt' ? /VERIFIQUE/i : /VERIFY/i)
       })
 
       it('manda REUSAR achados anteriores no follow-up (não refazer do zero) — v2.57.0', () => {
-        expect(p).toMatch(lang === 'pt' ? /REUSE O QUE J[ÁA] EXISTE/i : /REUSE WHAT ALREADY EXISTS/i)
-        expect(p).toMatch(lang === 'pt' ? /FOCAR/i : /FOCUS ON/i)
+        expect(p).toMatch(lang === 'pt' ? /REUTILIZ|REUSE/i : /REUSE/i)
+        // o ponto do v2.57.0: partir do que já foi achado, não recomeçar
+        expect(p).toMatch(lang === 'pt' ? /recome[çc]ar do zero/i : /starting from scratch/i)
+        expect(p).toMatch(lang === 'pt' ? /FOCAR/i : /FOCUS/i)
       })
     })
   }

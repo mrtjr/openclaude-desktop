@@ -29,9 +29,14 @@ describe('formatWriteResult — coaching de edit_file (v2.19.0)', () => {
 describe('AGENT_SYSTEM_PROMPT — steering de edit_file', () => {
   it('pt e en instruem editar em vez de reescrever', () => {
     expect(AGENT_SYSTEM_PROMPT.pt).toContain('edit_file')
-    expect(AGENT_SYSTEM_PROMPT.pt).toMatch(/EDITE, NÃO REESCREVA/)
+    // Case-insensitive: a reescrita em XML (3f39d4b) trocou CAIXA-ALTA por
+    // "Edite, não reescreva" — a instrução é a mesma.
+    expect(AGENT_SYSTEM_PROMPT.pt).toMatch(/EDITE, N[ÃA]O REESCREVA/i)
     expect(AGENT_SYSTEM_PROMPT.en).toContain('edit_file')
-    expect(AGENT_SYSTEM_PROMPT.en).toMatch(/EDIT, DON'T REWRITE/)
+    expect(AGENT_SYSTEM_PROMPT.en).toMatch(/EDIT, DON'T REWRITE/i)
+    // e o critério que dá sentido à regra: write_file só para arquivo novo
+    expect(AGENT_SYSTEM_PROMPT.pt).toMatch(/write_file.{0,20}S[ÓO] para arquivos novos/i)
+    expect(AGENT_SYSTEM_PROMPT.en).toMatch(/write_file.{0,20}ONLY for new files/i)
   })
 })
 

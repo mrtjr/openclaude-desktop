@@ -593,6 +593,20 @@ body {
   font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px;
   color: #ff6b6b; background: rgba(255, 107, 107, 0.12); border: 1px solid rgba(255, 107, 107, 0.35);
 }
+/* Estado do bloco de ferramenta (v2.213.0). Substitui as classes Tailwind do
+   commit 59d56af, que nunca renderizaram: o projeto não tem Tailwind. */
+.tool-call--pending { border-left: 3px solid #60a5fa; }
+.tool-call--error   { border-left: 3px solid #ef4444; }
+.tool-call--ok      { border-left: 3px solid rgba(16, 185, 129, 0.55); }
+.tool-call-state { flex-shrink: 0; }
+.tool-call--pending .tool-call-state { color: #60a5fa; }
+.tool-call--error   .tool-call-state { color: #ef4444; }
+.tool-call--ok      .tool-call-state { color: #10b981; }
+.tool-call-status {
+  flex-shrink: 0; margin-left: auto; font-size: 10px; font-style: italic;
+  color: var(--text-secondary); font-weight: 400;
+}
+.tool-call-header:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .tool-icon { margin-right: 2px; }
 .tool-play { color: var(--text-secondary); margin-left: 2px; margin-right: 2px; }
 .tool-call-args {

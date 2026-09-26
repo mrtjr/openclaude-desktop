@@ -61,8 +61,36 @@ export function subagentRolesHint(): string {
   return SUBAGENT_ROLES.map(r => `"${r.id}" (${r.description})`).join(', ')
 }
 
+/** Infere o papel pelo texto da subtarefa quando a IA omite (ou erra) o
+ *  `agent`. A maioria das subtarefas delegadas é investigativa, então o padrão
+ *  é o explorer — nunca "sem método". */
+export function autoInferSubagentRole(promptText: string): string {
+  const p = (promptText || '').toLowerCase()
+  if (/\b(erro|error|bug|exception|security|seguran[çc]a|revis\w*|review|vulnerab\w*|audit|falha)\b/.test(p)) {
+    return 'reviewer'
+  }
+  if (/\b(plano|plan\w*|estrateg\w*|passo a passo|arquitet\w*|design|trade-off|passos)\b/.test(p)) {
+    return 'planner'
+  }
+  return 'explorer'
+}
+
+/** Resolve o system prompt de um papel (case-insensitive). Se o id não resolver
+ *  para um papel COM prompt — omitido, desconhecido ("researcher",
+ *  "Explorador") ou o `general`, que não tem método próprio — infere pelo texto
+ *  da subtarefa.
+ *
+ *  RESTAURADO (v2.213.0): o commit 94954b8 reconstruiu este arquivo a partir da
+ *  versão original e, no caminho, apagou `autoInferSubagentRole` e passou a
+ *  IGNORAR `fallbackPrompt` — mantendo o parâmetro na assinatura, então o tsc
+ *  seguiu verde e a chamada em useToolExecution continuou compilando. Resultado:
+ *  toda subtarefa sem papel explícito voltava a rodar SEM instrução de método,
+ *  e a busca virou case-sensitive ('REVIEWER' dava vazio). Os testes em
+ *  subagents.test.ts e scoutQuality.test.ts existem para barrar exatamente isso. */
 export function resolveSubagentPrompt(roleId?: string, fallbackPrompt?: string): string {
-  if (!roleId || roleId === 'general') return ''
-  const role = SUBAGENT_ROLES.find(r => r.id === roleId)
-  return role ? role.systemPrompt : ''
+  const asked = roleId ? String(roleId).trim().toLowerCase() : ''
+  const direct = asked ? SUBAGENT_ROLES.find(r => r.id.toLowerCase() === asked) : undefined
+  if (direct?.systemPrompt) return direct.systemPrompt
+  const inferred = SUBAGENT_ROLES.find(r => r.id === autoInferSubagentRole(fallbackPrompt || ''))
+  return inferred?.systemPrompt || ''
 }
