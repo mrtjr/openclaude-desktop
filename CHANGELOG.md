@@ -7,6 +7,67 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Security — 🛡️ Correções da revisão do branch (2.212.0)
+
+- **Canvas de artefatos:** o iframe usava `allow-scripts` + `allow-same-origin`,
+  combinação que anula o sandbox — o HTML gerado pelo modelo alcançava
+  `parent.electron` (executar comando, gravar arquivo) sem aprovação. Agora o
+  artefato roda isolado do app.
+- **`memory_write` / `memory_append`:** rodam sem aprovação e aceitavam `../` —
+  gravavam em qualquer lugar do disco. O caminho agora fica preso a
+  `.claude/memory`.
+- **`.env` da `DATABASE_URL` protegido** das ferramentas de arquivo do agente
+  (`read_file`, `write_file`, `edit_file`, `read_document`, `memory_read`).
+- **Guarda de caminho no Windows:** o nome curto 8.3 (`JNIOR~1` no lugar de
+  `Júnior`) driblava o bloqueio do `~/.ssh`, e o sufixo `::$DATA` driblava
+  arquivo protegido. O `isPathSafe` confere também a forma nativa do caminho;
+  unidades de rede mapeadas seguem funcionando.
+- **Subagentes respeitam as regras de bloqueio do usuário** — e os
+  implementadores, a denylist do sandbox em `execute_command`. Eles rodam por
+  fora do gate do agente principal, então nada disso valia para eles.
+- **`maskSecrets`:** chaves `sk-proj-…` com `_` passavam sem máscara.
+
+### Added — 🗄️ `postgres_query`: SQL só-leitura no banco do NovoPdv (2.212.0)
+
+Nova ferramenta para consultar o PostgreSQL do NovoPdv. Cada consulta pede
+aprovação e passa por cinco camadas: guard léxico (bloqueia escrita, DDL, mais
+de uma instrução e funções que escapam da leitura), transação `READ ONLY`,
+protocolo estendido (o servidor recusa mais de uma instrução),
+`statement_timeout` de 15 s e teto de 200 linhas. A `DATABASE_URL` vem de um
+`.env` — raiz do projeto em dev, pasta de dados do app no instalado — e nunca
+sai do processo principal. O resultado volta em JSON de uma linha que cabe no
+limite de saída das ferramentas.
+
+### Added — 📎 Omni-input: vários anexos por mensagem (2.212.0)
+
+Arrastar, colar ou escolher arquivos agora ACRESCENTA cards ao composer (até
+10): imagens vão multimodal; PDF, DOCX, código e texto viram blocos
+`<document>`. Antes havia um slot por tipo — soltar três imagens deixava só a
+última, e código ia parar dentro da caixa de texto. Binário é recusado com
+aviso.
+
+### Fixed — 🧹 Revisão do branch (2.212.0)
+
+- **Corte de contexto por custo:** guardava só a 1ª mensagem + as 5 últimas —
+  perdia o pedido do usuário e podia deixar uma resposta `tool` órfã (HTTP
+  400). Agora mantém as mensagens `system`, a tarefa atual e a troca mais
+  recente, e corta do mais antigo em blocos.
+- **`take_screenshot`:** devolvia a imagem como base64 em texto, cortado em
+  4.000 caracteres — o modelo nunca a via. Agora passa pelo modelo de visão, com
+  captura em pixels físicos (as coordenadas do `mouse_move`).
+- **Fontes e fatos frescos:** qualquer resultado de ferramenta com link virava
+  "fonte web" e ia para a memória como fato verificado; agora só resultados de
+  pesquisa web e de subagentes.
+- **Parlamento:** com todos os papéis em falha, o coordenador sintetizava um
+  debate vazio; agora cancela, e avisa quais perspectivas faltaram.
+- **Telemetria** grava na pasta de dados do app (antes: na pasta de onde o app
+  foi aberto — no instalado, a de instalação ou System32).
+- **Skill `git_workflow`:** `git reset --hard` + `git clean -fd`, que apagavam
+  trabalho não commitado do usuário, viraram `git stash` reversível; `git add .`
+  virou só os arquivos alterados.
+- **Suítes de teste** desatualizadas corrigidas, e os testes do
+  `runSecurityAudit` apagados por engano, restaurados.
+
 ### Added — 🛠️ Subagentes que IMPLEMENTAM, em worktree isolado (2.211.0)
 
 Nova ferramenta **`delegate_implementers`**: subtarefas de implementação em
