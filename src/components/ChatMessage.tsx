@@ -1,3 +1,4 @@
+import { messageAttachments } from '../utils/attachments'
 import { memo, useState } from 'react'
 import { User, RefreshCw, GitBranch, Trash, Pencil, Check, CornerDownRight, ShieldCheck, Undo2 } from 'lucide-react'
 import type { Message } from '../types'
@@ -82,15 +83,14 @@ function ChatMessageInner({
         {msg.role === 'user' ? <User size={16} /> : <div className="oc-logo">OC</div>}
       </div>
       <div className="message-content">
-        {msg.image && (
-          <img className="message-image" src={`data:${msg.image.mimeType};base64,${msg.image.base64}`} alt={msg.image.name} />
-        )}
-        {msg.document && (
-          <div className="message-doc" title={msg.document.name}>
+        {messageAttachments(msg).map((a, i) => a.kind === 'image' ? (
+          <img key={`img-${i}`} className="message-image" src={`data:${a.mimeType};base64,${a.base64}`} alt={a.name} />
+        ) : (
+          <div key={`doc-${i}`} className="message-doc" title={a.name}>
             <span className="message-doc-icon">📄</span>
-            <span className="message-doc-name">{msg.document.name}{msg.document.pages ? ` · ${msg.document.pages}p` : ''}</span>
+            <span className="message-doc-name">{a.name}{a.pages ? ` · ${a.pages}p` : ''}</span>
           </div>
-        )}
+        ))}
         {msg.thinking && showThinking && (
           <details className="thinking-block" style={{ margin: '0 0 8px' }}>
             <summary style={{ cursor: 'pointer', opacity: 0.65, fontSize: 12, userSelect: 'none' }}>💭 Raciocínio</summary>

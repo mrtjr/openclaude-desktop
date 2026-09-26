@@ -21,8 +21,9 @@ import { parseFollowups, hideFollowupTrailer, followupInstruction } from '../uti
 import { resolveTurnToolChoice, toolChoiceParam } from '../utils/toolChoice'
 import { collectSources, extractSources, normalizeSourceUrl, type Source } from '../utils/sources'
 import { addFreshFact } from '../utils/freshFacts'
-import { imageContentBlocks, type ImageAttachment } from '../utils/multimodal'
-import { docPlusText, type DocAttachment } from '../utils/documentAttach'
+import type { ImageAttachment } from '../utils/multimodal'
+import type { DocAttachment } from '../utils/documentAttach'
+import { buildAttachmentContent, messageAttachments, type Attachment } from '../utils/attachments'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress, decideHaltAction } from '../utils/circuitBreaker'
 import { applyPlanToolCalls, planIsIncomplete, type LocalTask } from '../utils/planTracker'
 import { resolveAdaptiveEffort } from '../utils/adaptiveEffort'
@@ -247,7 +248,7 @@ export function useChat({
     showToast('Agente interrompido pelo usuário.')
   }, [showToast, backgroundTasks, scoutController])
 
-  const sendMessage = useCallback(async (inputText: string, overrideConvId?: string, opts?: { hidden?: boolean; edited?: boolean; image?: ImageAttachment; document?: DocAttachment }) => {
+  const sendMessage = useCallback(async (inputText: string, overrideConvId?: string, opts?: { hidden?: boolean; edited?: boolean; image?: ImageAttachment; document?: DocAttachment; attachments?: Attachment[] }) => {
     // Prefer an explicit conversation id when provided (e.g. scheduled
     // tasks firing in batch, where several `newConversation()` calls
     // landed before the React state flushed — without an override the
@@ -255,8 +256,13 @@ export function useChat({
     // the same conversation). Fall back to the ref otherwise.
     const convId = overrideConvId ?? activeConvIdRef.current
     console.log('[useChat] sendMessage called:', { inputText: inputText.substring(0, 50), isLoading, convId })
-    // Permite enviar só anexo (imagem/documento) sem texto (v2.147–2.148).
-    if ((!inputText.trim() && !opts?.image && !opts?.document) || isLoading || !convId) {
+    // Anexos do turno (v2.212.0): a lista nova, ou os campos avulsos antigos
+    // normalizados — quem ainda chama com { image, document } continua valendo.
+    const turnAttachments = opts?.attachments?.length
+      ? opts.attachments
+      : messageAttachments({ image: opts?.image, document: opts?.document })
+    // Permite enviar só anexo, sem texto (v2.147–2.148).
+    if ((!inputText.trim() && !turnAttachments.length) || isLoading || !convId) {
       console.log('[useChat] EARLY RETURN:', { emptyInput: !inputText.trim(), isLoading, noActiveConv: !convId })
       return
     }
@@ -275,10 +281,9 @@ export function useChat({
       ...(opts?.hidden ? { hidden: true } : {}),
       // Reenvio após edição (v2.136.0): mostra o selo "editado".
       ...(opts?.edited ? { edited: true } : {}),
-      // Imagem anexada (v2.147.0): renderizada na bolha + enviada multimodal.
-      ...(opts?.image ? { image: opts.image } : {}),
-      // Documento anexado (v2.148.0): texto injetado no request; chip na bolha.
-      ...(opts?.document ? { document: opts.document } : {}),
+      // Anexos (v2.212.0): imagens vão multimodal; documentos/código entram
+      // no texto como blocos <document>. A bolha mostra um card por anexo.
+      ...(turnAttachments.length ? { attachments: turnAttachments } : {}),
       timestamp: new Date()
     }
 
@@ -602,11 +607,12 @@ export function useChat({
         for (const m of conv.messages) {
           history.push({
             role: m.role,
-            // Anexos do usuário (v2.147–2.148): documento → texto do contexto +
-            // texto do usuário; imagem → conteúdo multimodal (o main traduz p/
-            // Anthropic/Gemini). Só p/ mensagens do usuário.
-            content: (m.role === 'user' && (m.image || m.document))
-              ? (m.image ? imageContentBlocks(m.image, docPlusText(m.document, m.content)) : docPlusText(m.document, m.content))
+            // Anexos do usuário (v2.212.0): documentos viram blocos <document>
+            // no topo do texto; imagens viram partes image_url (o main traduz
+            // para Anthropic/Gemini). Sem anexo o texto passa intacto — e as
+            // conversas antigas, com image/document avulsos, seguem valendo.
+            content: m.role === 'user'
+              ? buildAttachmentContent(messageAttachments(m), m.content)
               : m.content,
             ...(m.toolCalls ? { tool_calls: m.toolCalls.map(tc => ({
               id: tc.id,

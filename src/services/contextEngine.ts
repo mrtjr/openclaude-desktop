@@ -2,6 +2,7 @@
 // Formal context assembly with token budgets and compaction strategies.
 // Replaces ad-hoc context management in the chat loop.
 
+import { attachmentsTokenEstimate, messageAttachments } from '../utils/attachments'
 import type { Message } from '../types'
 import { realTokenCount, onTokenizerReady } from './tokenizer'
 
@@ -35,10 +36,11 @@ function estimateTokens(text: string): number {
 
 function messageTokensRaw(msg: Message): number {
   let tokens = estimateTokens(msg.content) + 4 // overhead per message
-  // Documento anexado (v2.148.0): o texto extraído vai no request → conta no
-  // orçamento (senão a poda subestima e o contexto estoura). Imagem NÃO entra
-  // aqui (o base64 não é texto; o provider conta os tokens reais da imagem).
-  if (msg.document?.content) tokens += estimateTokens(msg.document.content)
+  // Anexos (v2.212.0): documentos pelo texto que REALMENTE vai no request (já
+  // com os tetos) e imagens por uma estimativa conservadora. Antes a imagem
+  // contava zero — com uma, erro pequeno; com várias numa mensagem, milhares
+  // de tokens invisíveis e a poda subestimava o contexto.
+  tokens += attachmentsTokenEstimate(messageAttachments(msg), estimateTokens)
   if (msg.toolCalls) {
     for (const tc of msg.toolCalls) {
       tokens += estimateTokens(tc.name) + estimateTokens(JSON.stringify(tc.arguments))

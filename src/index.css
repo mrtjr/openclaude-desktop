@@ -684,14 +684,39 @@ body {
 }
 
 /* ── Drag & Drop overlay ──────────────────────────────────────── */
+/* Moldura leve, SEM escurecer nem desfocar: o destaque que importa é o do
+   próprio composer (.composer-dragging). Com o fundo 0.85 + blur de antes, o
+   overlay cobria justamente a caixa onde o arquivo ia cair. */
 .drag-overlay {
-  position: fixed; inset: 0;
-  background: rgba(13,13,23,0.85);
+  position: fixed; inset: 10px;
+  background: rgba(var(--accent-rgb), 0.05);
   border: 2px dashed var(--accent);
+  border-radius: 16px;
   display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 14px;
-  z-index: 9999; color: var(--accent); font-size: 18px; font-weight: 600;
-  pointer-events: none; backdrop-filter: blur(4px);
+  align-items: center; justify-content: flex-start; gap: 12px;
+  padding-top: 16vh;
+  z-index: 9999; color: var(--accent); font-size: 16px; font-weight: 600;
+  pointer-events: none;
+}
+
+/* ── Omni-input: composer durante o arraste + zona de anexos ─────── */
+.input-pill.composer-dragging {
+  border-color: var(--accent);
+  border-style: dashed;
+  background: rgba(var(--accent-rgb), 0.08);
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.15);
+}
+.attachment-zone {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+  max-height: 132px;
+  overflow-y: auto;
+}
+.attachment-zone .image-attach-pill { margin: 0; max-width: 240px; }
+.attachment-zone .image-attach-name {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
 
 /* ── Settings Modal ───────────────────────────────────────────── */
