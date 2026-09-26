@@ -43,7 +43,8 @@ export function formatQueryResult(r: QueryResult, budget = TOOL_OUTPUT_LIMIT): s
     const shown = n === fetched ? `mostrando as ${n} primeiras` : `mostrando ${n} de ${fetched} (limite de saída)`
     return JSON.stringify({ ...base, rowsShown: n, truncated: true, note: `${more}${shown} — ${refine}` })
   }
-  if (build(fetched).length <= budget) return build(fetched)
+  const full = build(fetched)
+  if (full.length <= budget) return full
   // Maior n que cabe (o tamanho cresce com n → busca binária).
   let lo = 0, hi = fetched
   while (lo < hi) {

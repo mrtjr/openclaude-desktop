@@ -12,6 +12,8 @@
  *  5. teto de linhas (LIMIT externo): o resultado nunca estoura a memória.
  * A connection string (DATABASE_URL) fica só no processo principal: nunca vai
  * ao renderer, ao modelo nem ao log, e é redigida de qualquer mensagem de erro.
+ * O .env que a guarda é registrado como caminho PROTEGIDO (path-safety): sem
+ * isso, read_file — que roda sem aprovação — lia a senha e a dava ao modelo.
  * O ideal continua sendo um usuário SÓ-LEITURA no banco (GRANT SELECT) — é a
  * única camada que vale também para funções do próprio banco.
  */
@@ -20,6 +22,7 @@ const path = require('path')
 const fs = require('fs')
 const { Client, types: pgTypes } = require('pg')
 const { validateReadOnlyQuery, wrapWithLimit } = require('./sql-guard')
+const { protectPath } = require('./path-safety')
 
 const MAX_ROWS = 200
 const STATEMENT_TIMEOUT_MS = 15000
@@ -153,6 +156,7 @@ function registerPostgresHandlers(ipcMain, app) {
   // Em dev, o .env da raiz do projeto vem primeiro; instalado, só o do userData
   // (nada de .env dentro do pacote — o electron-builder nem o empacota).
   const envFiles = () => (app.isPackaged ? [userEnv()] : [path.join(app.getAppPath(), '.env'), userEnv()])
+  for (const f of envFiles()) protectPath(f)
 
   ipcMain.handle('postgres-query', async (event, { query } = {}) => {
     try {
@@ -165,5 +169,3 @@ function registerPostgresHandlers(ipcMain, app) {
 
 module.exports = registerPostgresHandlers
 module.exports.runReadOnlyQuery = runReadOnlyQuery
-module.exports.parseEnv = parseEnv
-module.exports.MAX_ROWS = MAX_ROWS
