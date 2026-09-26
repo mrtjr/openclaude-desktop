@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('electron', {
   fetchUrl: (url) => ipcRenderer.invoke('fetch-url', url),
   listDirectory: (path) => ipcRenderer.invoke('list-directory', path),
   openTarget: (target) => ipcRenderer.invoke('open-target', target),
+  // postgres_query: SELECT no banco do NovoPdv (a DATABASE_URL fica no main)
+  postgresQuery: (query) => ipcRenderer.invoke('postgres-query', { query }),
 
   // Ollama status
   checkOllamaStatus: () => ipcRenderer.invoke('check-ollama-status'),

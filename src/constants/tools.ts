@@ -946,6 +946,20 @@ export const TOOLS = [
         required: ['conversation_id']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'postgres_query',
+      description: 'Executa consultas SQL de leitura (SELECT) no banco de dados do NovoPdv. Retorna os resultados em formato JSON.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'UMA consulta SELECT (ou WITH ... SELECT). Escrita, DDL, várias instruções e funções de sistema são bloqueadas. Prefira agregações (SUM/COUNT/GROUP BY) e LIMIT: a saída cabe em ~4.000 caracteres (até 200 linhas buscadas).' }
+        },
+        required: ['query']
+      }
+    }
   }
 ]
 
@@ -988,4 +1002,8 @@ export const DANGEROUS_TOOLS = new Set([
   // save_skill (v2.162.0): cria/atualiza skill na biblioteca (capacidade nova
   // que pode ser injetada no prompt) → aprovação do usuário.
   'save_skill',
+  // postgres_query: SQL bruto no banco de PRODUÇÃO do PDV. Só leitura (guard +
+  // transação READ ONLY no main), mas cada consulta ainda passa pelo usuário.
+  // Fora de SAFE_TOOLS não basta: o gate só pergunta pelo que está AQUI.
+  'postgres_query',
 ])

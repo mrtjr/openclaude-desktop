@@ -3553,6 +3553,8 @@ ipcMain.handle('orion-run-action', async (event, { type, params }) => {
 // ─── Load external IPC modules ──────────────────────────────────────
 require('./ipc-agent-memory')(ipcMain, app)
 require('./ipc-document')(ipcMain, app, dialog)
+// postgres_query (NovoPdv): só leitura — guard + transação READ ONLY + timeouts
+require('./ipc-postgres')(ipcMain, app)
 
 // ─── App lifecycle ───────────────────────────────────────────────────
 // Single-instance lock — this app hides to the tray on close (window.on

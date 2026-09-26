@@ -31,6 +31,7 @@ interface Window {
     fetchUrl: (url: string) => Promise<{ success?: boolean; url?: string; title?: string; text?: string; thin?: boolean; truncated?: boolean; error?: string }>
     listDirectory: (path: string) => Promise<{ items: any[] | null; error: string | null }>
     openTarget: (target: string) => Promise<{ error: string | null }>
+    postgresQuery: (query: string) => Promise<{ columns?: string[]; rows?: unknown[][]; rowCount?: number; truncated?: boolean; ms?: number; blocked?: boolean; error: string | null }>
     checkOllamaStatus: () => Promise<boolean>
     getAutoStart: () => Promise<boolean>
     setAutoStart: (enabled: boolean) => Promise<{ error: string | null }>

@@ -16,6 +16,7 @@ import { parseSearchGlob, formatSearchResults } from '../utils/searchFiles'
 import { isRiskyDesktopAction } from '../utils/desktopPolicy'
 import { paginateFileContent } from '../utils/readFile'
 import { formatClickResult, formatNavResult } from '../utils/browserResult'
+import { formatQueryResult } from '../utils/queryResult'
 import { logInsight } from '../services/devInsights'
 import { findSkill, formatLoadSkillResult, suggestSkill, renderSkillsForWorker, renderSkillBody } from '../utils/skills'
 import { buildImportedSkills, parseRepoSpec, parseSkillIndex, parseSkillMarkdown, sanitizeSkillName, decideSkillImport, lintSkill } from '../utils/skillImport'
@@ -841,6 +842,15 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         if (!chat) return `Conversa ${cid} não encontrada.`
         if (!chat.messages || chat.messages.length === 0) return `A conversa ${cid} está vazia.`
         return chat.messages.map((m: any) => `[${(m.role || 'unknown').toUpperCase()}] ${m.content}`).join('\n\n')
+      }
+      if (name === 'postgres_query') {
+        // Está em DANGEROUS_TOOLS: o executeTool pede aprovação antes de chegar
+        // aqui. A validação só-leitura e a DATABASE_URL vivem no main (ipc-postgres.js).
+        const query = String(args.query ?? '').trim()
+        if (!query) return 'Erro: faltou o parâmetro "query".'
+        const r = await window.electron.postgresQuery(query)
+        if (r.error) return `Erro: ${r.error}`
+        return formatQueryResult(r)
       }
       if (name === 'list_directory') {
         const result = await window.electron.listDirectory(args.path)
