@@ -52,10 +52,12 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'take_screenshot',
-      description: 'Captura uma imagem da tela atual do usuário e retorna a string em Base64 para análise visual.',
+      description: 'Captura a tela atual do usuário e devolve a análise visual (modelo de visão): os elementos visíveis com a posição (x, y) do centro de cada um em pixels da tela — as mesmas coordenadas do mouse_move.',
       parameters: {
         type: 'object',
-        properties: {}
+        properties: {
+          prompt: { type: 'string', description: 'O que procurar na tela (ex.: "onde está o botão Salvar?"). Opcional.' }
+        }
       }
     }
   },

@@ -19,7 +19,7 @@ import { isLengthTruncated } from '../utils/continuation'
 import { deriveTitleFromMessage } from '../utils/conversationTitle'
 import { parseFollowups, hideFollowupTrailer, followupInstruction } from '../utils/followups'
 import { resolveTurnToolChoice, toolChoiceParam } from '../utils/toolChoice'
-import { collectSources, extractSources, normalizeSourceUrl, type Source } from '../utils/sources'
+import { collectSources, extractSources, normalizeSourceUrl, SOURCE_TOOL_NAMES, type Source } from '../utils/sources'
 import { addFreshFact } from '../utils/freshFacts'
 import type { ImageAttachment } from '../utils/multimodal'
 import type { DocAttachment } from '../utils/documentAttach'
@@ -405,9 +405,15 @@ export function useChat({
         const seen = new Set(turnSources.map(s => normalizeSourceUrl(s.url)))
         for (const s of found) { const k = normalizeSourceUrl(s.url); if (!seen.has(k)) { seen.add(k); turnSources.push(s) } }
       }
-      for (const tr of tm.toolResults || []) {
-        if (tr?.result) ingestSourcesAndFreshFacts(tr.result)
-      }
+      // Só resultado de pesquisa vira fonte/fato fresco: web direta e síntese
+      // dos subagentes. Antes ia TODO resultado — um link num arquivo lido
+      // pelo read_file aparecia como "fonte web", e os 300 primeiros caracteres
+      // da saída (de um execute_command, de um postgres_query…) eram gravados
+      // na memória persistente como "fato verificado".
+      tm.toolCalls.forEach((tc: any, i: number) => {
+        const r = tm.toolResults?.[i]?.result
+        if (r && (SOURCE_TOOL_NAMES.has(tc?.name) || tc?.name === 'delegate_subtasks')) ingestSourcesAndFreshFacts(r)
+      })
     }
 
     // Checkpoint/rewind (v2.37.0): marca o estado dos arquivos no início do

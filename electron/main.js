@@ -3069,10 +3069,24 @@ ipcMain.handle('parliament-debate', async (event, { problem, roles, coordinator 
     win.webContents.send('parliament-coordinator-start', {})
   }
 
-  // Build coordinator context only with successful reports (ignoring failures)
+  // Nenhum especialista respondeu: o coordenador "sintetizaria" um debate vazio
+  // — pior que não responder, porque parece uma decisão fundamentada.
+  const failedRoles = settledResults
+    .filter(r => r.status === 'rejected' && r.reason && r.reason.roleName)
+    .map(r => r.reason.roleName)
+  if (!roleResults.length) {
+    const msg = `Coordenação cancelada: nenhum especialista respondeu (${failedRoles.join(', ') || 'todos falharam'}). Verifique provedor, modelo e API key de cada papel.`
+    if (win && !win.isDestroyed()) win.webContents.send('parliament-coordinator-done', { response: msg })
+    return { roles: [], coordinator: msg }
+  }
+
+  // Build coordinator context only with successful reports — e diz QUAIS
+  // perspectivas faltaram, para o coordenador não tratar o silêncio como consenso.
   const rolesContext = roleResults.map(r =>
     `## ${r.emoji} ${r.roleName}\n\n${r.response}`
-  ).join('\n\n---\n\n')
+  ).join('\n\n---\n\n') + (failedRoles.length
+    ? `\n\n---\n\n(Sem resposta — perspectivas AUSENTES deste debate: ${failedRoles.join(', ')}.)`
+    : '')
 
   const coordinatorMessages = [
     { role: 'system', content: PARLIAMENT_ROLE_PROMPTS.coordenador },
@@ -3325,17 +3339,23 @@ ipcMain.handle('keyboard-type', async (event, { text }) => {
 })
 
 // ─── Native Vision (Screenshot Tool) ─────────────────────────────────────────
+// Par do mouse_move (nut-js): captura em pixels FÍSICOS (bounds × scaleFactor),
+// que são as coordenadas do nut-js num processo DPI-aware como o Electron — em
+// DIP, com a tela a 125%/150%, todo clique sairia deslocado. Devolve o base64
+// CRU (sem o prefixo data:) e o tamanho, que entra no prompt de visão.
 ipcMain.handle('take-screenshot', async () => {
   try {
     const { desktopCapturer, screen } = require('electron')
     const display = screen.getPrimaryDisplay()
+    const scale = display.scaleFactor || 1
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
-      thumbnailSize: { width: display.bounds.width, height: display.bounds.height }
+      thumbnailSize: { width: Math.round(display.bounds.width * scale), height: Math.round(display.bounds.height * scale) }
     })
     if (!sources.length) return { base64: null, error: 'Nenhuma fonte de tela encontrada' }
-    const dataUrl = sources[0].thumbnail.toDataURL()
-    return { base64: dataUrl, error: null }
+    const src = sources.find(s => s.display_id === String(display.id)) || sources[0]
+    const { width, height } = src.thumbnail.getSize()
+    return { base64: src.thumbnail.toPNG().toString('base64'), width, height, error: null }
   } catch (e) { return { base64: null, error: e.message } }
 })
 

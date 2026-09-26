@@ -12,9 +12,13 @@ export default function ArtifactRenderer({ artifact }: ArtifactRendererProps) {
 
   if (artifact.type === 'html' || artifact.type === 'svg') {
     return (
+      // SEM allow-same-origin: junto com allow-scripts ele ANULA o sandbox — o
+      // srcDoc herda a origem do app, e o script do artefato (HTML escrito pelo
+      // modelo) alcançava parent.electron: execCommand, writeFile, tudo sem
+      // aprovação. Popups também ficam de fora: a janela nova herdaria o preload.
       <iframe
         srcDoc={artifact.content}
-        sandbox="allow-scripts allow-forms allow-same-origin"
+        sandbox="allow-scripts allow-forms"
         style={{ width: '100%', height: '100%', border: 'none' }}
         title="Artifact Preview"
       />

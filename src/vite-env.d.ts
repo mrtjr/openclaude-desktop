@@ -130,7 +130,7 @@ interface Window {
     workspaceTree: (dirPath: string) => Promise<{ tree: import('./CodeWorkspace').TreeNode[]; error: string | null }>
     // Vision Mode
     captureScreen: () => Promise<{ base64: string | null; error: string | null }>
-    takeScreenshot: () => Promise<{ base64: string | null; error: string | null }>
+    takeScreenshot: () => Promise<{ base64: string | null; width?: number; height?: number; error: string | null }>
     mouseMove: (params: { x: number; y: number }) => Promise<{ success?: boolean; error?: string }>
     mouseClick: (params: { button: string }) => Promise<{ success?: boolean; error?: string }>
     keyboardType: (params: { text: string }) => Promise<{ success?: boolean; error?: string }>

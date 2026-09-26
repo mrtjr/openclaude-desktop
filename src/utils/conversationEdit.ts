@@ -26,7 +26,6 @@ export function sliceBeforeMessage(messages: Message[], msgId: string): Message[
   return messages.slice(0, idx)
 }
 
-/** Only the user's own non-empty messages are editable. */
 /** Índice onde COMEÇA o turno que produziu `msgId` — isto é, a mensagem do
  *  usuário que o abriu. Rebobinar corta a partir daqui, para a conversa voltar a
  *  antes da pergunta, e não a um meio-turno com a pergunta órfã.
@@ -49,6 +48,7 @@ export function rewindMessageCount(messages: Message[], msgId: string): number {
   return start < 0 ? 0 : (messages?.length ?? 0) - start
 }
 
+/** Only the user's own non-empty messages are editable. */
 export function canEditMessage(msg: Message): boolean {
   return msg.role === 'user' && msg.content.trim().length > 0
 }

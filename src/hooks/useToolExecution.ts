@@ -5,7 +5,7 @@ import { resolveToolSearch, formatToolSearchResult } from '../services/toolDefer
 import { toolNeedsApproval, truncateToolOutput, isToolError, isProtectedWritePath, isBlockedInPlanMode } from '../utils/toolPolicy'
 import { evaluatePermissionRules } from '../utils/permissionRules'
 import { combineHookOutput } from '../utils/outputHooks'
-import { classifyCommand } from '../utils/commandSandbox'
+import { classifyCommand, DEFAULT_SANDBOX } from '../utils/commandSandbox'
 import { planWorktree, WORKTREE_LIST_COMMAND } from '../utils/worktree'
 import { formatExecResult, resolveExecCwd, resolveExecTimeoutMs } from '../utils/execResult'
 import { formatEditResult, formatWriteResult, COACH_REWRITE_MIN_CHARS } from '../utils/editResult'
@@ -17,6 +17,7 @@ import { isRiskyDesktopAction } from '../utils/desktopPolicy'
 import { paginateFileContent } from '../utils/readFile'
 import { formatClickResult, formatNavResult } from '../utils/browserResult'
 import { formatQueryResult } from '../utils/queryResult'
+import { resolveMemoryPath, MEMORY_DIR } from '../utils/memoryPath'
 import { logInsight } from '../services/devInsights'
 import { findSkill, formatLoadSkillResult, suggestSkill, renderSkillsForWorker, renderSkillBody } from '../utils/skills'
 import { buildImportedSkills, parseRepoSpec, parseSkillIndex, parseSkillMarkdown, sanitizeSkillName, decideSkillImport, lintSkill } from '../utils/skillImport'
@@ -480,17 +481,21 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         return paginateFileContent(result.content, args.offset, args.limit)
       }
       if (name === 'memory_write' || name === 'memory_append') {
+        // SAFE (sem aprovação) só porque fica DENTRO de .claude/memory — ver
+        // utils/memoryPath: `../` escrevia em qualquer lugar do disco.
+        const mp = resolveMemoryPath(args.path)
+        if ('error' in mp) return `Erro: ${mp.error}`
         const pCwd = projectCwdRef.current || '.'
-        const cleanPath = String(args.path || '').replace(/^[\/\\]+/, '')
-        const targetPath = `${pCwd}/.claude/memory/${cleanPath}`
+        const targetPath = `${pCwd}/${MEMORY_DIR}/${mp.rel}`
         const append = name === 'memory_append'
         const result = await window.electron.writeFile({ filePath: targetPath, content: String(args.content || ''), append })
-        return result.error ? `Erro: ${result.error}` : `Arquivo salvo em .claude/memory/${cleanPath}`
+        return result.error ? `Erro: ${result.error}` : `Arquivo salvo em ${MEMORY_DIR}/${mp.rel}`
       }
       if (name === 'memory_read') {
+        const mp = resolveMemoryPath(args.path)
+        if ('error' in mp) return `Erro: ${mp.error}`
         const pCwd = projectCwdRef.current || '.'
-        const cleanPath = String(args.path || '').replace(/^[\/\\]+/, '')
-        const targetPath = `${pCwd}/.claude/memory/${cleanPath}`
+        const targetPath = `${pCwd}/${MEMORY_DIR}/${mp.rel}`
         const result = await window.electron.readFile(targetPath)
         return result.content != null ? result.content : (result.error || '')
       }
@@ -501,11 +506,25 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         return formatProjectTree(res, targetPath)
       }
       if (name === 'take_screenshot') {
-        const res = await window.electron.takeScreenshot()
-        if (res.error || !res.base64) {
-          return `Erro ao capturar tela: ${res.error || 'Nenhum base64 retornado'}`
-        }
-        return `[Imagem Capturada com Sucesso: data:image/png;base64,${res.base64}]`
+        // O base64 como TEXTO não servia: a saída passa pelo corte de 4.000
+        // caracteres e o modelo nunca "via" a imagem (e o prefixo data: saía
+        // duplicado). Mesmo caminho do capture_screen — captura → modelo de
+        // visão → texto —, mas pedindo posições em pixels da tela, que são as
+        // coordenadas do mouse_move.
+        const target = resolveVisionTarget(settings)
+        if (!target) return `O provider de visão atual ("${settings.provider}") não suporta análise de imagem. Configure ollama (llava), openai, gemini, anthropic, openrouter, modal ou sensenova.`
+        const shot = await window.electron.takeScreenshot()
+        if (shot.error || !shot.base64) return `Erro ao capturar tela: ${shot.error || 'sem imagem'}`
+        const dims = shot.width && shot.height ? `${shot.width}×${shot.height}` : ''
+        const ask = String(args.prompt ?? '').trim()
+        const prompt = (ask ? `${ask}\n\n` : '') +
+          `Liste os elementos de interface visíveis relevantes (janelas, botões, campos, menus, textos) com a posição do CENTRO de cada um em pixels desta imagem${dims ? ` (${dims})` : ''}, no formato "elemento — (x, y)".`
+        const res = await window.electron.visionChat({
+          provider: target.provider, apiKey: target.apiKey, model: target.model,
+          prompt, imageBase64: shot.base64, modalHostname: settings.modalHostname,
+        })
+        const out = formatVisionResult(res, 'a tela')
+        return dims && res && !res.error ? `[Tela ${dims} px — as mesmas coordenadas do mouse_move]\n${out}` : out
       }
       if (name === 'mouse_move') {
         const res = await window.electron.mouseMove({ x: args.x, y: args.y })
@@ -952,6 +971,16 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
               if (!IMPLEMENTER_TOOL_NAMES.has(n)) {
                 return `[a ferramenta "${n}" não está disponível para implementadores.]`
               }
+              // Este caminho chama o executeToolRaw direto, por fora do gate do
+              // executeTool — e não há humano no meio do lote. Então as regras de
+              // DENY do usuário valem aqui, e a denylist do sandbox também,
+              // mesmo com o sandbox desligado para o agente principal.
+              if (evaluatePermissionRules(settings.permissionRules, n, a) === 'deny') {
+                return `[BLOQUEADO por regra de permissão: "${n}" com estes argumentos.]`
+              }
+              if (n === 'execute_command' && classifyCommand(a?.command, { ...DEFAULT_SANDBOX, ...(settings.commandSandbox || {}), enabled: true }) === 'deny') {
+                return '[BLOQUEADO: o comando casa um padrão perigoso da denylist do sandbox.]'
+              }
               const alvo = String(a?.path ?? a?.filePath ?? a?.cwd ?? '')
               if (alvo && !isInsideWorktree(alvo, plan.dir)) {
                 return `[RECUSADO: "${alvo}" está fora do seu worktree. Use o caminho completo a partir de ${plan.dir}.]`
@@ -1248,6 +1277,11 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
                 childTasks.map((cst: any, ci: number) => runOne(cst, ci, depth + 1, runId)), 1)
               return childOut.join('\n\n---\n\n')
             }
+            // Regras de DENY do usuário valem para o subagente também: ele chama
+            // o executeToolRaw direto, por fora do gate do executeTool.
+            if (evaluatePermissionRules(settings.permissionRules, n, a) === 'deny') {
+              return `[BLOQUEADO por regra de permissão: "${n}" com estes argumentos.]`
+            }
             return WORKER_TOOL_NAMES.has(n)
               ? executeToolRaw(n, a)
               : `[A ferramenta "${n}" não está disponível para subagentes. Use só leitura/pesquisa: ${[...WORKER_TOOL_NAMES].join(', ')}.]`
@@ -1537,7 +1571,9 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
     const runId = `scout_${Date.now()}_${++scoutSeqRef.current}`
     const workerTools = buildWorkerTools(TOOLS as any)
     const workerExec: WorkerExec = async (n, a) =>
-      WORKER_TOOL_NAMES.has(n) ? executeToolRaw(n, a) : `[indisponível para o scout: ${n}]`
+      !WORKER_TOOL_NAMES.has(n) ? `[indisponível para o scout: ${n}]`
+        : evaluatePermissionRules(settings.permissionRules, n, a) === 'deny' ? `[BLOQUEADO por regra de permissão: "${n}".]`
+        : executeToolRaw(n, a)
     // Fábrica de chat por modelo (v2.86.1): permite retry-com-fallback se o
     // modelo atribuído falhar (ex.: 9b não cabe na VRAM — mesma causa das
     // falhas do delegate_subtasks).
