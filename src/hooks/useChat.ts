@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import type { Message, ToolResult, Conversation, AppSettings } from '../types'
 import { TOOLS, IDLE_STEP_THRESHOLD } from '../constants/tools'
-import { applySubagentModels } from '../utils/researchWorker'
+import { applySubagentModels, shouldAnnounceSubagentModels } from '../utils/researchWorker'
 import type { BackgroundSubagentRegistry, BgEntry } from '../utils/backgroundSubagents'
 import { inferScoutFocus, pickScoutActivity, type ScoutController, type RunScout } from '../utils/scout'
 import type { SubagentActivityStore } from '../utils/subagentActivity'
@@ -19,12 +19,15 @@ import { isLengthTruncated } from '../utils/continuation'
 import { deriveTitleFromMessage } from '../utils/conversationTitle'
 import { parseFollowups, hideFollowupTrailer, followupInstruction } from '../utils/followups'
 import { resolveTurnToolChoice, toolChoiceParam } from '../utils/toolChoice'
-import { collectSources, normalizeSourceUrl, type Source } from '../utils/sources'
-import { imageContentBlocks, type ImageAttachment } from '../utils/multimodal'
-import { docPlusText, type DocAttachment } from '../utils/documentAttach'
+import { collectSources, extractSources, normalizeSourceUrl, SOURCE_TOOL_NAMES, type Source } from '../utils/sources'
+import { addFreshFact } from '../utils/freshFacts'
+import type { ImageAttachment } from '../utils/multimodal'
+import type { DocAttachment } from '../utils/documentAttach'
+import { buildAttachmentContent, messageAttachments, type Attachment } from '../utils/attachments'
 import { countRecentRepeats, CIRCUIT_WINDOW, computeAgentProgress, decideHaltAction } from '../utils/circuitBreaker'
 import { applyPlanToolCalls, planIsIncomplete, type LocalTask } from '../utils/planTracker'
 import { resolveAdaptiveEffort } from '../utils/adaptiveEffort'
+import { isSubagentDelegationAllowed } from '../utils/subagentGating'
 import { detectFreshness, buildDateLine, FRESHNESS_RULE, buildFreshnessNudge } from '../utils/freshness'
 import { buildRagRouterHint, type RagStats } from '../utils/rag'
 import { buildWorkflowRouterHint, type WorkflowSummary } from '../utils/workflows'
@@ -43,6 +46,7 @@ import { logInsight, beginInsightTurn, bumpInsightStep, endInsightTurn } from '.
 import { buildEpisodeSummary } from '../utils/episodeMemory'
 import { createContextEngine, getModelContextLimit, effectiveContextLimit, isKnownModelLimit, countToolSchemas, computeMessageBudget, AUTOCOMPACT_BUFFER_RATIO } from '../services/contextEngine'
 import type { ProviderConfig } from './useProviderConfig'
+import { trimContextWindow } from '../utils/contextTrimmer'
 
 // The engine is pure and stateless — create once at module load.
 const contextEngine = createContextEngine()
@@ -244,7 +248,7 @@ export function useChat({
     showToast('Agente interrompido pelo usuário.')
   }, [showToast, backgroundTasks, scoutController])
 
-  const sendMessage = useCallback(async (inputText: string, overrideConvId?: string, opts?: { hidden?: boolean; edited?: boolean; image?: ImageAttachment; document?: DocAttachment }) => {
+  const sendMessage = useCallback(async (inputText: string, overrideConvId?: string, opts?: { hidden?: boolean; edited?: boolean; image?: ImageAttachment; document?: DocAttachment; attachments?: Attachment[] }) => {
     // Prefer an explicit conversation id when provided (e.g. scheduled
     // tasks firing in batch, where several `newConversation()` calls
     // landed before the React state flushed — without an override the
@@ -252,8 +256,13 @@ export function useChat({
     // the same conversation). Fall back to the ref otherwise.
     const convId = overrideConvId ?? activeConvIdRef.current
     console.log('[useChat] sendMessage called:', { inputText: inputText.substring(0, 50), isLoading, convId })
-    // Permite enviar só anexo (imagem/documento) sem texto (v2.147–2.148).
-    if ((!inputText.trim() && !opts?.image && !opts?.document) || isLoading || !convId) {
+    // Anexos do turno (v2.212.0): a lista nova, ou os campos avulsos antigos
+    // normalizados — quem ainda chama com { image, document } continua valendo.
+    const turnAttachments = opts?.attachments?.length
+      ? opts.attachments
+      : messageAttachments({ image: opts?.image, document: opts?.document })
+    // Permite enviar só anexo, sem texto (v2.147–2.148).
+    if ((!inputText.trim() && !turnAttachments.length) || isLoading || !convId) {
       console.log('[useChat] EARLY RETURN:', { emptyInput: !inputText.trim(), isLoading, noActiveConv: !convId })
       return
     }
@@ -272,10 +281,9 @@ export function useChat({
       ...(opts?.hidden ? { hidden: true } : {}),
       // Reenvio após edição (v2.136.0): mostra o selo "editado".
       ...(opts?.edited ? { edited: true } : {}),
-      // Imagem anexada (v2.147.0): renderizada na bolha + enviada multimodal.
-      ...(opts?.image ? { image: opts.image } : {}),
-      // Documento anexado (v2.148.0): texto injetado no request; chip na bolha.
-      ...(opts?.document ? { document: opts.document } : {}),
+      // Anexos (v2.212.0): imagens vão multimodal; documentos/código entram
+      // no texto como blocos <document>. A bolha mostra um card por anexo.
+      ...(turnAttachments.length ? { attachments: turnAttachments } : {}),
       timestamp: new Date()
     }
 
@@ -298,8 +306,12 @@ export function useChat({
     setAgentSteps(0)
     stopRequestedRef.current = false
     backgroundTasks?.clear() // novo turno começa sem lotes de turnos anteriores
-    subagentActivity?.clear() // painel de atividade zera a cada turno
-    scoutController?.reset(!!settings.scoutEnabled) // scout proativo (opt-in; roda em qualquer turno com tema — não exige "modo agente")
+    const turnConv = conversationsRef.current.find(c => c.id === convId)
+    const turnEffortSetting = turnConv?.reasoningEffort ?? settings.reasoningEffort
+    const turnEffortResolved = turnEffortSetting === 'auto'
+      ? resolveAdaptiveEffort({ text: inputText, isAgentMode, model: providerConfig.model })
+      : turnEffortSetting
+    scoutController?.reset(!!settings.scoutEnabled && isSubagentDelegationAllowed(turnEffortResolved)) // scout proativo (opt-in; só em esforço alto/ultracode)
 
     // ─── Aprendizado de preferências (Fase 2, v2.53.0) ───────────────
     // Captura preferências EXPLÍCITAS desta mensagem e, após reforço (≥2
@@ -354,12 +366,54 @@ export function useChat({
     // Fontes web acumuladas no turno (web_search/fetch_url) → lista "Fontes" na
     // resposta final (estilo Perplexity, v2.145.0).
     let turnSources: Source[] = []
+    const ingestSourcesAndFreshFacts = (text: string) => {
+      if (!text) return
+      const extracted = extractSources(text)
+      if (!extracted.length) return
+      const seen = new Set(turnSources.map(s => normalizeSourceUrl(s.url)))
+      const freshUrls: string[] = []
+      for (const s of extracted) {
+        const k = normalizeSourceUrl(s.url)
+        if (seen.has(k)) continue
+        seen.add(k)
+        turnSources.push(s)
+        freshUrls.push(s.url)
+      }
+      // Fatos frescos: grava o trecho verificado na memória persistente, com a
+      // PRIMEIRA fonte nova como origem. Um fato por ingest — addFreshFact
+      // deduplica por texto, e o texto é o mesmo para todas as fontes deste
+      // trecho, então gravar uma por fonte só se sobrescrevia.
+      // Esta função é SÍNCRONA (roda no meio do stream), então a persistência
+      // vai fire-and-forget, com UMA leitura e UMA escrita — o mesmo idioma do
+      // aprendizado de preferências acima.
+      if (settings.memoryEnabled && freshUrls.length) {
+        const snippet = text.slice(0, 300)
+        const source = freshUrls[0]
+        void (async () => {
+          try {
+            const mem = await window.electron.loadMemory()
+            const updated = addFreshFact(normalizeMemory(mem).fresh, { text: snippet, source }, new Date())
+            if (updated.added) await window.electron.saveMemory({ ...mem, fresh: updated.list })
+          } catch { /* fato fresco é best-effort — nunca derruba o turno */ }
+        })()
+      }
+    }
     const gatherSources = (tm: any) => {
       if (!tm?.toolCalls?.length) return
       const found = collectSources(tm.toolCalls.map((tc: any, i: number) => ({ name: tc.name, args: tc.arguments, result: tm.toolResults?.[i]?.result })))
-      if (!found.length) return
-      const seen = new Set(turnSources.map(s => normalizeSourceUrl(s.url)))
-      for (const s of found) { const k = normalizeSourceUrl(s.url); if (!seen.has(k)) { seen.add(k); turnSources.push(s) } }
+      if (found.length) {
+        const seen = new Set(turnSources.map(s => normalizeSourceUrl(s.url)))
+        for (const s of found) { const k = normalizeSourceUrl(s.url); if (!seen.has(k)) { seen.add(k); turnSources.push(s) } }
+      }
+      // Só resultado de pesquisa vira fonte/fato fresco: web direta e síntese
+      // dos subagentes. Antes ia TODO resultado — um link num arquivo lido
+      // pelo read_file aparecia como "fonte web", e os 300 primeiros caracteres
+      // da saída (de um execute_command, de um postgres_query…) eram gravados
+      // na memória persistente como "fato verificado".
+      tm.toolCalls.forEach((tc: any, i: number) => {
+        const r = tm.toolResults?.[i]?.result
+        if (r && (SOURCE_TOOL_NAMES.has(tc?.name) || tc?.name === 'delegate_subtasks')) ingestSourcesAndFreshFacts(r)
+      })
     }
 
     // Checkpoint/rewind (v2.37.0): marca o estado dos arquivos no início do
@@ -393,10 +447,13 @@ export function useChat({
       // No modo 'auto' (v2.50.0), a heurística local escala o esforço à
       // dificuldade da mensagem ANTES da IPC — main.js/reasoning-control.js só
       // veem níveis concretos.
-      const chosenEffort = conv?.reasoningEffort ?? settings.reasoningEffort
-      const effectiveEffort = chosenEffort === 'auto'
-        ? resolveAdaptiveEffort({ text: inputText, isAgentMode, model: finalModel })
-        : chosenEffort
+      // Reusa o esforço JÁ resolvido no topo do turno (turnEffortResolved), em
+      // vez de recalcular. Eram duas expressões equivalentes decidindo a MESMA
+      // coisa — o scout gateado por uma, a delegação pela outra. Como a regra é
+      // "um só predicado para os dois caminhos de subagente", duas fontes de
+      // verdade aqui era exatamente o jeito de elas divergirem no futuro.
+      const chosenEffort = turnEffortSetting
+      const effectiveEffort = turnEffortResolved
       // Controle de uso de ferramentas (tool_choice, v2.141.0). Por-conversa.
       const turnToolChoiceMode = conv?.toolChoice
 
@@ -518,20 +575,26 @@ export function useChat({
       // v2.64.0: quando os subagentes rodam no Ollama com uma LISTA de modelos,
       // injeta os nomes na descrição do delegate_subtasks p/ o orquestrador
       // escolher o modelo por subtarefa.
-      const baseTools: any[] = (settings.subagentExecutor ?? 'ollama') !== 'modal' && settings.subagentModels?.length
+      const baseTools: any[] = shouldAnnounceSubagentModels(settings.subagentExecutor, settings.subagentModels)
         ? applySubagentModels(TOOLS as any, settings.subagentModels)
         : (TOOLS as any)
       const mergedTools: any[] = extraToolsRef.current?.length ? [...baseTools, ...extraToolsRef.current] : baseTools
-      // Remove as ferramentas que as skills ativas proíbam (v2.92.0). load_skill
-      // nunca é removido (o modelo ainda precisa carregar/trocar de skill).
-      const allTools: any[] = disallowedToolNames.size
-        ? mergedTools.filter(t => t?.function?.name === 'load_skill' || !disallowedToolNames.has(t?.function?.name))
-        : mergedTools
+      // Remove as ferramentas que as skills ativas proíbam (v2.92.0) e gateia
+      // delegate_subtasks por nível de esforço (somente em alto/ultracode effort).
+      // load_skill nunca é removido (o modelo ainda precisa carregar/trocar de skill).
+      const allowSubagents = isSubagentDelegationAllowed(effectiveEffort)
+      const allTools: any[] = mergedTools.filter(t => {
+        const name = t?.function?.name
+        if (name === 'load_skill') return true
+        if (disallowedToolNames.has(name)) return false
+        if (name === 'delegate_subtasks' && !allowSubagents) return false
+        return true
+      })
       const deferral = decideDeferral(
         settings.toolDeferralMode,
-        effectiveContextLimit(finalProvider, finalModel, settings.ollamaNumCtx),
+        effectiveContextLimit(finalProvider, finalModel, settings.ollamaNumCtx, settings.modelLimits),
         countToolSchemas(allTools),
-        isKnownModelLimit(finalProvider, finalModel), // v2.127.0: não defere modelo desconhecido
+        isKnownModelLimit(finalProvider, finalModel, settings.modelLimits), // v2.127.0: não defere modelo desconhecido
       )
       const deferralEnabled = deferral.enabled
       const toolPartition = partitionTools(allTools, deferralEnabled)
@@ -550,11 +613,12 @@ export function useChat({
         for (const m of conv.messages) {
           history.push({
             role: m.role,
-            // Anexos do usuário (v2.147–2.148): documento → texto do contexto +
-            // texto do usuário; imagem → conteúdo multimodal (o main traduz p/
-            // Anthropic/Gemini). Só p/ mensagens do usuário.
-            content: (m.role === 'user' && (m.image || m.document))
-              ? (m.image ? imageContentBlocks(m.image, docPlusText(m.document, m.content)) : docPlusText(m.document, m.content))
+            // Anexos do usuário (v2.212.0): documentos viram blocos <document>
+            // no topo do texto; imagens viram partes image_url (o main traduz
+            // para Anthropic/Gemini). Sem anexo o texto passa intacto — e as
+            // conversas antigas, com image/document avulsos, seguem valendo.
+            content: m.role === 'user'
+              ? buildAttachmentContent(messageAttachments(m), m.content)
               : m.content,
             ...(m.toolCalls ? { tool_calls: m.toolCalls.map(tc => ({
               id: tc.id,
@@ -587,7 +651,7 @@ export function useChat({
       // on small ones (gpt-4 8k).
       // Limite EFETIVO: nuvem = janela do modelo; Ollama = num_ctx real
       // (a janela teórica é inviável em GPU de consumidor — ver contextEngine).
-      let modelLimit = effectiveContextLimit(finalProvider, finalModel, settings.ollamaNumCtx)
+      let modelLimit = effectiveContextLimit(finalProvider, finalModel, settings.ollamaNumCtx, settings.modelLimits)
       let contextSummary = conv?.contextSummary || ''
       // Load persistent memory BEFORE the budget so its tokens are real
       // overhead, not hope that BUDGET_SAFETY_SLACK covers it (a grown facts
@@ -694,7 +758,7 @@ export function useChat({
       // emergency context-compaction below, which only ever rewrites the
       // message region AFTER this prefix.
       const basePrefixLen = systemMessages.length + memoryMessages.length + primingMessages.length
-      const cloudStreamingSupported = ['openai', 'openrouter', 'modal', 'anthropic'].includes(finalProvider)
+      const cloudStreamingSupported = ['openai', 'openrouter', 'modal', 'anthropic', 'sensenova'].includes(finalProvider)
       const useStreaming = isNotOllama ? (cloudStreamingSupported && settings.streamingEnabled) : settings.streamingEnabled
       let steps = 0
       let idleSteps = 0
@@ -816,7 +880,7 @@ export function useChat({
         fallbackAttempts++
         triedModels.add(finalModel)
         finalModel = fb
-        modelLimit = effectiveContextLimit(finalProvider, finalModel, settings.ollamaNumCtx)
+        modelLimit = effectiveContextLimit(finalProvider, finalModel, settings.ollamaNumCtx, settings.modelLimits)
         timeoutRetriesUsed = 0; transientRetriesUsed = 0; unknownRetriesUsed = 0
         logInsight('chat', 'fallback_model', { to: fb, kind: kind || 'unknown' })
         return true
@@ -923,12 +987,14 @@ export function useChat({
       // Injeta resultados de subagentes em background como contexto (v2.65.0).
       const injectBg = (entries: BgEntry[]) => {
         for (const e of entries) {
+          const resText = e.result || ''
           allMessages.push({
             role: 'system',
             content: (lang === 'en'
               ? `[BACKGROUND SUBAGENT RESULT — batch ${e.id}]\n`
-              : `[RESULTADO DO SUBAGENTE EM BACKGROUND — lote ${e.id}]\n`) + clampInjection(e.result || ''),
+              : `[RESULTADO DO SUBAGENTE EM BACKGROUND — lote ${e.id}]\n`) + clampInjection(resText),
           })
+          ingestSourcesAndFreshFacts(resText)
         }
       }
 
@@ -950,6 +1016,7 @@ export function useChat({
                 ? `[PROACTIVE RESEARCH — current info (today) / alternative paths for: ${sr.topic}]\n`
                 : `[PESQUISA PROATIVA — info de hoje / caminhos alternativos para: ${sr.topic}]\n`) + clampInjection(sr.text),
             })
+            ingestSourcesAndFreshFacts(sr.text)
           }
           // Atividade = o que a IA está FAZENDO agora = a última ferramenta
           // chamada NESTE turno (não a prosa "Excelente!/Agora vou…", que fazia
@@ -1153,17 +1220,20 @@ export function useChat({
             toolsForRequest = scopeToolsForStep(toolsForRequest, stepSkillAllowed, stepSkillDisallowed)
             // tool_choice por passo (v2.141.0): 'require' só no 1º passo; só quando há ferramentas.
             const stepToolChoice = toolsForRequest.length ? toolChoiceParam(finalProvider, resolveTurnToolChoice(turnToolChoiceMode, steps)) : undefined
+            
+            const trimmedMessages = trimContextWindow(requestMessages, 80000)
+            
             const streamCall = isNotOllama
               ? window.electron.providerChatStream({
                   provider: finalProvider, apiKey: finalApiKey, model: finalModel,
-                  messages: requestMessages, tools: toolsForRequest,
+                  messages: trimmedMessages, tools: toolsForRequest,
                   temperature: settings.temperature, max_tokens: settings.maxTokens,
                   modalHostname, customBaseUrl,
                   reasoningEffort: effectiveEffort, // esforço de raciocínio (v2.25.0; auto-resolvido v2.50.0)
                   toolChoice: stepToolChoice
                 })
               : window.electron.ollamaChatStream({
-                  model: finalModel, messages: requestMessages, tools: toolsForRequest,
+                  model: finalModel, messages: trimmedMessages, tools: toolsForRequest,
                   temperature: settings.temperature, max_tokens: settings.maxTokens,
                   numCtx: modelLimit, // janela real do local (evita timeout por contexto gigante)
                   reasoningEffort: effectiveEffort,
@@ -1439,11 +1509,12 @@ export function useChat({
           toolsForRequest = scopeToolsForStep(toolsForRequest, stepSkillAllowed, stepSkillDisallowed)
           // tool_choice por passo (v2.141.0): 'require' só no 1º passo; só quando há ferramentas.
           const stepToolChoice = toolsForRequest.length ? toolChoiceParam(finalProvider, resolveTurnToolChoice(turnToolChoiceMode, steps)) : undefined
+          const trimmedMessagesSync = trimContextWindow(requestMessages, 80000)
           let response: any
           if (isNotOllama) {
             response = await window.electron.providerChat({
               provider: finalProvider, apiKey: finalApiKey, model: finalModel,
-              messages: requestMessages, tools: toolsForRequest,
+              messages: trimmedMessagesSync, tools: toolsForRequest,
               temperature: settings.temperature, max_tokens: settings.maxTokens,
               modalHostname, customBaseUrl,
               reasoningEffort: effectiveEffort, // esforço de raciocínio (v2.25.0; auto-resolvido v2.50.0)
@@ -1451,7 +1522,7 @@ export function useChat({
             })
           } else {
             response = await window.electron.ollamaChat({
-              model: finalModel, messages: requestMessages, tools: toolsForRequest,
+              model: finalModel, messages: trimmedMessagesSync, tools: toolsForRequest,
               temperature: settings.temperature, max_tokens: settings.maxTokens,
               numCtx: modelLimit, // janela real do local (evita timeout por contexto gigante)
               reasoningEffort: effectiveEffort,
@@ -1713,6 +1784,19 @@ export function useChat({
           const seq = checkpointSeq
           const { count } = await window.electron.checkpointCount(seq)
           if (count > 0) {
+            // Âncora na ÚLTIMA mensagem do assistente deste turno: é o que
+            // mantém o "Reverter" disponível depois que o toast some.
+            setConversations(prev => prev.map(c => {
+              if (c.id !== convId) return c
+              const msgs = [...c.messages]
+              for (let i = msgs.length - 1; i >= 0; i--) {
+                if (msgs[i].role === 'assistant' && !msgs[i].hidden) {
+                  msgs[i] = { ...msgs[i], checkpoint: { seq, files: count } }
+                  break
+                }
+              }
+              return { ...c, messages: msgs }
+            }))
             const lng = settings.language === 'en' ? 'en' : 'pt'
             showToast({
               message: lng === 'en' ? `${count} file(s) changed this turn` : `${count} arquivo(s) alterado(s) neste turno`,

@@ -31,6 +31,7 @@ interface Window {
     fetchUrl: (url: string) => Promise<{ success?: boolean; url?: string; title?: string; text?: string; thin?: boolean; truncated?: boolean; error?: string }>
     listDirectory: (path: string) => Promise<{ items: any[] | null; error: string | null }>
     openTarget: (target: string) => Promise<{ error: string | null }>
+    postgresQuery: (query: string) => Promise<{ columns?: string[]; rows?: unknown[][]; rowCount?: number; truncated?: boolean; ms?: number; blocked?: boolean; error: string | null }>
     checkOllamaStatus: () => Promise<boolean>
     getAutoStart: () => Promise<boolean>
     setAutoStart: (enabled: boolean) => Promise<{ error: string | null }>
@@ -61,7 +62,7 @@ interface Window {
     saveAgentMemory: (data: any) => Promise<{ error: string | null }>
     providerChat: (params: any) => Promise<any>
     providerChatStream: (params: any) => Promise<any>
-    listProviderModels: (params: { provider: string; apiKey: string }) => Promise<{ models?: string[]; error?: string | null }>
+    listProviderModels: (params: { provider: string; apiKey: string }) => Promise<{ models?: string[]; limits?: Record<string, number>; error?: string | null }>
     // MCP Settings
     saveMcpServers: (servers: { name: string; command: string }[]) => Promise<{ error: string | null }>
     loadMcpServers: () => Promise<{ servers: { name: string; command: string }[] }>
@@ -129,6 +130,10 @@ interface Window {
     workspaceTree: (dirPath: string) => Promise<{ tree: import('./CodeWorkspace').TreeNode[]; error: string | null }>
     // Vision Mode
     captureScreen: () => Promise<{ base64: string | null; error: string | null }>
+    takeScreenshot: () => Promise<{ base64: string | null; width?: number; height?: number; error: string | null }>
+    mouseMove: (params: { x: number; y: number }) => Promise<{ success?: boolean; error?: string }>
+    mouseClick: (params: { button: string }) => Promise<{ success?: boolean; error?: string }>
+    keyboardType: (params: { text: string }) => Promise<{ success?: boolean; error?: string }>
     visionChat: (params: { provider: string; apiKey: string; model: string; prompt: string; imageBase64: string; modalHostname?: string }) => Promise<{ response: string | null; error: string | null }>
     // RAG
     ragEmbed: (params: { model: string; text: string }) => Promise<{ embedding: number[]; error: string | null }>

@@ -8,6 +8,7 @@ module.exports = function registerDocumentHandlers(ipcMain, app, dialog) {
   const path  = require('path')
   const fs    = require('fs')
   const https = require('https')
+  const { isPathSafe } = require('./path-safety')
 
   // GET HTTPS simples → { status, body }. UA obrigatório na API do GitHub.
   const httpsGet = (hostname, reqPath) => new Promise((resolve) => {
@@ -150,6 +151,14 @@ module.exports = function registerDocumentHandlers(ipcMain, app, dialog) {
   // ─── Document parsing (PDF / DOCX / TXT) ────────────────────────────────
   ipcMain.handle('read-document', async (event, filePath) => {
     try {
+      // `analyze_image` passa `args.path` — escolhido pelo MODELO — direto para
+      // cá. O read-file já barrava diretório protegido; esta porta não barrava
+      // nada, então era a mesma capacidade com outra fechadura. O gate isImage
+      // do chamador impedia o CONTEÚDO de voltar, mas o arquivo era lido e a
+      // mensagem de erro servia de oráculo de existência.
+      if (!isPathSafe(filePath)) {
+        return { content: null, name: path.basename(String(filePath || '')), error: 'Access denied: path is in a protected directory' }
+      }
       const stats = fs.statSync(filePath)
       if (stats.size > 20 * 1024 * 1024) {
         return { content: null, name: path.basename(filePath), error: 'Arquivo muito grande (> 20 MB)' }

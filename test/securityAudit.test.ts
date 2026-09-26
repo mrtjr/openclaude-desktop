@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { runSecurityAudit } from '../src/utils/securityAudit'
+import { runSecurityAudit, maskSecrets } from '../src/utils/securityAudit'
 import type { AppSettings } from '../src/types'
 
 function baseSettings(overrides: Partial<AppSettings> = {}): AppSettings {
@@ -75,5 +75,37 @@ describe('runSecurityAudit', () => {
     for (let i = 1; i < severities.length; i++) {
       expect(order[severities[i]]).toBeGreaterThanOrEqual(order[severities[i - 1]])
     }
+  })
+})
+
+describe('maskSecrets', () => {
+  it('should mask OpenAI API key', () => {
+    const input = 'My key is sk-proj-12345ABCD67890efgh1234567890'
+    const expected = 'My key is sk-***'
+    expect(maskSecrets(input)).toBe(expected)
+  })
+
+  it('should mask Anthropic API key', () => {
+    const input = 'Anthropic key: sk-ant-api03-abcdefGHIJKL-1234567890ABCDEF'
+    const expected = 'Anthropic key: sk-ant-api***'
+    expect(maskSecrets(input)).toBe(expected)
+  })
+
+  it('should mask Google Gemini and Bearer mixed with text', () => {
+    // Chave FALSA montada em partes: o literal inteiro tem o formato exato de
+    // API key do Google e dispara a proteção contra segredos do GitHub no push.
+    const input = 'Normal text with Gemini AIza' + 'Sy1234567890abcdefghijklmnopqrstuvw and a Bearer abcde1234567890ABCDEF mixed.'
+    const expected = 'Normal text with Gemini AIza*** and a Bearer *** mixed.'
+    expect(maskSecrets(input)).toBe(expected)
+  })
+
+  it('should not alter legitimate safe text', () => {
+    const input = 'This is a completely safe string without any secrets!'
+    expect(maskSecrets(input)).toBe(input)
+  })
+
+  it('mascara a chave sk-proj INTEIRA mesmo com sublinhado', () => {
+    const input = 'key=sk-proj-abc123_DEF456-ghi789_JKL012mno345 fim'
+    expect(maskSecrets(input)).toBe('key=sk-*** fim')
   })
 })

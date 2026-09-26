@@ -6,12 +6,13 @@ import {
 } from 'lucide-react'
 
 interface AppSettings {
-  provider: 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'custom'
+  provider: 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'sensenova' | 'custom'
   openaiApiKey: string; openaiModel: string
   geminiApiKey: string; geminiModel: string
   anthropicApiKey: string; anthropicModel: string
   openrouterApiKey: string; openrouterModel: string
   modalApiKey: string; modalModel: string; modalHostname: string
+  sensenovaApiKey: string; sensenovaModel: string
   language: 'pt' | 'en'
   temperature: number; maxTokens: number
 }
@@ -66,6 +67,7 @@ function getApiKey(settings: AppSettings): string {
     case 'anthropic': return settings.anthropicApiKey
     case 'openrouter': return settings.openrouterApiKey
     case 'modal': return settings.modalApiKey
+    case 'sensenova': return settings.sensenovaApiKey
     default: return ''
   }
 }
@@ -77,6 +79,7 @@ function getModel(settings: AppSettings): string {
     case 'anthropic': return settings.anthropicModel
     case 'openrouter': return settings.openrouterModel
     case 'modal': return settings.modalModel
+    case 'sensenova': return settings.sensenovaModel
     default: return 'llava'
   }
 }

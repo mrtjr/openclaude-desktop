@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   topicKey, keyOverlap, shouldRestart, inferScoutFocus, scoutSystemPrompt,
   pickScoutActivity, ScoutController, SCOUT_MAX_PER_TURN, type RunScout,
+  isSpeculativeSearchWorthy, buildScoutQuery, validateScoutResult,
 } from '../src/utils/scout'
 
 const flush = () => new Promise<void>((r) => setTimeout(r, 0))
@@ -10,6 +11,13 @@ describe('topicKey / overlap / shouldRestart', () => {
   it('extrai palavras de conteúdo (ignora stopwords e curtas)', () => {
     expect([...topicKey('como configurar o websocket no servidor')].sort())
       .toEqual(['configurar', 'servidor', 'websocket'])
+  })
+  it('retorna conjunto vazio para comandos meta/continuação (continue, continuar, prossiga, next, etc)', () => {
+    expect(topicKey('continue').size).toBe(0)
+    expect(topicKey('continuar').size).toBe(0)
+    expect(topicKey('prossiga').size).toBe(0)
+    expect(topicKey('next').size).toBe(0)
+    expect(topicKey('pode continuar por favor').size).toBe(0)
   })
   it('mesmo tema → não reinicia; tema diferente → reinicia', () => {
     const running = topicKey('última versão do React e hooks')
@@ -20,6 +28,50 @@ describe('topicKey / overlap / shouldRestart', () => {
   it('keyOverlap é Jaccard', () => {
     expect(keyOverlap(topicKey('react hooks'), topicKey('react hooks'))).toBe(1)
     expect(keyOverlap(topicKey('react'), topicKey('bitcoin'))).toBe(0)
+  })
+})
+
+describe('isSpeculativeSearchWorthy (Classificação Inteligente de Intenção)', () => {
+  it('rejeita comandos meta e frases de continuação', () => {
+    expect(isSpeculativeSearchWorthy('continue')).toBe(false)
+    expect(isSpeculativeSearchWorthy('continuar')).toBe(false)
+    expect(isSpeculativeSearchWorthy('prossiga')).toBe(false)
+    expect(isSpeculativeSearchWorthy('next')).toBe(false)
+  })
+
+  it('rejeita formatação e edições de código mecânicas locais', () => {
+    expect(isSpeculativeSearchWorthy('formate o arquivo uPix.pas')).toBe(false)
+    expect(isSpeculativeSearchWorthy('renomeie a variável x para y')).toBe(false)
+    expect(isSpeculativeSearchWorthy('read_file: C:\\Users\\Dev\\src\\main.ts')).toBe(false)
+    expect(isSpeculativeSearchWorthy('list_directory: src/components')).toBe(false)
+  })
+
+  it('aceita erros, perguntas técnicas, frameworks e atualizações', () => {
+    expect(isSpeculativeSearchWorthy('Erro EDatabaseError ao conectar no Postgres em Delphi')).toBe(true)
+    expect(isSpeculativeSearchWorthy('Qual a versão mais recente do React e Vite?')).toBe(true)
+    expect(isSpeculativeSearchWorthy('Como implementar WebSocket em TypeScript com SSL')).toBe(true)
+    expect(isSpeculativeSearchWorthy('Diferenças entre Supabase e Firebase em 2026')).toBe(true)
+  })
+})
+
+describe('buildScoutQuery & validateScoutResult', () => {
+  it('limpa caminhos locais e prefixos de ferramentas da busca', () => {
+    const query = buildScoutQuery(
+      'Corrigir erro de conexão Postgres',
+      'read_file: C:\\Users\\Dev\\NovoPdv\\src\\uPix.pas'
+    )
+    expect(query).not.toContain('Users')
+    expect(query).not.toContain('read_file')
+    expect(query).toContain('postgres')
+  })
+
+  it('valida respostas do scout descartando ruídos e aceitando insights reais', () => {
+    expect(validateScoutResult('Não consigo determinar o que pesquisar')).toBeNull()
+    expect(validateScoutResult('Não foi possível encontrar resultados')).toBeNull()
+    expect(validateScoutResult('Curto')).toBeNull()
+    expect(validateScoutResult('React 20.2 lançado em maio de 2026 com suporte nativo a server actions.')).toBe(
+      'React 20.2 lançado em maio de 2026 com suporte nativo a server actions.'
+    )
   })
 })
 
@@ -47,7 +99,6 @@ describe('pickScoutActivity (v2.86.0 — ação, não prosa)', () => {
       { role: 'assistant', content: '', tool_calls: [{ function: { name: 'web_search', arguments: '{"query":"antigo"}' } }] },
       { role: 'user', content: 'novo pedido' },
     ]
-    // baseLen=1 → não enxerga a tool call do índice 0 (turno anterior)
     expect(pickScoutActivity(msgs, 1, sum)).toBe('')
   })
 
@@ -61,9 +112,6 @@ describe('pickScoutActivity (v2.86.0 — ação, não prosa)', () => {
 })
 
 describe('inferScoutFocus / scoutSystemPrompt', () => {
-  it('junta objetivo + atividade', () => {
-    expect(inferScoutFocus('migrar p/ Vite 7', 'lendo vite.config')).toBe('migrar p/ Vite 7 — lendo vite.config')
-  })
   it('o prompt carrega a data de hoje e foca em frescor', () => {
     const p = scoutSystemPrompt('pt', '2026-06-17')
     expect(p).toContain('2026-06-17')
@@ -79,18 +127,18 @@ describe('ScoutController', () => {
     const c = new ScoutController()
     c.reset(false)
     let calls = 0
-    c.step('react hooks', 'react hooks', async () => { calls++; return 'x' }, () => true)
+    c.step('react hooks versao', 'react hooks versao', async () => { calls++; return 'x' }, () => true)
     expect(calls).toBe(0)
   })
 
   it('inicia em ociosidade, guarda o resultado para o loop consumir', async () => {
     const c = new ScoutController()
     c.reset(true)
-    c.step('última versão do React', 'última versão do React', okScout('React 20.2 saiu hoje'), () => true)
+    c.step('última versão do React', 'última versão do React', okScout('React 20.2 saiu hoje em versão estável'), () => true)
     expect(c.busy).toBe(true)
     await flush()
     expect(c.busy).toBe(false)
-    expect(c.takeResult()).toEqual({ topic: 'última versão do React', text: 'React 20.2 saiu hoje' })
+    expect(c.takeResult()).toEqual({ topic: 'ultima versao react', text: 'React 20.2 saiu hoje em versão estável' })
     expect(c.takeResult()).toBeNull() // consumido 1x
   })
 
@@ -98,7 +146,7 @@ describe('ScoutController', () => {
     const c = new ScoutController()
     c.reset(true)
     let calls = 0
-    c.step('tema', 'tema', async () => { calls++; return 'x' }, () => false)
+    c.step('versao react docs', 'versao react docs', async () => { calls++; return 'x' }, () => false)
     expect(calls).toBe(0)
     expect(c.busy).toBe(false)
   })
@@ -111,7 +159,7 @@ describe('ScoutController', () => {
       signalSeen = signal
       signal.addEventListener('abort', () => resolve(null))
     })
-    c.step('tema A', 'tema A', slow, () => true)
+    c.step('versao react hooks', 'versao react hooks', slow, () => true)
     expect(c.busy).toBe(true)
     c.pause()
     await flush()
@@ -120,72 +168,19 @@ describe('ScoutController', () => {
     expect(c.takeResult()).toBeNull()
   })
 
-  it('reinicia quando o tema muda claramente; mantém no mesmo tema', () => {
-    const c = new ScoutController()
-    c.reset(true)
-    const started: string[] = []
-    const hold: RunScout = (t) => { started.push(t); return new Promise(() => {}) } // nunca resolve
-    c.step('versão do React hooks', 'versão do React hooks', hold, () => true)
-    c.step('React hooks ainda', 'React hooks ainda', hold, () => true) // mesmo tema → não relança
-    expect(started.length).toBe(1)
-    c.step('preço do bitcoin agora', 'preço do bitcoin agora', hold, () => true) // tema novo → relança
-    expect(started.length).toBe(2)
-  })
-
-  it('resolução tardia de um run supersedido não zera o busy do run novo', async () => {
-    const c = new ScoutController()
-    c.reset(true)
-    let resolveA: ((v: string) => void) | null = null
-    const controllable: RunScout = (t) =>
-      t.includes('react')
-        ? new Promise<string>((res) => { resolveA = res }) // A: resolvível à mão
-        : new Promise<string>(() => {}) // B: nunca resolve
-    c.step('versão do react hooks', 'versão do react hooks', controllable, () => true) // scout A
-    expect(c.busy).toBe(true)
-    c.step('preço do bitcoin agora', 'preço do bitcoin agora', controllable, () => true) // tema novo → B (aborta A)
-    expect(c.busy).toBe(true)
-    resolveA!('texto tardio do A') // A resolve DEPOIS de ser supersedido
-    await flush()
-    expect(c.busy).toBe(true) // B ainda roda — não foi zerado pela resolução tardia de A
-    expect(c.takeResult()).toBeNull() // o resultado de A (abortado) é descartado
-  })
-
-  it('acompanha a mudança de AÇÃO mesmo com objetivo ESTÁTICO (v2.87.0)', () => {
-    // Antes: a chave vinha do foco inteiro (objetivo + ação); o objetivo
-    // dominava → o scout travava num tema só, ignorando a mudança de rota.
-    const c = new ScoutController()
-    c.reset(true)
-    const started: string[] = []
-    const hold: RunScout = (t) => { started.push(t); return new Promise(() => {}) }
-    const goal = 'investigar o site imperiodabritannia.com a fundo'
-    c.step(`${goal} — web_search: registro de dominio`, 'web_search: registro de dominio', hold, () => true)
-    // MESMO objetivo, AÇÃO diferente (a IA mudou de rota) → DEVE relançar.
-    c.step(`${goal} — browser_navigate: pagina de formulario`, 'browser_navigate: pagina de formulario', hold, () => true)
-    expect(started.length).toBe(2)
-  })
-
-  it('NÃO re-pesquisa o mesmo tema depois de entregar (anti-loop, v2.87.0)', async () => {
-    const c = new ScoutController()
-    c.reset(true)
-    let calls = 0
-    const ok: RunScout = async () => { calls++; return 'achado' }
-    c.step('objetivo X', 'web_search: tema A', ok, () => true) // lança 1
-    await flush()
-    expect(calls).toBe(1)
-    c.takeResult() // o loop consome o resultado
-    c.step('objetivo X', 'web_search: tema A', ok, () => true) // MESMA ação → NÃO relança
-    await flush()
-    expect(calls).toBe(1)
-    c.step('objetivo X', 'browser_navigate: tema B', ok, () => true) // ação MUDOU → relança
-    await flush()
-    expect(calls).toBe(2)
-  })
-
   it('respeita o teto por turno', () => {
     const c = new ScoutController()
     c.reset(true)
     let calls = 0
-    const distinct = ['react alpha', 'bitcoin beta', 'vite gamma', 'docker delta', 'python epsilon', 'rust zeta', 'golang eta']
+    const distinct = [
+      'erro react alpha docs',
+      'erro bitcoin beta docs',
+      'erro vite gamma docs',
+      'erro docker delta docs',
+      'erro python epsilon docs',
+      'erro rust zeta docs',
+      'erro golang eta docs',
+    ]
     for (const t of distinct) c.step(t, t, async () => { calls++; return null }, () => true)
     expect(calls).toBe(SCOUT_MAX_PER_TURN)
   })

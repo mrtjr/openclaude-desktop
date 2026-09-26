@@ -6,12 +6,13 @@ import {
 } from 'lucide-react'
 
 interface AppSettings {
-  provider: 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'custom'
+  provider: 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'sensenova' | 'custom'
   openaiApiKey: string; openaiModel: string
   geminiApiKey: string; geminiModel: string
   anthropicApiKey: string; anthropicModel: string
   openrouterApiKey: string; openrouterModel: string
   modalApiKey: string; modalModel: string; modalHostname: string
+  sensenovaApiKey: string; sensenovaModel: string
   language: 'pt' | 'en'
   temperature: number; maxTokens: number
   /** Modelo de embedding compartilhado com a ferramenta rag_search do chat

@@ -120,6 +120,7 @@ export function useProviderHealth(settings: AppSettings) {
     if (settings.anthropicApiKey) providers.push('anthropic')
     if (settings.openrouterApiKey) providers.push('openrouter')
     if (settings.modalApiKey) providers.push('modal')
+    if (settings.sensenovaApiKey) providers.push('sensenova')
     // Custom provider counts when both a key and a base URL are configured.
     if ((settings as any).customApiKey && (settings as any).customBaseUrl) {
       providers.push('custom' as Provider)

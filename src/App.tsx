@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore, Suspense, lazy } from 'react'
 import 'highlight.js/styles/github-dark.css'
+import { Virtuoso } from 'react-virtuoso'
+import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels'
 import { Send, Plus, Trash2, Minus, Square, X, Bot, Loader2, ChevronDown, ArrowDown, Search, Settings as SettingsIcon, Download, FileText, XCircle, MessageSquare, Code, Globe, ArrowUpCircle, Zap, BotOff, RefreshCw, Pin, PanelLeftClose, PanelLeft, Sun, Moon, Contrast, Palette, Image, Mic, MicOff, ListChecks, CheckCircle2, Circle, AlertCircle, Clock, BarChart3, Database, UserCog, Activity, Folder, Wrench, BrainCircuit, Check, Pencil, Archive, ArchiveRestore, ChevronLeft, BookOpen } from 'lucide-react'
 import { loadSettings, type AppSettings } from './settingsConfig'
 import { BackgroundSubagentRegistry } from './utils/backgroundSubagents'
@@ -16,7 +18,7 @@ import OnboardingModal from './components/OnboardingModal'
 import ChatMessage from './components/ChatMessage'
 import AgentStepsGroup from './components/AgentStepsGroup'
 import { groupMessages } from './utils/messageGroups'
-import { sliceBeforeMessage, classifyEdit, lastUserMessage } from './utils/conversationEdit'
+import { sliceBeforeMessage, classifyEdit, lastUserMessage, turnStartIndex, rewindMessageCount } from './utils/conversationEdit'
 import { continuationPrompt } from './utils/continuation'
 import { nextToolChoiceMode, toolChoiceLabel } from './utils/toolChoice'
 import { verificationPrompt } from './utils/verification'
@@ -31,6 +33,7 @@ import { ThinkingTimer } from './components/ThinkingTimer'
 import { StreamRateMeter } from './components/StreamRateMeter'
 import ProjectsBar from './components/ProjectsBar'
 import ProjectEditModal from './components/ProjectEditModal'
+import { RewindDialog } from './components/RewindDialog'
 import { useProjects } from './hooks/useProjects'
 import { conversationsInProject, countByProject, removeProject, projectInstructionsAddition, projectCwdAddition, workingDirAddition } from './utils/projects'
 import type { Project, Conversation } from './types'
@@ -39,7 +42,7 @@ import type { Project, Conversation } from './types'
 // Saves ~1MB from initial bundle; each chunk loads async when user opens the modal.
 const AnalyticsDashboard = lazy(() => import('./Analytics'))
 const DevInsightsPanel = lazy(() => import('./DevInsightsPanel'))
-const ArtifactPanel = lazy(() => import('./ArtifactPanel'))
+const ArtifactRenderer = lazy(() => import('./components/ArtifactRenderer'))
 const ParliamentMode = lazy(() => import('./Parliament'))
 const PromptVault = lazy(() => import('./PromptVault'))
 const PersonaEngine = lazy(() => import('./PersonaEngine'))
@@ -89,7 +92,6 @@ import { buildStatusSegments } from './utils/statusLine'
 import { buildRecap } from './utils/recap'
 import { filterValidRecords, validApiKey, SYNC_REQUIRED_FIELDS } from './utils/syncValidation'
 import { useSpeechInput } from './hooks/useSpeechInput'
-import { useImageAttachment } from './hooks/useImageAttachment'
 import { appendTranscript } from './utils/speech'
 import { RegenSplit } from './components/RegenSplit'
 import { AmbientOrb } from './components/AmbientOrb'
@@ -116,7 +118,7 @@ import { useSync } from './hooks/useSync'
 import { useDevInsights } from './hooks/useDevInsights'
 import { logInsight } from './services/devInsights'
 import { type Artifact } from './utils/artifacts'
-import { formatDroppedFile } from './utils/attachments'
+import { addAttachment, removeAttachmentAt, classifyDroppedFile, looksBinary, type Attachment, type AddAttachmentError } from './utils/attachments'
 import { runCompaction, mergeSummary } from './services/compaction'
 import { renderConversationTranscript, buildImportedContextBlock, IMPORT_VERBATIM_CHAR_BUDGET } from './utils/conversationContext'
 import { renderWorkingMemory, renderPersistentMemory } from './utils/memoryRender'
@@ -152,7 +154,7 @@ export default function App() {
   // Message typed mid-turn, waiting for the conversation to idle (v2.12.52 —
   // the composer no longer locks for the whole 3–10 min turn). convId pins
   // the queue to the conversation it was typed in.
-  const [queuedMessage, setQueuedMessage] = useState<{ text: string; convId: string | null; image?: ImageAttachment; document?: DocAttachment } | null>(null)
+  const [queuedMessage, setQueuedMessage] = useState<{ text: string; convId: string | null; attachments?: Attachment[] } | null>(null)
   // Editando a última mensagem via ↑ no composer vazio (v2.132.0, estilo
   // ChatGPT): quando setado, o próximo envio faz edit-resend em vez de anexar.
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null)
@@ -188,7 +190,7 @@ export default function App() {
   const [isAgentMode, setIsAgentMode] = useState(false)
   const [showAnalytics, setShowAnalytics] = useState(false)
   const [showDevInsights, setShowDevInsights] = useState(false)
-  const [openArtifact, setOpenArtifact] = useState<Artifact | null>(null)
+  const [activeArtifact, setActiveArtifact] = useState<{ type: string, content: string } | null>(null)
   const [showParliament, setShowParliament] = useState(false)
   // ── Feature states ────────────────────────────────────────────────
   const [showVault, setShowVault] = useState(false)
@@ -313,6 +315,7 @@ export default function App() {
           gemini: settings.geminiApiKey || '',
           openrouter: settings.openrouterApiKey || '',
           modal: settings.modalApiKey || '',
+          sensenova: settings.sensenovaApiKey || '',
           customApiKey: (settings as any).customApiKey || '',
         },
       }
@@ -350,6 +353,7 @@ export default function App() {
           geminiApiKey: k(keys.gemini, settings.geminiApiKey),
           openrouterApiKey: k(keys.openrouter, settings.openrouterApiKey),
           modalApiKey: k(keys.modal, settings.modalApiKey),
+          sensenovaApiKey: k(keys.sensenova, settings.sensenovaApiKey),
           ...(validApiKey(keys.customApiKey) ? { customApiKey: keys.customApiKey } : {}),
         } as any
         setSettings(next); localStorage.setItem('openclaude-settings', JSON.stringify(next))
@@ -406,6 +410,7 @@ export default function App() {
       else if (prov === 'gemini') eff.geminiModel = p.model
       else if (prov === 'openrouter') eff.openrouterModel = p.model
       else if (prov === 'modal') eff.modalModel = p.model
+      else if (prov === 'sensenova') eff.sensenovaModel = p.model
     }
     return eff
   }, [settings, profiles.activeProfile])
@@ -862,7 +867,7 @@ export default function App() {
   // into the system prompt as a compact manifest.
   const toolPartition = useMemo(() =>
     partitionTools(TOOLS as any, decideDeferral(
-      settings.toolDeferralMode, getModelContextLimit(selectedModel), countToolSchemas(TOOLS as any),
+      settings.toolDeferralMode, getModelContextLimit(selectedModel, settings.modelLimits), countToolSchemas(TOOLS as any),
     ).enabled),
     [settings.toolDeferralMode, selectedModel])
   // Persistent memory text for the panel accounting — loaded via the same
@@ -893,7 +898,7 @@ export default function App() {
     model: providerConfig.model,
     // Ollama: janela REAL (num_ctx), não a teórica — alinha o painel com o que
     // o chat realmente envia e evita o falso "106%" do modelo local (v2.24.0).
-    limit: effectiveContextLimit(settings.provider, providerConfig.model, settings.ollamaNumCtx),
+    limit: effectiveContextLimit(settings.provider, providerConfig.model, settings.ollamaNumCtx, settings.modelLimits),
     inputText: input,
     systemPrompt: settings.systemPrompt || '',
     memoryText,
@@ -941,7 +946,7 @@ export default function App() {
   }, [showSettings, showAnalytics, showParliament, showVault, showPersona, showArena, showRAG, showWorkflow, showOrion, showVision, showCodeWorkspace, showProfiles, showScheduler, showAgentDashboard, showDevInsights])
 
   // Forward ref for sendMessage — declared early so scheduledTasks can use it
-  const sendMessageRef = useRef<(text: string, convId?: string, opts?: { hidden?: boolean; edited?: boolean; image?: ImageAttachment; document?: DocAttachment }) => void>(() => {})
+  const sendMessageRef = useRef<(text: string, convId?: string, opts?: { hidden?: boolean; edited?: boolean; image?: ImageAttachment; document?: DocAttachment; attachments?: Attachment[] }) => void>(() => {})
 
   const scheduledTasks = useScheduledTasks({
     enabled: true,
@@ -1213,28 +1218,34 @@ export default function App() {
             ? window.electron.getPathForFile(file)
             : (file as any).path
           if (filePath) {
-            // Roteia o arquivo arrastado para o anexo certo (v2.149.0): imagem
-            // → anexo de imagem; PDF/DOCX → anexo de documento; texto/código →
-            // inserido no composer (comportamento antigo, útil p/ revisar code).
-            const ext = (filePath.split('.').pop() || '').toLowerCase()
+            // Omni-input (v2.212.0): cada arquivo ACRESCENTA um card à lista.
+            // Antes havia um slot por tipo — soltar três imagens rodava este
+            // loop três vezes sobre o mesmo slot e só a última sobrevivia, sem
+            // aviso. Código/texto ia parar DENTRO da caixa de texto; agora vira
+            // card e segue ao modelo como bloco <document name="...">.
+            const fileName = String(filePath).split(/[\\/]/).pop() || String(filePath)
+            const kind = classifyDroppedFile(fileName)
             try {
-              if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(ext)) {
+              if (kind === 'image') {
                 const d = await window.electron.readDocument(filePath)
-                if (d?.isImage && d.base64) { imageAttachment.attachFromBase64(d.base64, d.mimeType || 'image/png', d.name || filePath); continue }
-                if (d?.error) { showToast(d.error); continue }
+                if (d?.isImage && d.base64) { pushAttachmentRef.current({ kind: 'image', name: d.name || fileName, mimeType: d.mimeType || 'image/png', base64: d.base64 }); continue }
+                if (d?.error) { showToast(`${fileName}: ${d.error}`); continue }
               }
-              if (['pdf', 'docx', 'doc'].includes(ext)) {
+              if (kind === 'rich-document') {
                 const d = await window.electron.readDocument(filePath)
-                if (d?.content) { setAttachedDocument({ name: d.name || filePath, content: d.content, pages: d.pages }); continue }
-                if (d?.error) { showToast(d.error); continue }
+                if (d?.content) { pushAttachmentRef.current({ kind: 'document', name: d.name || fileName, content: d.content, pages: d.pages }); continue }
+                showToast(`${fileName}: ${d?.error || 'documento vazio ou não suportado'}`); continue
               }
+              // text / unknown: lê como texto e RECUSA binário — decodificar um
+              // .exe como "documento" só queimaria contexto com lixo.
               const result = await window.electron.readDroppedFile(filePath)
               if (result.content) {
-                setInput(prev => prev + formatDroppedFile(result.name || filePath, result.content!))
+                if (looksBinary(result.content)) { showToast(`${fileName}: arquivo binário — anexe imagens, PDFs, documentos ou código`); continue }
+                pushAttachmentRef.current({ kind: 'document', name: result.name || fileName, content: result.content })
               } else if (result.error) {
-                setInput(prev => prev + `[Erro ao ler ${filePath}: ${result.error}]`)
+                showToast(`${fileName}: ${result.error}`)
               }
-            } catch { setInput(prev => prev + `[Erro ao ler ${filePath}]`) }
+            } catch (err: any) { showToast(`${fileName}: ${err?.message || 'falha ao ler o arquivo'}`) }
           }
         }
       }
@@ -1302,6 +1313,7 @@ export default function App() {
           : prov === 'gemini' ? 'geminiModel'
           : prov === 'openrouter' ? 'openrouterModel'
           : prov === 'modal' ? 'modalModel'
+          : prov === 'sensenova' ? 'sensenovaModel'
           : null
         if (key) {
           const next = { ...settings, [key]: modelOverride } as typeof settings
@@ -1312,6 +1324,47 @@ export default function App() {
     // Directly call sendMessage instead of fragile DOM querySelector
     setTimeout(() => sendMessageRef.current(lastUserContent), 80)
   }, [activeConv, isActiveConvLoading, convManager, settings])
+
+  // Rewind (v2.208.0; escolha de escopo em v2.209.0): reverte o que UM turno
+  // fez, a qualquer momento — não só nos 15s do toast. O `seq` é a marca do
+  // snapshot no início daquele turno; o main restaura tudo com seq maior, do
+  // mais novo ao mais antigo. O clique só ABRE o diálogo: são três saídas
+  // (cancelar / só arquivos / arquivos + conversa) e um confirm() expressa duas.
+  const [rewindTarget, setRewindTarget] = useState<{ msgId: string; seq: number; files: number; messages: number } | null>(null)
+
+  const handleRevertCheckpoint = useCallback((msgId: string, seq: number, files: number) => {
+    const messages = rewindMessageCount(convManager.activeConv?.messages ?? [], msgId)
+    setRewindTarget({ msgId, seq, files, messages })
+  }, [convManager.activeConv])
+
+  const applyRewind = useCallback(async (scope: 'files' | 'files+chat') => {
+    const target = rewindTarget
+    setRewindTarget(null)
+    if (!target) return
+    const en = settings.language === 'en'
+    try {
+      const r = await window.electron.checkpointRestore(target.seq)
+      convManager.setConversations(prev => prev.map(c => {
+        if (c.id !== convManager.activeConvId) return c
+        if (scope === 'files') {
+          return { ...c, messages: c.messages.map(m => m.id === target.msgId ? { ...m, checkpoint: undefined } : m) }
+        }
+        // Rebobina: corta o turno inteiro (a pergunta do usuário e tudo que veio
+        // depois). O selo some junto, porque a mensagem que o carregava saiu.
+        const start = turnStartIndex(c.messages, target.msgId)
+        if (start < 0) return c
+        return { ...c, messages: c.messages.slice(0, start) }
+      }))
+      const base = r.errors?.length
+        ? (en ? `Reverted ${r.count}, ${r.errors.length} error(s)` : `Revertido ${r.count}, ${r.errors.length} erro(s)`)
+        : (en ? `Reverted ${r.count} file(s)` : `Revertido(s) ${r.count} arquivo(s)`)
+      showToast(scope === 'files+chat'
+        ? (en ? `${base} · conversation rewound` : `${base} · conversa rebobinada`)
+        : base)
+    } catch (e: any) {
+      showToast(en ? `Revert failed: ${e?.message || e}` : `Falha ao reverter: ${e?.message || e}`)
+    }
+  }, [rewindTarget, settings.language, convManager, showToast])
 
   // ─── Stable handlers for the memoized <ChatMessage> list ────────
   // Each prop handed to ChatMessage must keep a permanent identity — one
@@ -1340,10 +1393,35 @@ export default function App() {
   })
   // Anexo de imagem multimodal no composer (v2.147.0). Substitui o placeholder
   // de texto antigo: agora a imagem é enviada de verdade ao provedor.
-  const imageAttachment = useImageAttachment({ onToast: showToast })
+  // Omni-input (v2.212.0): UMA lista para imagens e documentos. O ref existe
+  // porque o drop solta vários arquivos num loop com `await` no meio — cada
+  // iteração precisa ver a lista JÁ acrescida pela anterior, e o estado do
+  // React só se atualiza no próximo render. Também é por ref que o efeito de
+  // drop (registrado uma vez só) alcança a versão atual do anexador.
+  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const attachmentsRef = useRef<Attachment[]>([])
+  const attachmentErrorText = (e: AddAttachmentError, name: string) => {
+    const en = settings.language === 'en'
+    if (e === 'limit') return en ? 'Attachment limit reached (10 per message)' : 'Limite de anexos atingido (10 por mensagem)'
+    if (e === 'duplicate') return en ? `${name} is already attached` : `${name} já está anexado`
+    return en ? `${name} is empty` : `${name} está vazio`
+  }
+  const pushAttachment = useCallback((att: Attachment) => {
+    const r = addAttachment(attachmentsRef.current, att)
+    if (r.error) { showToast(attachmentErrorText(r.error, att.name)); return }
+    attachmentsRef.current = r.list
+    setAttachments(r.list)
+  }, [showToast, settings.language])
+  const pushAttachmentRef = useRef(pushAttachment)
+  pushAttachmentRef.current = pushAttachment
+  const removeAttachment = useCallback((index: number) => {
+    const list = removeAttachmentAt(attachmentsRef.current, index)
+    attachmentsRef.current = list
+    setAttachments(list)
+  }, [])
+  const clearAttachments = useCallback(() => { attachmentsRef.current = []; setAttachments([]) }, [])
   // Anexo de documento (v2.148.0): PDF/DOCX/TXT → texto extraído injetado no
   // request (funciona em todo provider, não precisa visão).
-  const [attachedDocument, setAttachedDocument] = useState<DocAttachment | null>(null)
   const handleAttachDocument = useStableCallback(async () => {
     const el = (window as any).electron
     if (!el?.openFileDialog) return
@@ -1355,7 +1433,7 @@ export default function App() {
     if (!filePath) return
     const doc = await el.readDocument(filePath)
     if (doc?.error || !doc?.content) { showToast(doc?.error || (settings.language === 'en' ? 'Empty/unsupported document' : 'Documento vazio/não suportado')); return }
-    setAttachedDocument({ name: doc.name, content: doc.content, pages: doc.pages })
+    pushAttachment({ kind: 'document', name: doc.name, content: doc.content, pages: doc.pages })
   })
 
   // Transforms de exibição (v2.94.0): identidade estável p/ não quebrar o memo
@@ -1553,9 +1631,8 @@ export default function App() {
   }, [convManager, models, settings, regenerateResponse, showToast, input, cycleTheme, activeConv, providerConfig.model])
 
   const handleSend = useCallback(() => {
-    const img = imageAttachment.attachedImage
-    const doc = attachedDocument
-    if (!input.trim() && !img && !doc) return // permite enviar só anexo (v2.147–2.148)
+    const atts = attachmentsRef.current
+    if (!input.trim() && !atts.length) return // permite enviar só anexo (v2.147–2.148)
     // Editando a última mensagem (↑): re-roda a conversa a partir dela com o
     // texto novo, em vez de anexar um turno (v2.132.0).
     if (editingMsgId) {
@@ -1577,10 +1654,9 @@ export default function App() {
     // Mid-turn (turns run 3–10 min on Modal): queue instead of dropping the
     // user on a disabled composer. Auto-sends when this conversation idles.
     if (isActiveConvLoading) {
-      setQueuedMessage({ text: payload.trim(), convId: convManager.activeConvId, image: img || undefined, document: doc || undefined })
+      setQueuedMessage({ text: payload.trim(), convId: convManager.activeConvId, attachments: atts.length ? atts : undefined })
       setInput('')
-      imageAttachment.clearAttachment()
-      setAttachedDocument(null)
+      clearAttachments()
       return
     }
     // Cria a conversa SÓ agora (lazy) se não houver nenhuma ativa — ex.: logo
@@ -1594,11 +1670,10 @@ export default function App() {
     const since = lastTurnCompleteAtRef.current
     if (since && Date.now() - since < 20_000) logInsight('chat', 'quick_followup', { gapMs: Date.now() - since })
     lastTurnCompleteAtRef.current = 0
-    sendMessageRef.current(payload.trim(), cid, { image: img || undefined, document: doc || undefined })
+    sendMessageRef.current(payload.trim(), cid, { attachments: atts.length ? atts : undefined })
     setInput('')
-    imageAttachment.clearAttachment()
-    setAttachedDocument(null)
-  }, [input, slash, slashIdx, executeSlash, isActiveConvLoading, convManager.activeConvId, convManager.newConversation, editingMsgId, handleEditResend, imageAttachment, attachedDocument])
+    clearAttachments()
+  }, [input, slash, slashIdx, executeSlash, isActiveConvLoading, convManager.activeConvId, convManager.newConversation, editingMsgId, handleEditResend, attachments, clearAttachments])
 
   // Clique num starter prompt do empty-state (v2.131.0): envia direto, criando
   // a conversa lazy se preciso (mesmo padrão do handleSend).
@@ -1672,12 +1747,11 @@ export default function App() {
   useEffect(() => {
     if (queuedMessage && !isActiveConvLoading && queuedMessage.convId === convManager.activeConvId) {
       const msg = queuedMessage.text
-      const img = queuedMessage.image
-      const doc = queuedMessage.document
+      const atts = queuedMessage.attachments
       setQueuedMessage(null)
       // Let the finished turn's state settle before re-entering sendMessage
       // (same pattern as regenerateResponse).
-      setTimeout(() => sendMessageRef.current(msg, undefined, { image: img, document: doc }), 80)
+      setTimeout(() => sendMessageRef.current(msg, undefined, { attachments: atts }), 80)
     }
   }, [queuedMessage, isActiveConvLoading, convManager.activeConvId])
 
@@ -1828,7 +1902,7 @@ export default function App() {
       {dragOver && (
         <div className="drag-overlay">
           <FileText size={48} />
-          <span>Solte o arquivo aqui</span>
+          <span>{settings.language === 'en' ? 'Drop files to attach — images, PDFs, documents, code' : 'Solte para anexar — imagens, PDFs, documentos, código'}</span>
         </div>
       )}
 
@@ -1947,11 +2021,16 @@ export default function App() {
           </div>
         )}
         {editingProject && <ProjectEditModal project={editingProject} onSave={handleSaveProject} onClose={() => setEditingProject(null)} />}
-        {openArtifact && (
-          <Suspense fallback={null}>
-            <ArtifactPanel artifact={openArtifact} onClose={() => setOpenArtifact(null)} language={settings.language} />
-          </Suspense>
+        {rewindTarget && (
+          <RewindDialog
+            files={rewindTarget.files}
+            messages={rewindTarget.messages}
+            language={settings.language === 'en' ? 'en' : 'pt'}
+            onConfirm={applyRewind}
+            onClose={() => setRewindTarget(null)}
+          />
         )}
+        {/* ArtifactRenderer is now inline in the right panel */}
         {showParliament && (
           <ParliamentMode settings={settings} ollamaModels={models} onClose={() => setShowParliament(false)}
             onInsertToChat={(text) => { setInput(prev => (prev ? prev + '\n\n' : '') + text); setShowParliament(false) }} />
@@ -2366,7 +2445,9 @@ export default function App() {
 
         {/* Chat area */}
         <div className="chat-area">
-          {settings.permissionLevel === 'ignore' && (
+          <PanelGroup orientation="horizontal" style={{ height: '100%', width: '100%' }}>
+            <Panel defaultSize={60} minSize={30} style={{ display: 'flex', flexDirection: 'column' }}>
+              {settings.permissionLevel === 'ignore' && (
             <div className="ignore-warning-banner">
               <AlertCircle size={14} />
               <span>{settings.language === 'en' ? 'Bypass Mode Active: All tools will be auto-approved' : 'Modo Bypass Ativo: Ferramentas serão aprovadas automaticamente'}</span>
@@ -2446,41 +2527,49 @@ export default function App() {
                 )}
               </div>
             ) : (
-              renderItems.map(item => item.kind === 'steps' ? (
-                <AgentStepsGroup
-                  key={item.key}
-                  msgs={item.msgs}
-                  groupKey={item.key}
-                  language={settings.language}
-                  live={item.key === liveGroupKey}
-                  expanded={item.key === liveGroupKey ? !toggledStepGroups.has(item.key) : toggledStepGroups.has(item.key)}
-                  onToggleExpanded={handleToggleStepGroup}
-                  mathReady={mathReady}
-                  showThinking={settings.showThinking !== false}
-                  collapsedTools={collapsedTools}
-                  onToggleCollapse={handleToggleToolCollapse}
-                />
-              ) : (
-                <ChatMessage
-                  key={item.msg.id}
-                  msg={item.msg}
-                  language={settings.language}
-                  showThinking={settings.showThinking !== false}
-                  mathReady={mathReady}
-                  collapsedTools={collapsedTools}
-                  onToggleCollapse={handleToggleToolCollapse}
-                  onOpenArtifact={setOpenArtifact}
-                  onRegenerate={handleRegenerate}
-                  onBranch={handleBranchFrom}
-                  onDelete={handleDeleteMessage}
-                  onEditResend={handleEditResend}
-                  onContinue={handleContinue}
-                  onFollowup={handleFollowup}
-                  onVerify={handleVerify}
-                  showToast={showToast}
-                  displayTransforms={displayTransforms}
-                />
-              ))
+              <Virtuoso
+                style={{ flex: 1 }}
+                data={renderItems}
+                initialTopMostItemIndex={renderItems.length - 1}
+                followOutput="smooth"
+                alignToBottom={true}
+                itemContent={(index, item) => item.kind === 'steps' ? (
+                  <AgentStepsGroup
+                    key={item.key}
+                    msgs={item.msgs}
+                    groupKey={item.key}
+                    language={settings.language}
+                    live={item.key === liveGroupKey}
+                    expanded={item.key === liveGroupKey ? !toggledStepGroups.has(item.key) : toggledStepGroups.has(item.key)}
+                    onToggleExpanded={handleToggleStepGroup}
+                    mathReady={mathReady}
+                    showThinking={settings.showThinking !== false}
+                    collapsedTools={collapsedTools}
+                    onToggleCollapse={handleToggleToolCollapse}
+                  />
+                ) : (
+                  <ChatMessage
+                    key={item.msg.id}
+                    msg={item.msg}
+                    language={settings.language}
+                    showThinking={settings.showThinking !== false}
+                    mathReady={mathReady}
+                    collapsedTools={collapsedTools}
+                    onToggleCollapse={handleToggleToolCollapse}
+                    onOpenArtifact={setActiveArtifact}
+                    onRegenerate={handleRegenerate}
+                    onRevertCheckpoint={handleRevertCheckpoint}
+                    onBranch={handleBranchFrom}
+                    onDelete={handleDeleteMessage}
+                    onEditResend={handleEditResend}
+                    onContinue={handleContinue}
+                    onFollowup={handleFollowup}
+                    onVerify={handleVerify}
+                    showToast={showToast}
+                    displayTransforms={displayTransforms}
+                  />
+                )}
+              />
             )}
             {/* Streaming text — only show in the conversation that is actively streaming */}
             {chat.isStreaming && chat.streamingText && isActiveConvLoading && (
@@ -2658,16 +2747,15 @@ export default function App() {
                       ? 'Nenhum subagente ativo agora. Eles aparecem aqui quando a IA delega pesquisas, ou quando o scout proativo pesquisa enquanto a IA trabalha.'
                       : 'Nenhum subagente ativo. Eles aparecem quando a IA delega pesquisas. Dica: ative a “Pesquisa proativa (scout)” nas Configurações para um subagente ocioso pesquisar dados atualizados enquanto a IA trabalha.')}</div>)}
             <div className="input-wrapper">
-              <input type="file" id="image-upload" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (!file) return
-                const reader = new FileReader()
-                reader.onload = () => {
-                  const url = String(reader.result || '')
-                  const m = /^data:([^;]+);base64,(.*)$/.exec(url)
-                  if (m) imageAttachment.attachFromBase64(m[2], m[1], file.name)
+              <input type="file" id="image-upload" accept="image/*" multiple style={{ display: 'none' }} onChange={(e) => {
+                for (const file of Array.from(e.target.files || [])) {
+                  const reader = new FileReader()
+                  reader.onload = () => {
+                    const m = /^data:([^;]+);base64,(.*)$/.exec(String(reader.result || ''))
+                    if (m) pushAttachment({ kind: 'image', name: file.name, mimeType: m[1], base64: m[2] })
+                  }
+                  reader.readAsDataURL(file)
                 }
-                reader.readAsDataURL(file)
                 e.target.value = ''
               }} />
 
@@ -2761,40 +2849,43 @@ export default function App() {
                   </button>
                 </div>
               )}
-              {imageAttachment.attachedImage && (
-                <div className="image-attach-pill">
-                  <img className="image-attach-thumb" src={`data:${imageAttachment.attachedImage.mimeType};base64,${imageAttachment.attachedImage.base64}`} alt={imageAttachment.attachedImage.name} />
-                  <span className="image-attach-name">{imageAttachment.attachedImage.name}</span>
-                  <button className="queued-pill-cancel" title={settings.language === 'en' ? 'Remove image' : 'Remover imagem'} onClick={() => imageAttachment.clearAttachment()}>
-                    <X size={11} />
-                  </button>
+              {attachments.length > 0 && (
+                <div className="attachment-zone" aria-label={settings.language === 'en' ? 'Attachments' : 'Anexos'}>
+                  {attachments.map((a, i) => (
+                    <div className="image-attach-pill" key={`${a.kind}:${a.name}:${i}`} title={a.name}>
+                      {a.kind === 'image'
+                        ? <img className="image-attach-thumb" src={`data:${a.mimeType};base64,${a.base64}`} alt={a.name} />
+                        : <FileText size={16} style={{ flexShrink: 0, opacity: 0.8 }} />}
+                      <span className="image-attach-name">{a.name}{a.kind === 'document' && a.pages ? ` · ${a.pages}p` : ''}</span>
+                      <button className="queued-pill-cancel"
+                        title={settings.language === 'en' ? `Remove ${a.name}` : `Remover ${a.name}`}
+                        aria-label={settings.language === 'en' ? `Remove ${a.name}` : `Remover ${a.name}`}
+                        onClick={() => removeAttachment(i)}>
+                        <X size={11} />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
-              {attachedDocument && (
-                <div className="image-attach-pill">
-                  <FileText size={16} style={{ flexShrink: 0, opacity: 0.8 }} />
-                  <span className="image-attach-name">{attachedDocument.name}{attachedDocument.pages ? ` · ${attachedDocument.pages}p` : ''}</span>
-                  <button className="queued-pill-cancel" title={settings.language === 'en' ? 'Remove document' : 'Remover documento'} onClick={() => setAttachedDocument(null)}>
-                    <X size={11} />
-                  </button>
-                </div>
-              )}
-              <div className="input-pill" onClick={e => e.stopPropagation()}>
+              <div className={`input-pill${dragOver ? ' composer-dragging' : ''}`} onClick={e => e.stopPropagation()}>
                 <div className="input-left-actions">
                   <button className="input-icon-btn" onClick={() => setShowCommandPalette(true)} title="Ferramentas e recursos (Ctrl+K)" aria-label={settings.language === 'en' ? 'Tools and features' : 'Ferramentas e recursos'}><Plus size={18} /></button>
                 </div>
                 <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown}
                   onPaste={(e) => {
-                    // Colar imagem da área de transferência → anexa (v2.147.0).
-                    const item = Array.from(e.clipboardData?.items || []).find(it => it.type.startsWith('image/'))
-                    const file = item?.getAsFile()
-                    if (!file) return
-                    const reader = new FileReader()
-                    reader.onload = () => {
-                      const m = /^data:([^;]+);base64,(.*)$/.exec(String(reader.result || ''))
-                      if (m) imageAttachment.attachFromBase64(m[2], m[1], file.name || 'colado.png')
-                    }
-                    reader.readAsDataURL(file)
+                    // Colar imagens da área de transferência → anexa CADA uma.
+                    const files = Array.from(e.clipboardData?.items || [])
+                      .filter(it => it.type.startsWith('image/'))
+                      .map(it => it.getAsFile())
+                      .filter((f): f is File => !!f)
+                    files.forEach((file, idx) => {
+                      const reader = new FileReader()
+                      reader.onload = () => {
+                        const m = /^data:([^;]+);base64,(.*)$/.exec(String(reader.result || ''))
+                        if (m) pushAttachment({ kind: 'image', name: file.name && file.name !== 'image.png' ? file.name : `colado-${Date.now()}-${idx}.png`, mimeType: m[1], base64: m[2] })
+                      }
+                      reader.readAsDataURL(file)
+                    })
                   }}
                   aria-label={settings.language === 'en' ? 'Message input' : 'Campo de mensagem'}
                   placeholder={isActiveConvLoading ? (settings.language === 'en' ? 'Type the next message — Enter queues it' : 'Digite a próxima mensagem — Enter coloca na fila') : PLACEHOLDER_HINTS[placeholderIdx]} className="message-input" rows={1} />
@@ -2824,7 +2915,7 @@ export default function App() {
                   {isActiveConvLoading ? (
                     <button className="send-circle stop" onClick={chat.stopAgent} title="Parar" aria-label={settings.language === 'en' ? 'Stop' : 'Parar'}><Square size={14} fill="currentColor" /></button>
                   ) : (
-                    <button className={`send-circle ${!input.trim() && !imageAttachment.attachedImage && !attachedDocument ? 'disabled' : ''}`} onClick={handleSend} disabled={!input.trim() && !imageAttachment.attachedImage && !attachedDocument} title="Enviar (Enter)" aria-label={settings.language === 'en' ? 'Send message' : 'Enviar mensagem'}>
+                    <button className={`send-circle ${!input.trim() && !attachments.length ? 'disabled' : ''}`} onClick={handleSend} disabled={!input.trim() && !attachments.length} title="Enviar (Enter)" aria-label={settings.language === 'en' ? 'Send message' : 'Enviar mensagem'}>
                       <Send size={14} />
                     </button>
                   )}
@@ -2894,6 +2985,16 @@ export default function App() {
               </div>
             </div>
           </div>
+            </Panel>
+            <PanelResizeHandle className="resize-handle" style={{ width: '4px', background: 'var(--border-color, rgba(127,127,127,0.2))', cursor: 'col-resize', transition: 'background 0.2s' }} />
+            <Panel minSize={30}>
+              <div id="artifact-canvas" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-secondary, #1e1e1e)', color: 'var(--text-secondary, #a1a1aa)' }}>
+                <Suspense fallback={null}>
+                  <ArtifactRenderer artifact={activeArtifact} />
+                </Suspense>
+              </div>
+            </Panel>
+          </PanelGroup>
         </div>
       </div>
     </div>

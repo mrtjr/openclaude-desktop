@@ -76,6 +76,14 @@ export class SubagentActivityStore {
     this.notify()
   }
 
+  /** Cancela individualmente um worker em execução. */
+  cancelRun(id: string, reason = 'Cancelado pelo usuário'): void {
+    this.runs = this.runs.map((r) =>
+      r.id === id && r.status === 'working' ? { ...r, status: 'error', result: reason, endedAt: Date.now() } : r,
+    )
+    this.notify()
+  }
+
   /** Zera (início de turno / botão Parar). */
   clear(): void {
     if (this.runs.length) { this.runs = []; this.notify() }

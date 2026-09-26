@@ -22,10 +22,19 @@ export interface PermissionRule {
 }
 
 /** Converte um glob (só `*` é curinga) numa RegExp ancorada, case-insensitive.
- *  `*foo*` casa "foo" em qualquer posição; `*.x.com` casa subdomínios. */
+ *  `*foo*` casa "foo" em qualquer posição; `*.x.com` casa subdomínios.
+ *
+ *  A flag `s` (dotAll) é OBRIGATÓRIA: sem ela o `.` não cruza quebra de linha,
+ *  então o `*` do glob parava na primeira. Isso ANULAVA regras de deny em
+ *  comando MULTI-LINHA — `deny execute_command(command:*rm -rf*)` bloqueava
+ *  "rm -rf /" mas deixava passar o mesmo comando numa segunda linha, e comando
+ *  multi-linha é rotina para o modelo.
+ *
+ *  O `?` também passou a ser escapado: a doc promete que SÓ `*` é curinga, mas
+ *  ele vazava como quantificador da regex (o glob `file?.txt` casava "fil.txt"). */
 export function globToRegExp(glob: string): RegExp {
-  const esc = String(glob ?? '').replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')
-  return new RegExp('^' + esc + '$', 'i')
+  const esc = String(glob ?? '').replace(/[.+^${}()|[\]\\?]/g, '\\$&').replace(/\*/g, '.*')
+  return new RegExp('^' + esc + '$', 'is')
 }
 
 /** Uma regra casa esta chamada (nome + args)? */

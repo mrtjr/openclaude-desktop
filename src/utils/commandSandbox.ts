@@ -47,6 +47,14 @@ export function splitCommands(command: string): string[] {
     .filter(Boolean)
 }
 
+/** Metacaracteres que fazem um comando 'permitido' SAIR da allowlist:
+ *  - substituicao (`$(...)` ou crases) executa OUTRO comando: `ls $(cat ~/.ssh/id_rsa)`
+ *    passava como 'ls';
+ *  - redirecionamento (`>` / `>>`) transforma um leitor em ESCRITOR:
+ *    `echo malicioso >> ~/.profile` passava como 'echo'.
+ *  Presentes -> 'ask' (o gate normal de permissao decide), nunca 'allow'. */
+const SHELL_ESCAPE = /\$\(|`|>|<\(|\$\{/
+
 /** Classifica um comando segundo a config do sandbox. enabled=false → sempre
  *  'ask' (sem efeito; o gate normal decide). */
 export function classifyCommand(command: string | undefined, config: SandboxConfig | undefined): SandboxVerdict {
@@ -63,7 +71,15 @@ export function classifyCommand(command: string | undefined, config: SandboxConf
   if (!allow.length) return 'ask'
   const allAllowed = parts.every((part) => {
     const p = part.toLowerCase()
-    return allow.some((pre) => p === pre || p.startsWith(pre + ' ') || p.startsWith(pre))
+    // Um escape de shell em QUALQUER parte derruba o lote inteiro.
+    if (SHELL_ESCAPE.test(p)) return false
+    // Casamento por TOKEN. O `p.startsWith(pre)` solto que existia aqui casava
+    // BINARIOS DIFERENTES que so compartilham o prefixo: 'ls' liberava `lsof`,
+    // 'cat' liberava `catx`, 'type' liberava `typeperf`. Pior: os prefixos sao
+    // passados por `.trim()` acima, entao o espaco final DELIBERADO das entradas
+    // padrao ('find ', 'grep ', 'rg ') era descartado e 'find ' liberava
+    // `findstr /S senha`. Exigir igualdade ou prefixo + espaco resolve os dois.
+    return allow.some((pre) => p === pre || p.startsWith(pre + ' '))
   })
   return allAllowed ? 'allow' : 'ask'
 }

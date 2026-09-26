@@ -38,6 +38,7 @@ export function defaultModelFor(settings: AppSettings, provider: string, fallbac
     case 'gemini': return settings.geminiModel || 'gemini-2.0-flash'
     case 'openrouter': return settings.openrouterModel || 'google/gemini-2.5-pro'
     case 'modal': return settings.modalModel || 'zai-org/GLM-5.1-FP8'
+    case 'sensenova': return settings.sensenovaModel || 'sensenova-6.8-flash-lite'
     case 'custom': return settings.customModel || ''
     default: return fallbackModel // ollama (local)
   }
@@ -45,7 +46,7 @@ export function defaultModelFor(settings: AppSettings, provider: string, fallbac
 
 export interface RemoteTarget { id: string; label: string; provider: string; model: string }
 
-const CLOUD_PROVIDERS = ['modal', 'anthropic', 'openai', 'gemini', 'openrouter', 'custom'] as const
+const CLOUD_PROVIDERS = ['modal', 'anthropic', 'openai', 'gemini', 'openrouter', 'sensenova', 'custom'] as const
 
 /** Alvos que o celular pode escolher. Sempre oferece TODOS os provedores
  *  configurados (a IA local Ollama + cada provedor de nuvem com chave, ex. Modal)

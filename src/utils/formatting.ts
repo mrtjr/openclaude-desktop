@@ -15,7 +15,14 @@ const renderer = new marked.Renderer()
 renderer.code = ({ text, lang }: any) => {
   const language = lang && hljs.getLanguage(lang) ? lang : 'plaintext'
   const highlighted = hljs.highlight(text, { language }).value
-  return `<div class="code-block"><div class="code-header"><span class="code-lang">${language}</span><button class="copy-btn" data-copy>Copiar</button></div><pre><code class="hljs language-${language}">${highlighted}</code></pre></div>`
+  
+  let extraBtn = ''
+  if (['html', 'css', 'svg', 'react'].includes(language)) {
+    const encoded = encodeURIComponent(text)
+    extraBtn = `<button class="canvas-btn" data-lang="${language}" data-content="${encoded}" style="margin-left:8px; padding:2px 6px; font-size:11px; cursor:pointer;">👁️ Abrir no Canvas</button>`
+  }
+  
+  return `<div class="code-block"><div class="code-header"><span class="code-lang">${language}</span><div>${extraBtn}<button class="copy-btn" data-copy>Copiar</button></div></div><pre><code class="hljs language-${language}">${highlighted}</code></pre></div>`
 }
 marked.use({ renderer })
 

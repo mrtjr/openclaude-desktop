@@ -11,7 +11,7 @@ import { AppSettings } from './Settings'
 
 export interface ArenaModel {
   id: string
-  provider: 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'custom'
+  provider: 'ollama' | 'openai' | 'gemini' | 'anthropic' | 'openrouter' | 'modal' | 'sensenova' | 'custom'
   model: string
   apiKey: string
   label: string
@@ -51,6 +51,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   anthropic: '#d97706',
   openrouter: '#e11d48',
   modal: '#6366f1',
+  sensenova: '#f43f5e',
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -60,6 +61,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   anthropic: 'Anthropic',
   openrouter: 'OpenRouter',
   modal: 'Modal',
+  sensenova: 'SenseNova',
 }
 
 function getApiKeyForProvider(settings: AppSettings, provider: string): string {
@@ -69,6 +71,7 @@ function getApiKeyForProvider(settings: AppSettings, provider: string): string {
     case 'anthropic': return settings.anthropicApiKey
     case 'openrouter': return settings.openrouterApiKey
     case 'modal': return settings.modalApiKey
+    case 'sensenova': return settings.sensenovaApiKey
     default: return ''
   }
 }
@@ -80,6 +83,7 @@ function getDefaultModelForProvider(settings: AppSettings, provider: string): st
     case 'anthropic': return settings.anthropicModel
     case 'openrouter': return settings.openrouterModel
     case 'modal': return settings.modalModel
+    case 'sensenova': return settings.sensenovaModel
     default: return ''
   }
 }
@@ -219,6 +223,7 @@ function AddModelForm({
           <option value="anthropic">Anthropic</option>
           <option value="openrouter">OpenRouter</option>
           <option value="modal">Modal</option>
+          <option value="sensenova">SenseNova</option>
         </select>
       </div>
       <div className="arena-add-row">

@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('electron', {
   fetchUrl: (url) => ipcRenderer.invoke('fetch-url', url),
   listDirectory: (path) => ipcRenderer.invoke('list-directory', path),
   openTarget: (target) => ipcRenderer.invoke('open-target', target),
+  // postgres_query: SELECT no banco do NovoPdv (a DATABASE_URL fica no main)
+  postgresQuery: (query) => ipcRenderer.invoke('postgres-query', { query }),
 
   // Ollama status
   checkOllamaStatus: () => ipcRenderer.invoke('check-ollama-status'),
@@ -205,6 +207,10 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Vision Mode & Screen capture
   captureScreen: () => ipcRenderer.invoke('capture-screen'),
+  takeScreenshot: () => ipcRenderer.invoke('take-screenshot'),
+  mouseMove: (params) => ipcRenderer.invoke('mouse-move', params),
+  mouseClick: (params) => ipcRenderer.invoke('mouse-click', params),
+  keyboardType: (params) => ipcRenderer.invoke('keyboard-type', params),
   visionChat: (params) => ipcRenderer.invoke('vision-chat', params),
 
   // RAG Local

@@ -8,6 +8,7 @@
 import { useState } from 'react'
 import { ExternalLink, Star, Plus, Trash2 } from 'lucide-react'
 import { getProviderMeta } from '../../config/providers'
+import { getModelContextLimitInfo } from '../../services/contextEngine'
 import type { AppSettings, Provider, ModalKey } from '../../Settings'
 import { KeyField } from './KeyField'
 import { ProviderTestButton } from './ProviderTestButton'
@@ -117,6 +118,13 @@ export function ProviderDetail({
     setSettings(s => ({ ...s, [extra.setting]: v } as AppSettings))
   }
 
+  // Janela de contexto do modelo escolhido (v2.207.0). Mostrar de ONDE veio é
+  // o ponto: "detectada" significa que o provider informou o número real; "tabela
+  // interna" avisa que é um palpite mantido à mão, que pode estar defasado.
+  const limitInfo = modelValue ? getModelContextLimitInfo(modelValue, settings.modelLimits) : null
+  const learnedHere = !!(modelValue && settings.modelLimits && settings.modelLimits[modelValue])
+  const fmtCtx = (n: number) => n >= 1000 ? `${Math.round(n / 1000)}k` : String(n)
+
   const datalistId = `models-${meta.id}`
   const modelOptions = fetchedModels.length > 0 ? fetchedModels : meta.defaultModels
 
@@ -183,6 +191,36 @@ export function ProviderDetail({
         <datalist id={datalistId}>
           {modelOptions.map(m => <option key={m} value={m} />)}
         </datalist>
+        {limitInfo && (
+          <p className="provider-ctx-hint">
+            {t(language, 'Janela de contexto: ', 'Context window: ')}
+            <strong>{fmtCtx(limitInfo.limit)}</strong>
+            {' '}
+            {learnedHere
+              ? t(language, '(detectada no provedor)', '(detected from provider)')
+              : limitInfo.known
+                ? t(language, '(tabela interna)', '(built-in table)')
+                : t(language, '(desconhecido — usando o padrão seguro; clique em Testar conexão)', '(unknown — safe default; click Test connection)')}
+          </p>
+        )}
+        {/* O <datalist> só mostra as opções que CASAM com o texto digitado —
+            com o campo preenchido o usuário vê 1 item mesmo tendo buscado N.
+            Estes chips mostram o catálogo inteiro, independente do campo. */}
+        {fetchedModels.length > 0 && (
+          <div className="provider-model-chips">
+            {fetchedModels.map(m => (
+              <button
+                key={m}
+                type="button"
+                className={`provider-model-chip ${m === modelValue ? 'selected' : ''}`}
+                onClick={() => setModel(m)}
+                title={m}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {extra && (
@@ -206,6 +244,10 @@ export function ProviderDetail({
           customBaseUrl={meta.id === 'custom' ? (settings as any).customBaseUrl : undefined}
           language={language}
           onModels={(models) => setFetchedModels(models)}
+          onLimits={(limits) => setSettings(s => ({
+            ...s,
+            modelLimits: { ...(s.modelLimits || {}), ...limits },
+          } as AppSettings))}
         />
       </div>
 

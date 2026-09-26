@@ -38,6 +38,9 @@ interface ProviderListProps {
   settings: AppSettings
   selectedId: Provider
   onSelect: (id: Provider) => void
+  /** Providers a exibir. Default: todos. A busca da aba Provedor passa o
+   *  subconjunto filtrado aqui — sem isso a lista ignora o filtro. */
+  items?: ProviderMeta[]
   /** Map of provider id → current health status (from useProviderHealth). */
   healthMap?: Partial<Record<Provider, HealthStatus>>
   /** The provider currently set as default in AppSettings. */
@@ -50,10 +53,11 @@ export function ProviderList({
   onSelect,
   healthMap = {},
   activeProviderId,
+  items = PROVIDERS,
 }: ProviderListProps) {
   return (
     <nav className="provider-list" aria-label="Providers">
-      {PROVIDERS.map(meta => {
+      {items.map(meta => {
         const status = computeStatus(meta, settings, healthMap[meta.id])
         const isSelected = meta.id === selectedId
         const isActive = meta.id === activeProviderId

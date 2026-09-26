@@ -13,6 +13,9 @@
 //       • Gerações antigas (Sonnet 4.5 / Opus 4.1·4.0 / 3.x) → extended thinking
 //         via thinking.budget_tokens (e a temperatura PRECISA sair).
 //   - openrouter / custom: reasoning_effort (passthrough, melhor-esforço)
+//   - sensenova: DEPENDE do modelo — só os deepseek-* do gateway aceitam
+//     reasoning_effort (none|low|medium|high); os sensenova-* pensam sozinhos
+//     e não têm parâmetro de controle documentado (no-op).
 //
 // SEGURANÇA: 'default' (o padrão) NÃO envia esforço — preserva o comportamento.
 // MAS a temperatura para modelos Anthropic que a rejeitam (Opus 4.7/4.8/Fable)
@@ -93,6 +96,19 @@ function reasoningRequestParams(provider, model, effort) {
       if (!on) return none
       const budget = ANTHROPIC_BUDGET[effort] || ANTHROPIC_BUDGET.medium
       return { extra: { thinking: { type: 'enabled', budget_tokens: budget } }, dropTemperature: true, minMaxTokens: budget + 2048 }
+    }
+    case 'sensenova': {
+      // O gateway do SenseNova serve DOIS tipos de modelo, com suporte diferente:
+      //  • sensenova-* (6.7/6.8 flash-lite): a doc oficial (OpenSenseNova/
+      //    SenseNova6.8 API.md) NÃO documenta reasoning_effort — o modelo pensa
+      //    sozinho e devolve o raciocínio em `message.reasoning`. Mandar um
+      //    parâmetro não documentado arriscaria HTTP 400 em TODO turno, então
+      //    aqui o esforço é no-op de propósito.
+      //  • deepseek-* (deepseek-v4-flash, revendido no mesmo endpoint): aceita
+      //    reasoning_effort com none|low|medium|high — inclusive 'none', que
+      //    DESLIGA o thinking (os outros OpenAI-compat não sabem fazer isso).
+      if (!/^deepseek/i.test(String(model || ''))) return none
+      return { extra: { reasoning_effort: on ? clampOpenAiEffort(effort) : 'none' }, dropTemperature: false, minMaxTokens: 0 }
     }
     case 'openrouter':
     case 'custom':

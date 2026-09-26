@@ -35,7 +35,7 @@ Most AI chat apps are either **cloud-only**, **closed-source**, or **CLI-only**.
 | Problem | OpenClaude Solution |
 |---------|-------------------|
 | Privacy concerns | Runs 100% locally via Ollama. Zero telemetry. |
-| Vendor lock-in | Multi-provider: Ollama, OpenAI, Gemini, Anthropic, OpenRouter, Modal |
+| Vendor lock-in | Multi-provider: Ollama, OpenAI, Gemini, Anthropic, OpenRouter, Modal, SenseNova |
 | CLI is intimidating | Beautiful desktop GUI with dark/light themes |
 | Models are censored | Works with uncensored/abliterated models |
 | No agent capabilities | Agent Mode with unlimited autonomous steps |
@@ -129,7 +129,7 @@ Progressive Web App you install to your home screen (no App Store, no Mac needed
 - **Bug Fixes** — `fetchedModels` now cached per-provider (switching back preserves results); `fetchError` displayed consistently across all providers; missing TypeScript declarations added (`openFileDialog`, `readDocument`, `loadAgentMemory`, `saveAgentMemory`)
 
 ### Core AI
-- **Multi-provider** — Ollama (local), OpenAI, Google Gemini, Anthropic Claude, OpenRouter, Modal
+- **Multi-provider** — Ollama (local), OpenAI, Google Gemini, Anthropic Claude, OpenRouter, Modal, SenseNova
 - **Streaming responses** — real-time word-by-word output
 - **Agent Mode** — autonomous multi-step execution (unlimited steps, no artificial cap)
 - **Collaborative Agents** — multiple AI instances working in parallel on different subtasks
@@ -287,8 +287,9 @@ npm run dist:win    # outputs to release/
 | **Anthropic Claude** | Settings > Provider: Anthropic > paste `sk-ant-...` API key |
 | **OpenRouter** | Settings > Provider: OpenRouter > paste `sk-or-v1-...` API key |
 | **Modal (Research)** | Settings > Provider: Modal > paste key + hostname |
+| **SenseNova** | Settings > Provider: SenseNova > paste `sk-...` API key |
 
-All providers are normalized to the same response format — switch freely without losing features. **All 6 providers support Agent Mode, streaming, and image/vision input.**
+All providers are normalized to the same response format — switch freely without losing features. **All 7 providers support Agent Mode, streaming, and image/vision input.**
 
 ---
 
@@ -332,6 +333,7 @@ ollama create my-uncensored-model -f Modelfile
 | Anthropic | `claude-opus-4-5` | Best reasoning; native vision support |
 | OpenRouter | `google/gemini-2.5-pro` | Best value via aggregator |
 | Modal | `zai-org/GLM-5.1-FP8` | Research models |
+| SenseNova | `sensenova-6.8-flash-lite` | Multimodal; "Test connection" lists the full catalogue |
 
 ---
 

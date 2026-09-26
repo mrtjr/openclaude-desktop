@@ -35,6 +35,9 @@ export function useProviderConfig(settings: AppSettings, selectedModel: string):
       model = settings.modalModel || 'zai-org/GLM-5.1-FP8'
       apiKey = settings.modalApiKey
       modalHostname = settings.modalHostname
+    } else if (provider === 'sensenova') {
+      model = settings.sensenovaModel || 'sensenova-6.8-flash-lite'
+      apiKey = settings.sensenovaApiKey
     } else if (provider === 'custom') {
       model = settings.customModel || ''
       apiKey = settings.customApiKey
@@ -59,6 +62,7 @@ export function getDisplayModel(settings: AppSettings, selectedModel: string): s
   if (settings.provider === 'openai') return settings.openaiModel
   if (settings.provider === 'openrouter') return settings.openrouterModel
   if (settings.provider === 'modal') return settings.modalModel
+  if (settings.provider === 'sensenova') return settings.sensenovaModel
   if (settings.provider === 'custom') return settings.customModel
   return settings.geminiModel
 }

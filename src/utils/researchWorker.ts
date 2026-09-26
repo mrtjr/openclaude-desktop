@@ -44,6 +44,10 @@ export type WorkerExec = (name: string, args: Record<string, any>) => Promise<st
  *  chamada de escrita/execução, só estas rodam de fato. */
 export const WORKER_TOOL_NAMES = new Set<string>([
   'web_search', 'fetch_url', 'read_file', 'search_files', 'list_directory',
+  // Mapeamento de repositório: sem elas o worker só conseguia LER arquivos que
+  // já soubesse nomear. Ambas estão em SAFE_TOOLS (constants/tools.ts) e são
+  // read-only declaradas — a fronteira de segurança segue intacta.
+  'glob_files', 'project_tree',
 ])
 
 // ─── Subagentes ANINHADOS (v2.88.0) ─────────────────────────────────
@@ -102,12 +106,18 @@ export function buildWorkerToolsForDepth(allTools: any[], depth: number, maxDept
   return allTools.filter((t) => allow.has(t?.function?.name))
 }
 
+/** Teto de subtarefas de UM lote de RAIZ (v2.201.0). O aninhado é mais apertado
+ *  (NESTED_FANOUT_CAP) porque roda dentro da vaga do pai; a raiz é o fan-out
+ *  deliberado — mas ilimitado ela virava um lote de dezenas de workers que
+ *  entope o semáforo e estoura o rate limit da nuvem. */
+export const ROOT_FANOUT_CAP = 8
+
 /** Limita o fan-out de UMA delegação aninhada ao teto rígido. */
 export function capNestedSubtasks<T>(subtasks: T[], cap = NESTED_FANOUT_CAP): T[] {
   return Array.isArray(subtasks) ? subtasks.slice(0, Math.max(1, cap)) : []
 }
 
-export const DEFAULT_WORKER_MAX_STEPS = 6
+export const DEFAULT_WORKER_MAX_STEPS = 8
 /** Quantos workers rodam ao mesmo tempo no Ollama (limitado pela VRAM local;
  *  o resto enfileira). Modal-pool usa o nº de keys como teto. */
 export const DEFAULT_WORKER_CONCURRENCY = 4
@@ -116,8 +126,8 @@ export const DEFAULT_WORKER_CONCURRENCY = 4
 export const WORKER_TOOL_RESULT_CAP = 8000
 
 export const WORKER_SYSTEM_PROMPT: Record<string, string> = {
-  pt: 'Você é um subagente de PESQUISA com ferramentas APENAS DE LEITURA (web_search, fetch_url, read_file, search_files, list_directory). Use-as para coletar o que precisa e então devolva uma SÍNTESE objetiva e auto-contida — itens-chave, caminhos/fontes citados e a conclusão. Você NÃO pode escrever, editar nem executar comandos: só ler e buscar. Pare de usar ferramentas assim que tiver o suficiente para responder; não repita a mesma busca.',
-  en: 'You are a RESEARCH subagent with READ-ONLY tools (web_search, fetch_url, read_file, search_files, list_directory). Use them to gather what you need, then return a concise, self-contained SYNTHESIS — key points, paths/sources cited, and the conclusion. You CANNOT write, edit, or run commands — only read and search. Stop using tools as soon as you have enough to answer; do not repeat the same query.',
+  pt: 'Você é um subagente especialista em PESQUISA e ANÁLISE com ferramentas APENAS DE LEITURA (web_search, fetch_url, read_file, search_files, list_directory, glob_files, project_tree). Use-as para coletar evidências e devolva uma SÍNTESE auto-contida. REGRAS: 1) Pare de usar ferramentas assim que tiver o suficiente para responder. 2) Você NÃO pode escrever, editar nem executar comandos. 3) Na síntese final, inclua: Achados Principais, Fontes/Caminhos citados (URLs ou arquivos) e Conclusão objetiva.',
+  en: 'You are a specialized RESEARCH & ANALYSIS subagent with READ-ONLY tools (web_search, fetch_url, read_file, search_files, list_directory, glob_files, project_tree). Use them to gather evidence and return a self-contained SYNTHESIS. RULES: 1) Stop using tools as soon as you have enough data. 2) You CANNOT write, edit, or run commands. 3) In your final synthesis include: Key Findings, Sources/Paths cited (URLs or file paths), and Direct Conclusion.',
 }
 
 /** Cláusula extra do prompt quando o worker AINDA pode aninhar (v2.88.0): avisa
@@ -178,6 +188,31 @@ export function pickFallbackModel(
   if (alt) return alt
   const fb = (fallback || '').trim()
   return fb && fb !== failed ? fb : ''
+}
+
+/** Mensagem ACIONÁVEL para falha de transporte de um worker. Um Ollama fora do
+ *  ar chega como `AggregateError` cru (Node agrega os ECONNREFUSED de IPv4+IPv6),
+ *  que não diz nada ao usuário — vira "Ollama não respondeu (porta 11434)".
+ *  Falha de nuvem vira um aviso de conexão/key em vez do erro nu. */
+export function workerChatErrorMessage(raw: unknown, executor: string): string {
+  const msg = String((raw as any)?.message ?? raw ?? '').trim()
+  const offline = /aggregateerror|econnrefused|enotfound|ehostunreach|fetch failed|socket hang up/i.test(msg)
+  if (!offline) return msg || `${executor} error`
+  const detail = msg ? ` [${msg}]` : ''
+  return executor === 'ollama'
+    ? `Ollama não respondeu na porta 11434 — o serviço está rodando?${detail}`
+    : `${executor} inacessível — verifique a conexão e a API key.${detail}`
+}
+
+/** A lista de modelos por-subtarefa só faz sentido no executor OLLAMA: os
+ *  workers do Modal e do SenseNova usam o modelo fixo do provider e IGNORAM o
+ *  campo "model" da subtarefa. Anunciar a lista neles faria o orquestrador
+ *  escolher nomes sem efeito nenhum. */
+export function shouldAnnounceSubagentModels(
+  executor: string | undefined,
+  models: string[] | undefined,
+): boolean {
+  return (executor ?? 'ollama') === 'ollama' && !!(models || []).length
 }
 
 /** Injeta a lista de modelos configurados na descrição do delegate_subtasks, p/
@@ -261,6 +296,14 @@ export interface WorkerOutcome {
 /** Loop de um worker: chama o modelo → executa as ferramentas pedidas (read-only)
  *  → realimenta os resultados → repete até a resposta final ou o teto de passos.
  *  Não muta `messages` (clona). */
+/** Texto que REALMENTE diz algo. Uma string so com quebras de linha e TRUTHY
+ *  em JS, e era isso que fazia um worker devolver bolha vazia: o modelo emitia
+ *  so espaco em branco, o `if (res.content)` aceitava, virava `last`, e o
+ *  `last || <erro>` abaixo entregava o branco no lugar da mensagem de erro. */
+function meaningful(s: string | undefined | null): boolean {
+  return typeof s === 'string' && s.trim().length > 0
+}
+
 export async function runResearchWorker(opts: RunWorkerOpts): Promise<WorkerOutcome> {
   const { messages, tools, chat, exec } = opts
   const maxSteps = opts.maxSteps ?? DEFAULT_WORKER_MAX_STEPS
@@ -270,14 +313,33 @@ export async function runResearchWorker(opts: RunWorkerOpts): Promise<WorkerOutc
   let last = ''
 
   for (let step = 0; step < maxSteps; step++) {
-    if (opts.isStopped?.()) return { text: last || '[cancelado]', steps: step, toolsUsed }
+    if (opts.isStopped?.()) return { text: meaningful(last) ? last : '[cancelado]', steps: step, toolsUsed }
     const res = await chat(convo, tools)
     if (res.error) {
-      return { text: last || `[erro do worker: ${res.error}]`, steps: step + 1, toolsUsed, error: true }
+      // O erro SEMPRE aparece. Antes era `last || <erro>`: bastava haver texto
+      // parcial (ou só quebras de linha) para a mensagem de falha ser
+      // DESCARTADA — o orquestrador recebia uma bolha vazia depois de o worker
+      // ter feito 26 fetch_url, sem nada que dissesse o que quebrou. Mesma
+      // classe do bug corrigido na síntese final (v2.201.0), no outro caminho.
+      const causa = `[erro do worker: ${res.error}]`
+      return {
+        text: meaningful(last) ? `${causa} — resultado PARCIAL abaixo
+
+${last}` : causa,
+        steps: step + 1, toolsUsed, error: true,
+      }
     }
-    if (res.content) last = res.content
+    if (meaningful(res.content)) last = res.content
     if (!res.toolCalls.length) {
-      return { text: res.content || last || '[sem resposta]', steps: step + 1, toolsUsed }
+      // Sem ferramenta E sem texto útil = o worker terminou sem entregar nada.
+      // Dizer isso é melhor que devolver branco: o orquestrador não tem como
+      // distinguir "não achei" de "quebrei" olhando espaço em branco.
+      if (meaningful(res.content)) return { text: res.content, steps: step + 1, toolsUsed }
+      if (meaningful(last)) return { text: last, steps: step + 1, toolsUsed }
+      return {
+        text: '[o worker encerrou sem produzir texto — nenhuma síntese foi devolvida]',
+        steps: step + 1, toolsUsed, error: true,
+      }
     }
     // Registra o turno do assistente (com as tool_calls) antes dos resultados.
     convo.push({
@@ -305,10 +367,23 @@ export async function runResearchWorker(opts: RunWorkerOpts): Promise<WorkerOutc
   if (opts.finalNudge) {
     convo.push({ role: 'user', content: opts.finalNudge })
     const fin = await chat(convo, [])
-    const text = fin.error ? (last || `[erro: ${fin.error}]`) : (fin.content || last || '[sem síntese final]')
-    return { text, steps: maxSteps + 1, toolsUsed, capped: true, error: !!fin.error && !last }
+    // A síntese final falhou. Antes, having texto parcial (`last`) fazia isto
+    // devolver error:false — o worker era contado como SUCESSO, o retry-com-
+    // fallback nunca rodava e o painel marcava "ok". Agora a falha é sempre
+    // falha; o texto parcial ainda vai junto, mas ETIQUETADO, para o
+    // orquestrador saber que não pode tratá-lo como conclusão.
+    const parcial = meaningful(last)
+    const text = fin.error
+      ? (parcial ? `[SÍNTESE FINAL FALHOU: ${fin.error}] — resultado PARCIAL abaixo
+
+${last}` : `[erro: ${fin.error}]`)
+      : (meaningful(fin.content) ? fin.content : (parcial ? last : '[sem síntese final]'))
+    return { text, steps: maxSteps + 1, toolsUsed, capped: true, error: !!fin.error }
   }
-  return { text: last || '[worker atingiu o limite de passos sem síntese final]', steps: maxSteps, toolsUsed, capped: true }
+  return {
+    text: meaningful(last) ? last : '[worker atingiu o limite de passos sem síntese final]',
+    steps: maxSteps, toolsUsed, capped: true,
+  }
 }
 
 /** Roda thunks com no máximo `cap` em paralelo, preservando a ordem dos

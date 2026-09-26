@@ -16,16 +16,19 @@
 
 export const DEFAULT_VISION_OLLAMA_MODEL = 'llava'
 
-/** Providers que o handler vision-chat sabe falar (custom fica de fora). */
-const VISION_PROVIDERS = new Set(['ollama', 'openai', 'gemini', 'anthropic', 'openrouter', 'modal'])
+/** Providers que o handler vision-chat sabe falar (custom fica de fora —
+ *  base URL arbitrária, sem garantia de multimodal). SenseNova ENTRA: a doc
+ *  oficial (OpenSenseNova/SenseNova6.8 API.md) documenta entrada de imagem no
+ *  formato Vision da OpenAI, por URL ou data-URL base64. */
+const VISION_PROVIDERS = new Set(['ollama', 'openai', 'gemini', 'anthropic', 'openrouter', 'modal', 'sensenova'])
 
 export interface VisionSettingsLike {
   provider?: string
   visionModel?: string
   openaiModel?: string; geminiModel?: string; anthropicModel?: string
-  openrouterModel?: string; modalModel?: string
+  openrouterModel?: string; modalModel?: string; sensenovaModel?: string
   openaiApiKey?: string; geminiApiKey?: string; anthropicApiKey?: string
-  openrouterApiKey?: string; modalApiKey?: string
+  openrouterApiKey?: string; modalApiKey?: string; sensenovaApiKey?: string
 }
 
 export interface VisionTarget { provider: string; model: string; apiKey: string }
@@ -46,13 +49,15 @@ export function resolveVisionTarget(s: VisionSettingsLike | undefined): VisionTa
     provider === 'gemini' ? s?.geminiModel :
     provider === 'anthropic' ? s?.anthropicModel :
     provider === 'openrouter' ? s?.openrouterModel :
-    provider === 'modal' ? s?.modalModel : ''
+    provider === 'modal' ? s?.modalModel :
+    provider === 'sensenova' ? s?.sensenovaModel : ''
   const apiKey =
     provider === 'openai' ? s?.openaiApiKey :
     provider === 'gemini' ? s?.geminiApiKey :
     provider === 'anthropic' ? s?.anthropicApiKey :
     provider === 'openrouter' ? s?.openrouterApiKey :
-    provider === 'modal' ? s?.modalApiKey : ''
+    provider === 'modal' ? s?.modalApiKey :
+    provider === 'sensenova' ? s?.sensenovaApiKey : ''
   return { provider, model: (model || '').trim(), apiKey: apiKey || '' }
 }
 

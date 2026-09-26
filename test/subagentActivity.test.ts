@@ -19,6 +19,13 @@ describe('SubagentActivityStore', () => {
     expect(s.getSnapshot()[0]).toMatchObject({ status: 'error', result: '[timeout]' })
   })
 
+  it('cancelRun cancela worker individual em execução', () => {
+    const s = new SubagentActivityStore()
+    s.start('w1', 'pesquisar algo', 'llama3.2', 100)
+    s.cancelRun('w1', 'Cancelado pelo usuário')
+    expect(s.getSnapshot()[0]).toMatchObject({ status: 'error', result: 'Cancelado pelo usuário' })
+  })
+
   it('getSnapshot devolve a MESMA referência entre mutações (contrato do useSyncExternalStore)', () => {
     const s = new SubagentActivityStore()
     s.start('w1', 't', 'm', 0)

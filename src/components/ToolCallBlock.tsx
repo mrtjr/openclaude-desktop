@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { Play, ChevronDown, Wrench, Terminal } from 'lucide-react'
+import { Play, ChevronDown, Wrench, Terminal, Loader2, CheckCircle2, XCircle } from 'lucide-react'
 import type { ToolCall, ToolResult } from '../types'
 import { formatMarkdown } from '../utils/formatting'
 import { toolCallSummary, shouldRenderToolResultAsMarkdown } from '../utils/toolDisplay'
@@ -13,6 +13,20 @@ import { isToolError } from '../utils/toolPolicy'
 // execute_command), cada novo passo recriava o array de msgs do grupo ao vivo e
 // re-renderizava TODOS os blocos — re-parseando o markdown de cada resultado
 // (O(n²)). Memoizado + markdown cacheado, só o bloco novo renderiza.
+//
+// Status por estado (v2.213.0) — reimplementa a intenção do commit 59d56af
+// (blocos colapsáveis: pendente/erro abertos, sucesso fechado, ícone de estado)
+// sem as quatro regressões que ele trouxe:
+//   1. estado LOCAL (useState) no lugar de collapsedTools/onToggleCollapse, o
+//      que quebrava o contrato do memo e perdia a escolha do usuário;
+//   2. <details> no lugar de render condicional — filhos de um <details>
+//      fechado continuam no DOM, então todo resultado (com markdown) era
+//      montado mesmo colapsado: o O(n²) acima, de volta;
+//   3. classes Tailwind — o projeto NÃO tem Tailwind, então a borda de cor por
+//      estado, o layout do cabeçalho e o giro da seta simplesmente não
+//      existiam na tela;
+//   4. texto fixo em português e cabeçalho sem acesso por teclado (o
+//      preventDefault no <summary> anulava Enter/Espaço).
 
 interface ToolCallBlockProps {
   tc: ToolCall
@@ -24,25 +38,43 @@ interface ToolCallBlockProps {
   onToggleCollapse: (toolKey: string) => void
 }
 
+type ToolState = 'pending' | 'error' | 'ok'
+
 function ToolCallBlockInner({
   tc, result, toolKey, language, collapsedTools, onToggleCollapse,
 }: ToolCallBlockProps) {
+  const en = language === 'en'
   const resultText = result?.result || ''
-  const defaultCollapsed = resultText.length > 200
+  const state: ToolState = !result
+    ? 'pending'
+    : (result.error || (resultText && isToolError(resultText, tc.name))) ? 'error' : 'ok'
+  // Padrão por ESTADO: pendente e erro ficam abertos (é onde o usuário precisa
+  // olhar); sucesso fecha (limpa o chat). `collapsedTools` guarda só as chaves
+  // que o usuário ALTERNOU a partir desse padrão — o estado mora no pai, então
+  // sobrevive a re-render e respeita o memo.
+  const defaultCollapsed = state === 'ok'
   const isCollapsed = collapsedTools.has(toolKey) ? !defaultCollapsed : defaultCollapsed
-  // Header readability (v2.12.52): a run with 10+ execute_commands used
-  // to render identical rows — surface the main arg and flag failures
-  // (isToolError reuses the audit classification, exec markers included).
   const summary = toolCallSummary(tc.name, tc.arguments)
-  const failed = !!resultText && isToolError(resultText, tc.name)
+
   return (
-    <div className="tool-call">
-      <button className="tool-call-header" onClick={() => onToggleCollapse(toolKey)}>
+    <div className={`tool-call tool-call--${state}`}>
+      <button
+        type="button"
+        className="tool-call-header"
+        onClick={() => onToggleCollapse(toolKey)}
+        aria-expanded={!isCollapsed}
+      >
         {isCollapsed ? <Play size={10} className="tool-play" /> : <ChevronDown size={14} />}
+        {state === 'pending' && <Loader2 size={12} className="tool-call-state animate-spin" aria-hidden="true" />}
+        {state === 'error' && <XCircle size={12} className="tool-call-state" aria-hidden="true" />}
+        {state === 'ok' && <CheckCircle2 size={12} className="tool-call-state" aria-hidden="true" />}
         <Wrench size={12} className="tool-icon" /><span>{tc.name}</span>
         {summary && <span className="tool-call-summary" title={summary}>{summary}</span>}
-        {failed && <span className="tool-call-badge-error">{language === 'en' ? 'error' : 'erro'}</span>}
+        {state === 'pending' && <span className="tool-call-status">{en ? 'running…' : 'executando…'}</span>}
+        {state === 'error' && <span className="tool-call-badge-error">{en ? 'error' : 'erro'}</span>}
       </button>
+      {/* Render CONDICIONAL, não <details>: colapsado = fora do DOM. É o que
+          mantém barata uma rodada com centenas de ferramentas. */}
       {!isCollapsed && (
         <>
           <pre className="tool-call-args">{JSON.stringify(tc.arguments, null, 2)}</pre>

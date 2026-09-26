@@ -718,6 +718,7 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                       selectedId={selectedProvider}
                       onSelect={setSelectedProvider}
                       activeProviderId={local.provider}
+                      items={filteredProviders}
                     />
                   ) : (
                     <p className="provider-search-empty">
@@ -765,13 +766,25 @@ export default function Settings({ isOpen, onClose, settings, onSave, mcpStatus 
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <select
                       value={local.subagentExecutor || 'ollama'}
-                      onChange={(e) => setLocal(s => ({ ...s, subagentExecutor: e.target.value as 'ollama' | 'modal' }))}
+                      onChange={(e) => setLocal(s => ({ ...s, subagentExecutor: e.target.value as 'ollama' | 'modal' | 'sensenova' }))}
                       style={{ padding: '6px 8px', fontSize: '0.85rem' }}
                     >
                       <option value="ollama">{local.language === 'pt' ? 'Ollama local (paralelo)' : 'Local Ollama (parallel)'}</option>
                       <option value="modal">{local.language === 'pt' ? 'Pool do Modal' : 'Modal pool'}</option>
+                      <option value="sensenova">{local.language === 'pt' ? 'SenseNova (nuvem)' : 'SenseNova (cloud)'}</option>
                     </select>
                   </div>
+                  {local.subagentExecutor === 'sensenova' && (
+                    <p style={{ fontSize: '0.78rem', margin: '8px 0 0', color: local.sensenovaApiKey ? 'var(--color-text-muted, #888)' : '#f59e0b' }}>
+                      {local.sensenovaApiKey
+                        ? (local.language === 'pt'
+                          ? `Workers rodam em ${local.sensenovaModel || 'sensenova-6.8-flash-lite'} usando a MESMA API key (não há pool). O paralelismo respeita o limite global acima — o teto real é o rate limit da sua conta.`
+                          : `Workers run on ${local.sensenovaModel || 'sensenova-6.8-flash-lite'} sharing ONE API key (no pool). Parallelism follows the global limit above — the real ceiling is your account rate limit.`)
+                        : (local.language === 'pt'
+                          ? '⚠ Sem API key do SenseNova: os subagentes vão cair no Ollama local. Configure a key na aba PROVEDOR → SenseNova.'
+                          : '⚠ No SenseNova API key: subagents will fall back to local Ollama. Set the key in the PROVIDER tab → SenseNova.')}
+                    </p>
+                  )}
                   {(local.subagentExecutor || 'ollama') === 'ollama' && (
                     <SubagentModelsPicker
                       selected={local.subagentModels || []}

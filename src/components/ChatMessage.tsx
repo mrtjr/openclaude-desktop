@@ -1,5 +1,6 @@
+import { messageAttachments } from '../utils/attachments'
 import { memo, useState } from 'react'
-import { User, RefreshCw, GitBranch, Trash, Pencil, Check, CornerDownRight, ShieldCheck } from 'lucide-react'
+import { User, RefreshCw, GitBranch, Trash, Pencil, Check, CornerDownRight, ShieldCheck, Undo2 } from 'lucide-react'
 import type { Message } from '../types'
 import { formatMarkdown } from '../utils/formatting'
 import { applyDisplayTransforms, type DisplayTransform } from '../utils/outputHooks'
@@ -33,8 +34,10 @@ interface ChatMessageProps {
   /** Keys the user toggled away from their default collapsed state. */
   collapsedTools: Set<string>
   onToggleCollapse: (toolKey: string) => void
-  onOpenArtifact: (artifact: Artifact) => void
+  onOpenArtifact: (artifact: { type: string, content: string }) => void
   onRegenerate: () => void
+  /** v2.208.0 — reverte os arquivos que ESTE turno alterou (rewind). */
+  onRevertCheckpoint?: (msgId: string, seq: number, files: number) => void
   onBranch: (msgId: string) => void
   onDelete: (msgId: string) => void
   /** v2.129.0 — edit a user message in place and re-run the conversation
@@ -58,7 +61,7 @@ interface ChatMessageProps {
 
 function ChatMessageInner({
   msg, language, showThinking, collapsedTools,
-  onToggleCollapse, onOpenArtifact, onRegenerate, onBranch, onDelete, onEditResend, onContinue, onFollowup, onVerify, showToast, displayTransforms,
+  onToggleCollapse, onOpenArtifact, onRegenerate, onRevertCheckpoint, onBranch, onDelete, onEditResend, onContinue, onFollowup, onVerify, showToast, displayTransforms,
 }: ChatMessageProps) {
   const en = language === 'en'
   // In-place edit state (ChatGPT-style). Local so toggling it never touches
@@ -80,15 +83,14 @@ function ChatMessageInner({
         {msg.role === 'user' ? <User size={16} /> : <div className="oc-logo">OC</div>}
       </div>
       <div className="message-content">
-        {msg.image && (
-          <img className="message-image" src={`data:${msg.image.mimeType};base64,${msg.image.base64}`} alt={msg.image.name} />
-        )}
-        {msg.document && (
-          <div className="message-doc" title={msg.document.name}>
+        {messageAttachments(msg).map((a, i) => a.kind === 'image' ? (
+          <img key={`img-${i}`} className="message-image" src={`data:${a.mimeType};base64,${a.base64}`} alt={a.name} />
+        ) : (
+          <div key={`doc-${i}`} className="message-doc" title={a.name}>
             <span className="message-doc-icon">📄</span>
-            <span className="message-doc-name">{msg.document.name}{msg.document.pages ? ` · ${msg.document.pages}p` : ''}</span>
+            <span className="message-doc-name">{a.name}{a.pages ? ` · ${a.pages}p` : ''}</span>
           </div>
-        )}
+        ))}
         {msg.thinking && showThinking && (
           <details className="thinking-block" style={{ margin: '0 0 8px' }}>
             <summary style={{ cursor: 'pointer', opacity: 0.65, fontSize: 12, userSelect: 'none' }}>💭 Raciocínio</summary>
@@ -117,11 +119,20 @@ function ChatMessageInner({
             </div>
           </div>
         ) : (
-          msg.content && <div className="message-text" dangerouslySetInnerHTML={{ __html: formatMarkdown(displayContent) }} />
+          msg.content && <div className="message-text" dangerouslySetInnerHTML={{ __html: formatMarkdown(displayContent) }} onClick={(e) => {
+            const target = e.target as HTMLElement;
+            if (target.classList.contains('canvas-btn')) {
+              const type = target.getAttribute('data-lang');
+              const content = target.getAttribute('data-content');
+              if (type && content && onOpenArtifact) {
+                onOpenArtifact({ type, content: decodeURIComponent(content) });
+              }
+            }
+          }} />
         )}
         {artifacts.length > 0 && (
           <button
-            onClick={() => onOpenArtifact(artifacts[0])}
+            onClick={() => onOpenArtifact({ type: artifacts[0].lang, content: artifacts[0].code })}
             title={language === 'pt' ? 'Renderizar o artefato em preview ao vivo' : 'Render the artifact in a live preview'}
             style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', border: '1px solid rgba(127,127,127,0.3)', background: 'transparent', color: 'inherit', opacity: 0.85 }}
           >
@@ -187,6 +198,18 @@ function ChatMessageInner({
             )}
             {msg.role === 'assistant' && msg.content && (
               <ReadAloudButton id={msg.id} text={msg.content} language={en ? 'en' : 'pt'} />
+            )}
+            {msg.role === 'assistant' && msg.checkpoint && msg.checkpoint.files > 0 && onRevertCheckpoint && (
+              <button
+                className="msg-action-btn msg-revert-btn"
+                onClick={() => onRevertCheckpoint(msg.id, msg.checkpoint!.seq, msg.checkpoint!.files)}
+                title={en
+                  ? `Revert the ${msg.checkpoint.files} file(s) this turn changed`
+                  : `Reverter os ${msg.checkpoint.files} arquivo(s) alterados neste turno`}
+                aria-label={en ? 'Revert files from this turn' : 'Reverter arquivos deste turno'}
+              >
+                <Undo2 size={12} />
+              </button>
             )}
             <button
               className="msg-action-btn msg-branch-btn"

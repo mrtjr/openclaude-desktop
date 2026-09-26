@@ -106,10 +106,12 @@ body {
   align-items: center;
   justify-content: space-between;
   height: 42px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
+  background: rgba(19, 19, 31, 0.7);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
   -webkit-app-region: drag;
+  z-index: 999;
 }
 .titlebar-drag { display: flex; align-items: center; padding: 0 12px; gap: 12px; min-width: 0; }
 .titlebar-logo { display: flex; align-items: center; gap: 8px; color: var(--text-primary); font-weight: 600; font-size: 13px; letter-spacing: -0.2px; flex-shrink: 0; }
@@ -591,6 +593,20 @@ body {
   font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px;
   color: #ff6b6b; background: rgba(255, 107, 107, 0.12); border: 1px solid rgba(255, 107, 107, 0.35);
 }
+/* Estado do bloco de ferramenta (v2.213.0). Substitui as classes Tailwind do
+   commit 59d56af, que nunca renderizaram: o projeto não tem Tailwind. */
+.tool-call--pending { border-left: 3px solid #60a5fa; }
+.tool-call--error   { border-left: 3px solid #ef4444; }
+.tool-call--ok      { border-left: 3px solid rgba(16, 185, 129, 0.55); }
+.tool-call-state { flex-shrink: 0; }
+.tool-call--pending .tool-call-state { color: #60a5fa; }
+.tool-call--error   .tool-call-state { color: #ef4444; }
+.tool-call--ok      .tool-call-state { color: #10b981; }
+.tool-call-status {
+  flex-shrink: 0; margin-left: auto; font-size: 10px; font-style: italic;
+  color: var(--text-secondary); font-weight: 400;
+}
+.tool-call-header:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .tool-icon { margin-right: 2px; }
 .tool-play { color: var(--text-secondary); margin-left: 2px; margin-right: 2px; }
 .tool-call-args {
@@ -682,14 +698,39 @@ body {
 }
 
 /* ── Drag & Drop overlay ──────────────────────────────────────── */
+/* Moldura leve, SEM escurecer nem desfocar: o destaque que importa é o do
+   próprio composer (.composer-dragging). Com o fundo 0.85 + blur de antes, o
+   overlay cobria justamente a caixa onde o arquivo ia cair. */
 .drag-overlay {
-  position: fixed; inset: 0;
-  background: rgba(13,13,23,0.85);
+  position: fixed; inset: 10px;
+  background: rgba(var(--accent-rgb), 0.05);
   border: 2px dashed var(--accent);
+  border-radius: 16px;
   display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 14px;
-  z-index: 9999; color: var(--accent); font-size: 18px; font-weight: 600;
-  pointer-events: none; backdrop-filter: blur(4px);
+  align-items: center; justify-content: flex-start; gap: 12px;
+  padding-top: 16vh;
+  z-index: 9999; color: var(--accent); font-size: 16px; font-weight: 600;
+  pointer-events: none;
+}
+
+/* ── Omni-input: composer durante o arraste + zona de anexos ─────── */
+.input-pill.composer-dragging {
+  border-color: var(--accent);
+  border-style: dashed;
+  background: rgba(var(--accent-rgb), 0.08);
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.15);
+}
+.attachment-zone {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+  max-height: 132px;
+  overflow-y: auto;
+}
+.attachment-zone .image-attach-pill { margin: 0; max-width: 240px; }
+.attachment-zone .image-attach-name {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
 
 /* ── Settings Modal ───────────────────────────────────────────── */
@@ -3755,6 +3796,85 @@ a:focus-visible {
 .provider-test-result.err {
   color: #ef4444;
   background: color-mix(in srgb, #ef4444 15%, transparent);
+}
+
+.msg-revert-btn:hover { color: #f59e0b; }
+
+/* ── Diálogo de rewind ────────────────────────────────────────── */
+.rewind-modal {
+  background: var(--bg-elevated, var(--bg, #1a1a1a));
+  border: 1px solid var(--border, rgba(128,128,128,0.3));
+  border-radius: 12px;
+  width: min(440px, 92vw);
+  padding: 18px;
+  box-shadow: 0 18px 48px rgba(0,0,0,0.45);
+}
+.rewind-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.rewind-header h3 { margin: 0; font-size: 1rem; }
+.rewind-close {
+  background: transparent; border: 0; color: var(--text-muted, #888);
+  cursor: pointer; padding: 4px; border-radius: 6px; display: flex;
+}
+.rewind-close:hover { color: var(--text, inherit); }
+.rewind-body { font-size: 0.82rem; color: var(--text-muted, #888); margin: 10px 0 14px; line-height: 1.45; }
+.rewind-actions { display: flex; flex-direction: column; gap: 8px; }
+.rewind-opt {
+  display: flex; align-items: flex-start; gap: 10px; text-align: left;
+  padding: 11px 12px; border-radius: 9px; cursor: pointer;
+  border: 1px solid var(--border, rgba(128,128,128,0.3));
+  background: transparent; color: var(--text, inherit); width: 100%;
+}
+.rewind-opt:hover:not(:disabled) { border-color: var(--accent); background: rgba(var(--accent-rgb),0.08); }
+.rewind-opt:disabled { opacity: 0.45; cursor: not-allowed; }
+.rewind-opt svg { margin-top: 2px; flex-shrink: 0; }
+.rewind-opt-body { display: flex; flex-direction: column; gap: 3px; }
+.rewind-opt-body strong { font-size: 0.86rem; font-weight: 600; }
+.rewind-opt-body small { font-size: 0.75rem; color: var(--text-muted, #888); line-height: 1.4; }
+.rewind-cancel {
+  margin-top: 12px; width: 100%; padding: 8px; border-radius: 8px; cursor: pointer;
+  background: transparent; border: 0; color: var(--text-muted, #888); font-size: 0.82rem;
+}
+.rewind-cancel:hover { color: var(--text, inherit); }
+
+
+
+.provider-ctx-hint {
+  font-size: 0.74rem;
+  color: var(--text-muted, #888);
+  margin: 6px 0 0 0;
+}
+.provider-ctx-hint strong { color: var(--text, inherit); font-weight: 600; }
+
+/* ── Catálogo de modelos buscado (chips) ─────────────────────── */
+
+.provider-model-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.provider-model-chip {
+  font-size: 0.74rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border, rgba(128,128,128,0.3));
+  background: transparent;
+  color: var(--text-muted, #888);
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.provider-model-chip:hover {
+  border-color: var(--accent);
+  color: var(--text, inherit);
+}
+.provider-model-chip.selected {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
 }
 
 /* ── Modal pool editor ────────────────────────────────────────── */

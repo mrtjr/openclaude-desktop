@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { SUBAGENT_ROLES, resolveSubagentPrompt, subagentRolesHint } from '../src/constants/subagents'
+import { SUBAGENT_ROLES, resolveSubagentPrompt, autoInferSubagentRole, subagentRolesHint } from '../src/constants/subagents'
 
 describe('SUBAGENT_ROLES', () => {
   it('todos têm id, name e description; ids únicos', () => {
@@ -13,15 +13,21 @@ describe('SUBAGENT_ROLES', () => {
   })
 })
 
-describe('resolveSubagentPrompt', () => {
+describe('autoInferSubagentRole & resolveSubagentPrompt', () => {
   it('resolve papel conhecido (case-insensitive)', () => {
     expect(resolveSubagentPrompt('explorer')).toContain('EXPLORADOR')
     expect(resolveSubagentPrompt('REVIEWER')).toContain('REVISOR')
   })
-  it('papel desconhecido/vazio → string vazia', () => {
-    expect(resolveSubagentPrompt('inexistente')).toBe('')
-    expect(resolveSubagentPrompt(undefined)).toBe('')
-    expect(resolveSubagentPrompt('general')).toBe('') // geral não prepende nada
+
+  it('infere papel automaticamente com base na subtarefa quando omitido', () => {
+    expect(autoInferSubagentRole('Revisar erro EDatabaseError no arquivo uPix.pas')).toBe('reviewer')
+    expect(autoInferSubagentRole('Criar um plano de arquitetura passo a passo')).toBe('planner')
+    expect(autoInferSubagentRole('Investigar onde está o arquivo de configuração')).toBe('explorer')
+  })
+
+  it('resolveSubagentPrompt usa o fallback do prompt quando agentId for indefinido', () => {
+    expect(resolveSubagentPrompt(undefined, 'revisar erro no arquivo')).toContain('REVISOR')
+    expect(resolveSubagentPrompt(undefined, 'desenhar o plano de implementação')).toContain('PLANEJADOR')
   })
 })
 

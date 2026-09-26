@@ -7,6 +7,576 @@ o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Security — 🛡️ Correções da revisão do branch (2.212.0)
+
+- **Canvas de artefatos:** o iframe usava `allow-scripts` + `allow-same-origin`,
+  combinação que anula o sandbox — o HTML gerado pelo modelo alcançava
+  `parent.electron` (executar comando, gravar arquivo) sem aprovação. Agora o
+  artefato roda isolado do app.
+- **`memory_write` / `memory_append`:** rodam sem aprovação e aceitavam `../` —
+  gravavam em qualquer lugar do disco. O caminho agora fica preso a
+  `.claude/memory`.
+- **`.env` da `DATABASE_URL` protegido** das ferramentas de arquivo do agente
+  (`read_file`, `write_file`, `edit_file`, `read_document`, `memory_read`).
+- **Guarda de caminho no Windows:** o nome curto 8.3 (`JNIOR~1` no lugar de
+  `Júnior`) driblava o bloqueio do `~/.ssh`, e o sufixo `::$DATA` driblava
+  arquivo protegido. O `isPathSafe` confere também a forma nativa do caminho;
+  unidades de rede mapeadas seguem funcionando.
+- **Subagentes respeitam as regras de bloqueio do usuário** — e os
+  implementadores, a denylist do sandbox em `execute_command`. Eles rodam por
+  fora do gate do agente principal, então nada disso valia para eles.
+- **`maskSecrets`:** chaves `sk-proj-…` com `_` passavam sem máscara.
+
+### Added — 🗄️ `postgres_query`: SQL só-leitura no banco do NovoPdv (2.212.0)
+
+Nova ferramenta para consultar o PostgreSQL do NovoPdv. Cada consulta pede
+aprovação e passa por cinco camadas: guard léxico (bloqueia escrita, DDL, mais
+de uma instrução e funções que escapam da leitura), transação `READ ONLY`,
+protocolo estendido (o servidor recusa mais de uma instrução),
+`statement_timeout` de 15 s e teto de 200 linhas. A `DATABASE_URL` vem de um
+`.env` — raiz do projeto em dev, pasta de dados do app no instalado — e nunca
+sai do processo principal. O resultado volta em JSON de uma linha que cabe no
+limite de saída das ferramentas.
+
+### Added — 📎 Omni-input: vários anexos por mensagem (2.212.0)
+
+Arrastar, colar ou escolher arquivos agora ACRESCENTA cards ao composer (até
+10): imagens vão multimodal; PDF, DOCX, código e texto viram blocos
+`<document>`. Antes havia um slot por tipo — soltar três imagens deixava só a
+última, e código ia parar dentro da caixa de texto. Binário é recusado com
+aviso.
+
+### Fixed — 🧹 Revisão do branch (2.212.0)
+
+- **Corte de contexto por custo:** guardava só a 1ª mensagem + as 5 últimas —
+  perdia o pedido do usuário e podia deixar uma resposta `tool` órfã (HTTP
+  400). Agora mantém as mensagens `system`, a tarefa atual e a troca mais
+  recente, e corta do mais antigo em blocos.
+- **`take_screenshot`:** devolvia a imagem como base64 em texto, cortado em
+  4.000 caracteres — o modelo nunca a via. Agora passa pelo modelo de visão, com
+  captura em pixels físicos (as coordenadas do `mouse_move`).
+- **Fontes e fatos frescos:** qualquer resultado de ferramenta com link virava
+  "fonte web" e ia para a memória como fato verificado; agora só resultados de
+  pesquisa web e de subagentes.
+- **Parlamento:** com todos os papéis em falha, o coordenador sintetizava um
+  debate vazio; agora cancela, e avisa quais perspectivas faltaram.
+- **Telemetria** grava na pasta de dados do app (antes: na pasta de onde o app
+  foi aberto — no instalado, a de instalação ou System32).
+- **Skill `git_workflow`:** `git reset --hard` + `git clean -fd`, que apagavam
+  trabalho não commitado do usuário, viraram `git stash` reversível; `git add .`
+  virou só os arquivos alterados.
+- **Suítes de teste** desatualizadas corrigidas, e os testes do
+  `runSecurityAudit` apagados por engano, restaurados.
+
+### Added — 🛠️ Subagentes que IMPLEMENTAM, em worktree isolado (2.211.0)
+
+Nova ferramenta **`delegate_implementers`**: subtarefas de implementação em
+paralelo, cada uma no seu próprio `git worktree`. É o irmão do
+`delegate_subtasks` (pesquisa, read-only) para trabalho que precisa escrever.
+
+**A fronteira não some, muda de lugar.** O que segurava o pesquisador era
+"só leitura" — é o que impede um modelo pequeno de estragar a árvore. Um
+implementador precisa escrever, então a regra vira **"só a sua pasta"**: cada
+worker recebe branch e diretório próprios, e o guard `isInsideWorktree` recusa
+qualquer caminho fora deles. A árvore principal nunca é tocada.
+
+O guard é segment-aware (`fix-login-10` não passa por `fix-login-1`), recusa
+travessia com `..`, trata separador do Windows e do POSIX como equivalentes, e
+**recusa na dúvida** — negar uma escrita legítima custa o worker reclamar;
+aceitar uma ilegítima custa a árvore do usuário. 17 testes cobrem só isso.
+
+**O trabalho volta como DIFF, nunca como merge.** Cada worker devolve o resumo
+(arquivos, +/-) e o patch. Nada é aplicado automaticamente; aplicar é um passo
+explícito com `git apply --3way`, que resolve o que dá e **falha alto** no que
+conflita, em vez de aplicar meio patch em silêncio.
+
+**Os workers verificam o próprio trabalho.** `execute_command` entra na
+allowlist deles, com o `cwd` forçado para a pasta do worker — sem isso um
+`npm test` rodaria na árvore principal, que é exatamente o que o worktree
+existe para evitar. Desligável por lote (`allowCommands: false`). O prompt é
+explícito: código que ninguém executou não conta como pronto.
+
+Detalhes que decidem se funciona na prática:
+
+- **`git add -A` antes do diff.** Sem ele, arquivo NOVO fica untracked e some do
+  relatório — o worker pareceria não ter feito nada.
+- **O diff é coletado mesmo quando o worker falha.** Ele pode ter deixado
+  trabalho útil no meio do caminho; descartar em silêncio apagaria o único
+  registro do que aconteceu.
+- **A ferramenta exige aprovação** (entrou em `DANGEROUS_TOOLS`) e uma pasta de
+  projeto definida.
+- Herda o playbook das skills ativas — são as convenções de código do usuário, e
+  ignorá-las produz diff que ele teria que reescrever.
+
+`makeOllamaChat` foi hoistado para o escopo do hook, ao lado do
+`makeSensenovaChat`: as duas rotas de subagente agora usam a MESMA fábrica em
+vez de cópias que divergiriam.
+
+
+### Fixed — 🫥 Subagente devolvia bolha VAZIA em vez do erro (2.210.0)
+
+Diagnosticado a partir dos logs do próprio app, não por leitura. A telemetria
+mostrava dois lotes de `delegate_subtasks` com o mesmo modelo: um com
+7 workers **ok**, outro com 7 workers **falhando**. E o resultado guardado na
+conversa mostrava o sintoma:
+
+```
+[Agent recon-http]: _(5↻ · sensenova-6.8-flash-lite · web_search×2, fetch_url×14)_
+[Agent recon-api]:  _(5↻ · sensenova-6.8-flash-lite · fetch_url×26)_
+```
+
+...seguidos de **nada**. Os workers fizeram 26 e 14 buscas, e entregaram vazio,
+sem uma linha dizendo o que quebrou.
+
+Duas causas somadas em `runResearchWorker`:
+
+1. **Espaço em branco é truthy.** `if (res.content) last = res.content` aceitava
+   um `"
+
+"` como se fosse resposta.
+2. **O erro era descartado.** O retorno era `last || '[erro do worker: …]'` —
+   havendo qualquer `last` (inclusive o branco acima), a mensagem de falha
+   sumia. É a MESMA classe do bug corrigido na 2.201.0 (`error: !!fin.error &&
+   !last`), mas no caminho de erro DENTRO do loop, que passou batido.
+
+Agora: `meaningful()` exige texto não-vazio após `trim()`; a causa do erro
+**sempre** aparece, com o parcial etiquetado junto quando existe; e um worker
+que encerra sem texto diz isso explicitamente — o orquestrador não tem como
+distinguir "não achei" de "quebrei" olhando espaço em branco.
+
+Nota honesta: **não dá para saber qual era o erro original** daquele turno — o
+bug o apagou. A correção é o que torna a próxima ocorrência diagnosticável.
+
+
+### Added — ⏮ Rewind agora rebobina a CONVERSA também (2.209.0)
+
+Na 2.208.0 o rewind desfazia arquivos, mas o histórico ficava — a conversa
+seguia afirmando mudanças que não existiam mais no disco. Faltava a outra
+metade.
+
+Reverter deixou de ser um `window.confirm`, que só expressa duas saídas. São
+**três**: cancelar, desfazer **só os arquivos**, ou desfazer arquivos **e**
+rebobinar a conversa até antes daquele turno. O novo diálogo mostra o custo de
+cada uma antes do clique ("restaura 3 arquivo(s)", "remove as últimas 5
+mensagem(ns)"), e "só arquivos" continua sendo o caminho menos destrutivo.
+
+Isto é ADITIVO: quem só quer desfazer arquivos tem exatamente o comportamento
+anterior, agora com o número à vista.
+
+**O corte cai no INÍCIO do turno**, não na resposta — parar na resposta deixaria
+a pergunta do usuário órfã no fim do histórico. Um turno de agente rende várias
+bolhas do assistente e todas voltam para a mesma pergunta.
+
+A lógica do corte estava duplicada em dois pontos do `App.tsx` (a contagem
+mostrada no diálogo e o corte de fato) — que é como as duas divergem e o diálogo
+passa a mentir. Virou `turnStartIndex` / `rewindMessageCount` em
+`utils/conversationEdit.ts`, com 9 testes: mensagem inexistente devolve `-1`
+(um `0` apagaria a conversa inteira em silêncio), a contagem anunciada bate com
+o que o corte remove, e o histórico restante nunca termina numa pergunta sem
+resposta.
+
+
+### Fixed — ⏪ Rewind sobrevive ao restart e deixa de caber em 15 segundos (2.208.0)
+
+O checkpoint/rewind JÁ existia (`checkpoint-mark`/`-count`/`-restore`, ligados
+ao `useChat`). Tinha três buracos que o tornavam pouco confiável:
+
+1. **O índice vivia só em RAM.** Os backups sempre foram para o disco, mas a
+   pilha `fileSnapshots` era um array em memória: fechar o app tornava todo
+   rewind impossível **e vazava** os backups — a poda de 50 contava o array, que
+   reiniciava vazio, então nada antigo era apagado. Agora o índice é persistido
+   com `atomicWriteJSON` a cada mutação (snapshot, undo e restore) e recarregado
+   no boot, com reconciliação: entrada cujo backup sumiu é descartada (senão o
+   rewind falharia no meio) e backup órfão é apagado. O teto subiu de 50 para
+   200, que agora vale de verdade porque atravessa sessões.
+   O `seq` nunca recua na carga — reiniciar a contagem faria um checkpoint
+   antigo reverter a escrita errada.
+2. **A oferta durava 15 segundos.** O "Reverter" só existia num toast; quem
+   percebia o estrago um minuto depois não tinha mais como voltar. A âncora do
+   turno (`seq` + nº de arquivos) agora fica **na própria mensagem**, persiste
+   com a conversa e sobrevive ao restart.
+3. **Só dava para reverter o último turno.** Como a âncora está em cada
+   mensagem, qualquer turno anterior que tenha mexido em arquivo mostra o botão.
+
+A bolha do assistente ganhou a ação **Reverter** (↺), visível só quando aquele
+turno alterou arquivos. Pede confirmação — apagar arquivos criados não é
+desfazível — e some depois de revertido: os snapshots foram consumidos, e um
+segundo clique diria "revertido 0" sem explicar por quê.
+
+
+### Added — 🪟 Janela de contexto detectada no provedor (2.207.0)
+
+O app decidia o tamanho da janela por uma **tabela mantida à mão**
+(`MODEL_CONTEXT_LIMITS`), e todo modelo ausente dela caía em 8192. Foi assim que
+o `sensenova-6.8-flash-lite` (262k) teve o orçamento calculado contra 1/32 do
+tamanho real — corrigido na 2.203.0 adicionando entradas na tabela, que é
+remendo, não solução: o próximo modelo novo repetiria o problema.
+
+Agora a janela vem do **próprio provedor**. O número já estava chegando na mesma
+resposta do `/v1/models` que o "Testar conexão" faz — e era descartado, porque o
+handler só aproveitava o `id`. Cada provedor chama o campo de um jeito e todos
+são lidos: `max_input_tokens` (Anthropic), `context_length` (OpenRouter),
+`inputTokenLimit` (Gemini), além de `context_window`/`max_context_length`.
+
+- O valor detectado **vence** a tabela, que passa a ser só fallback offline —
+  a conta do usuário é a verdade, não um palpite versionado.
+- Fica visível na tela do provedor, com a PROCEDÊNCIA: *detectada no provedor*,
+  *tabela interna*, ou *desconhecido — clique em Testar conexão*. Saber de onde
+  veio o número é o que permite confiar nele.
+- Também destrava o deferral de tools: um modelo desconhecido era tratado como
+  pequeno e forçava um `tool_search` desnecessário.
+- **Ollama não é afetado** de propósito: lá a janela é o `num_ctx` que o usuário
+  escolheu (limite de VRAM, não do modelo), e nada vindo da API o sobrepõe.
+
+Valores inválidos (0, negativo, NaN, string, fracionário) são descartados em vez
+de virarem orçamento — há teste para cada caso, porque um número ruim aqui poda
+a história inteira em silêncio.
+
+
+### Security — 💉 Injeção de comando no `git_command` (2.206.0)
+
+O handler `git-command` anuncia no próprio código *"only allow git subcommands,
+no pipes/chains"* e bloqueava `;` `&` `|` crase `$`. Só que o shell dele é o
+**PowerShell**, onde a QUEBRA DE LINHA separa comandos exatamente como o `;` —
+e ela não estava na lista.
+
+Verificado na prática, não por leitura: `git --version` + nova linha +
+`echo INJETADO_PROVA` passou pelo filtro e **executou os dois**. Ou seja, uma
+proteção anunciada que não existia. `
+` e `
+` entraram no bloqueio (CRLF do
+Windows incluído).
+
+O teste de regressão EXTRAI a classe de caracteres do próprio `main.js` em vez
+de repetir a regra — assim ele não pode descrever uma proteção que o código
+deixou de ter.
+
+### Verificado e correto (sem mudança)
+
+Para não inflar o resultado, o que a varredura examinou e considerou sólido:
+
+- **`remote-server.js`** (único ponto que aceita entrada de REDE): token em
+  todas as rotas `/api` com `crypto.timingSafeEqual`, teto de corpo (2MB),
+  validação de tipo/tamanho por mensagem, e `resolveStaticPath` com decode +
+  normalize + checagem de contenção por `path.sep`.
+- **`exec-env.js`**: o env extra do `exec-command` filtra formato de chave e tem
+  denylist de hijack (`PATH`, `NODE_OPTIONS`, `LD_PRELOAD`, `PSModulePath`…).
+- **`mcp-connect`** não usa esse sanitizador, mas ali o `env` vem da config do
+  USUÁRIO e servidores MCP stdio legitimamente precisam de `PATH` — bloquear
+  quebraria setups reais. Mantido de propósito.
+
+
+### Security — 🚪 Portas de leitura sem guarda de caminho (2.205.0)
+
+Continuação da varredura, agora no `electron/`. `read-file`, `write-file`,
+`edit-file` e `search-files` checavam `isPathSafe` (diretório protegido:
+`.ssh`, `.aws`, `.gnupg`, `.config/gcloud`, `/etc/*`, UNC do Windows…). Outras
+portas com a MESMA capacidade não checavam nada:
+
+- **`list-directory`** — listar `~/.ssh` já entrega QUAIS chaves existem, mesmo
+  sem ler o conteúdo.
+- **`workspace-tree`** — serve `project_tree` **e** `glob_files`, os dois que eu
+  liberei aos subagentes na 2.201.0; ou seja, eu tinha ampliado o alcance disso
+  sem perceber. O filtro de entradas que começam com `.` não protegia: ele
+  esconde `~/.ssh` como FILHO, mas passar `~/.ssh` direto como raiz listava
+  `id_rsa`/`known_hosts`/`config`, que não começam com ponto.
+- **`read-document`** — alcançável pelo MODELO: `analyze_image` passa
+  `args.path` direto para cá. O gate `isImage` do chamador impedia o conteúdo de
+  voltar ao modelo, mas o arquivo era lido e a mensagem de erro servia de
+  oráculo de existência.
+
+`isPathSafe` mudou de casa: saiu do `main.js` para o `path-safety.js`, porque o
+`ipc-document.js` precisa da MESMA regra — manter duas cópias é exatamente como
+as portas divergem. O guard do `workspace-tree` ficou no TOPO do handler (falha
+antes de montar o closure de varredura).
+
+Um dos testes novos é ESTÁTICO: lê `main.js`/`ipc-document.js` e exige que cada
+handler de leitura contenha a chamada ao guard. Abrir uma porta nova sem guarda
+passa a quebrar a suíte.
+
+
+### Security — 🔒 Dois portões de permissão deixavam passar o que deviam barrar (2.204.0)
+
+Varredura por sondagem no projeto inteiro. Os dois achados estão nos guardas que
+decidem o que roda **sem pedir sua aprovação** — logo, resultado errado ali é
+falha de segurança, não imprecisão.
+
+**1. Regras de permissão eram anuladas por comando MULTI-LINHA.**
+`globToRegExp` montava a RegExp sem a flag `s` (dotAll), então o `.` não cruzava
+quebra de linha e o `*` do glob parava na primeira `
+`. Medido:
+`deny execute_command(command:*rm -rf*)` bloqueava `rm -rf /`, mas devolvia
+**null** (nenhuma regra casou) para `echo oi` + nova linha + `rm -rf /`. Como
+comando multi-linha é rotina para o modelo, qualquer regra de deny por
+parâmetro podia ser contornada só quebrando a linha. Também: o `?` vazava como
+quantificador de regex embora a doc prometa que só `*` é curinga — o glob
+`file?.txt` casava `fil.txt`.
+
+**2. Sandbox de comandos: quatro caminhos liberavam o que a allowlist não
+pretendia.**
+- **Substituição de comando viajava de carona.** `ls $(cat ~/.ssh/id_rsa)` era
+  `allow`: casava o prefixo `ls` e ninguém olhava o que a substituição executava.
+  Idem crases.
+- **Redirecionamento transformava leitor em escritor.**
+  `echo malicioso >> ~/.profile` era `allow` — persistência de shell por um
+  prefixo que existe para permitir só `echo`.
+- **Prefixo liberava OUTRO binário.** O casamento tinha um `p.startsWith(pre)`
+  solto, então `ls` liberava `lsof`, `cat` liberava `catx`, `type` liberava
+  `typeperf`.
+- **O espaço final dos prefixos era descartado.** As entradas padrão usam
+  `'find '`, `'grep '`, `'rg '` COM espaço deliberado, mas um `.trim()` o
+  removia — e `'find '` passou a liberar `findstr /S senha`.
+
+Correções: metacaracteres de escape (`$(`, crase, `>`, `<(`, `${`) em qualquer
+sub-comando forçam `ask`; e o casamento virou por TOKEN (igualdade ou prefixo +
+espaço), que mata de uma vez o `startsWith` solto e o efeito do trim.
+
+Verificado como CORRETO (sem mudança): o guard de SSRF do `fetch_url` valida o
+host literal, resolve o DNS e **revalida a cada redirect** — inclusive as
+codificações alternativas de IP, que caem na revalidação pós-DNS.
+
+
+### Fixed — 🪟 Modelos de janela grande eram tratados como se tivessem 8k (2.203.0)
+
+Varredura por sondagem no caminho do chat. `getModelContextLimit` devolve 8192
+para qualquer modelo AUSENTE da tabela — e esse número alimenta
+`computeMessageBudget`. Quatro modelos que o **próprio app sugere** caíam nesse
+default:
+
+| modelo | janela real | orçamento usado |
+|---|---|---|
+| `sensenova-6.8-flash-lite` | 262.144 | 8.192 |
+| `deepseek-v4-flash` | 262.144+ | 8.192 |
+| `deepseek-ai/DeepSeek-V3` | 128.000 | 8.192 |
+| `meta-llama/llama-3.3-70b-instruct` | 128.000 | 8.192 |
+
+Com o overhead típico do turno (system + schemas de tools + reserva de
+resposta), sobravam **~888 tokens** para TODA a história — num modelo de 262k.
+Na prática o turno anterior era descartado a cada mensagem, e o modelo parecia
+"esquecer" o que tinha acabado de ler. É a mesma classe do bug que já derrubou o
+GLM (documentada no próprio `contextEngine.ts`), agora com os provedores novos.
+
+Detalhe que explicava dois dos quatro: as chaves `llama3.1/3.2/3.3` só casam o
+estilo **Ollama** (sem hífen). Ids hifenizados do OpenRouter/Modal
+(`meta-llama/llama-3.3-70b-instruct`) não casavam nenhuma chave. Foram
+adicionadas as variantes hifenizadas.
+
+Para o `deepseek-v4-flash` as fontes de terceiros divergem (262k vs 1M) — ficou
+no **menor** de propósito: subestimar só faz compactar mais cedo, superestimar
+devolve HTTP 400 do provider.
+
+Verificado que o específico continua vencendo o genérico (`llama3` segue 8k,
+`glm-4.5` segue 128k) — a ordem das chaves importa porque o match parcial
+retorna a PRIMEIRA que casa.
+
+
+### Fixed — 🐞 Três bugs no scout e no papel do subagente (2.202.0)
+
+Achados por SONDAGEM (rodando as funções e olhando a saída), não por leitura —
+os três passavam despercebidos porque nenhum quebrava teste.
+
+1. **A limpeza da query do scout destruía o termo útil.** O regex `\/[^\s]+`
+   apagava tudo depois de QUALQUER barra:
+   `"https://react.dev/blog"` → `"https"` (o domínio, que era o termo de busca,
+   sumia); `"@types/node"` → `"types"`; e o caso pior,
+   `"comparar next/image vs img"` → **`"comparar"`** — a query inteira virava
+   uma palavra sem assunto. Agora a decisão é por TOKEN: caminho de disco sai,
+   URL vira o host, e nome de pacote com barra fica intacto.
+2. **O classificador de intenção era ~sempre verdadeiro.** Duas causas
+   somadas: a lista de termos "dignos" continha **`como`** (que aparece em quase
+   toda frase em português) e havia o escape `keys.size >= 2`, verdadeiro para
+   qualquer frase com duas palavras longas. Na prática as duas listas de padrões
+   eram decorativas e o scout disparava em tarefa local pura — `"como formatar
+   esse arquivo"` e `"leia o arquivo e me diga o que tem"` ambos passavam.
+   Agora: tarefa local VENCE, sinal real é OBRIGATÓRIO, e `como/implementar/
+   configurar` virou sinal **fraco** — só conta acompanhado de um token técnico
+   (CamelCase como `WebSocket`, ou identificador pontuado como `react-dom`).
+   Assim `"Como implementar WebSocket em TypeScript"` continua disparando.
+3. **Papel levemente errado rendia MENOS que papel ausente.**
+   `resolveSubagentPrompt` devolvia `''` para qualquer id desconhecido, então
+   `agent: "researcher"` ou `agent: "Explorador"` (nomes plausíveis que o modelo
+   inventa) deixavam o worker SEM método, enquanto OMITIR o campo dava o prompt
+   do explorer. Valia também para `agent: "general"` — o papel que a própria
+   descrição da tool anunciava como padrão. Agora id desconhecido, ou papel sem
+   prompt próprio, cai na inferência pelo texto da subtarefa.
+
+Um dos testes de `scout.test.ts` passava **pelo motivo errado**: o padrão de
+comparação (`diferen[çc]a`) nunca casou `"Diferenças"` no plural — era o
+catch-all removido que o mantinha verde. O padrão foi corrigido de fato.
+
+### Changed — Esforço do turno com uma fonte de verdade só (2.202.0)
+
+`useChat` calculava o esforço efetivo **duas vezes** com expressões
+equivalentes: o **scout** era gateado por uma e a **delegação** pela outra.
+Concordavam hoje, mas o objetivo declarado do gating é "um só predicado para os
+dois caminhos de subagente" — duas fontes de verdade era precisamente como elas
+divergiriam depois. O segundo cálculo agora reusa o primeiro.
+
+
+### Added — 🧠 Delegação de subagentes gateada por esforço (2.198.0 – 2.200.0)
+
+No molde do **ultracode**: os subagentes deixam de estar sempre à mão e passam a
+ser ofertados **só em esforço Alto/Ultracode**.
+
+- `utils/subagentGating.ts`: `HIGH_EFFORT_LEVELS` (high/xhigh/max/ultracode) e o
+  predicado `isSubagentDelegationAllowed`.
+- `useChat.ts`: `delegate_subtasks` é **removida de `allTools`** abaixo do
+  limiar — o modelo nem recebe o schema, então não há o que ele chame por
+  impulso. O corte acontece ANTES do `decideDeferral`, então a tool também não
+  vaza pelo manifesto de tools diferidas.
+- O **scout proativo** usa o MESMO predicado — uma regra só para os dois
+  caminhos de subagente, em vez de duas que divergem.
+- A description da tool ganhou `[HIGH/ULTRACODE EFFORT TOOL]` + "Do NOT use for
+  simple or single-step tasks".
+
+**Qualidade do worker**: `MAX_STEPS` 6→8; `WORKER_SYSTEM_PROMPT` reescrito
+exigindo *Achados Principais / Fontes / Conclusão*; `autoInferSubagentRole()`
+infere explorer/planner/reviewer quando a IA omite o papel — antes o papel
+padrão `general` tinha `systemPrompt: ''`, ou seja, a subtarefa mais comum não
+recebia método nenhum. O worker também passou a receber a pasta do projeto.
+
+**Scout inteligente**: filtra tarefa local/mecânica, classifica intenção (só
+dispara em erro/doc/framework/API/comparação) e descarta resposta vazia.
+
+### Fixed — 🩹 Quatro buracos que faziam o enxame entregar trabalho incompleto (2.201.0)
+
+1. **Fan-out da raiz sem teto.** `capNestedSubtasks` só protegia lotes
+   ANINHADOS: um `delegate_subtasks` com 20 subtarefas passava inteiro,
+   entupindo o semáforo e o rate limit da nuvem. Agora há `ROOT_FANOUT_CAP = 8`
+   — mais largo que o aninhado (4), porque na raiz o fan-out é a intenção. O
+   corte é **anunciado** ao orquestrador (inline e em background): truncar em
+   silêncio o faria sintetizar sobre um buraco achando que rodou tudo. O número
+   também foi ancorado na description ("Prefer 2-6 subtasks").
+2. **`out.capped` era descartado.** Um worker cortado no teto de passos
+   entregava investigação incompleta com cara de conclusão. Agora sai um chip
+   `⚠ limite de passos` e uma nota explícita pedindo re-delegação em partes
+   menores.
+3. **Falha de síntese contada como SUCESSO.** `error: !!fin.error && !last`
+   zerava o erro sempre que havia texto parcial — o retry-com-fallback nunca
+   rodava e o painel marcava verde. Virou `error: !!fin.error`, com o parcial
+   etiquetado como `[SÍNTESE FINAL FALHOU: …]`.
+4. **Worker cego para o repositório.** `glob_files` e `project_tree` (ambas em
+   `SAFE_TOOLS`, read-only) entraram na allowlist e nos prompts. Sem elas o
+   worker só lia arquivo cujo nome já soubesse. A fronteira de segurança segue
+   fechada para escrita/execução — há teste travando isso.
+
+### Fixed — Erro de compilação em useChat (2.201.0)
+
+`ingestSourcesAndFreshFacts` referenciava um `memoryRef` que não existe no
+arquivo (4 erros TS2304; o `npm run build` falhava). Os testes passavam porque
+**o vitest não faz typecheck**. Reescrito no idioma que o arquivo já usa: como a
+função é síncrona, a persistência vai fire-and-forget com UMA leitura e UMA
+escrita. Grava **um** fato por ingest, com a primeira fonte nova como origem —
+antes gravava um por fonte com o mesmo texto, e como `addFreshFact` deduplica
+por texto, as N gravações só se sobrescreviam.
+
+
+### Fixed — O scout proativo ignorava o executor de subagentes (2.197.1)
+
+Escolher **SenseNova** em *Subagentes de pesquisa* não valia para o **scout**
+(a pesquisa proativa): ele era **Ollama fixo** desde a v2.69.0 e nunca leu
+`subagentExecutor`. Quem trocasse o executor via o worker morrer citando
+`llama3.2` com `ollama-chat: AggregateError` — sem Ollama de pé, era erro
+garantido, e a configuração salva parecia não ter efeito.
+
+- A decisão de executor virou **uma só**, no escopo do hook, usada pelo
+  `delegate_subtasks` **e** pelo scout — não dá mais para um caminho divergir
+  do outro.
+- O **Modal** segue no Ollama dentro do scout, de propósito: o scout é
+  oportunista (só usa vaga ociosa, nunca espera), e disputar uma key do pool o
+  faria bloquear. Agora está comentado no código em vez de implícito.
+- O retry-com-fallback-de-modelo continua só no Ollama — ele existe por causa de
+  OOM de VRAM, que não é modo de falha da nuvem.
+
+### Fixed — Erro de worker offline era ilegível (2.197.1)
+
+`Error invoking remote method 'ollama-chat': AggregateError` não dizia nada
+(é o Node agregando os ECONNREFUSED de IPv4+IPv6). Agora vira **"Ollama não
+respondeu na porta 11434 — o serviço está rodando?"**, e falha de nuvem aponta
+conexão/API key. Erros comuns (401, 429…) passam **intactos** — a tradução só
+age em falha de transporte, sem chutar diagnóstico.
+
+### Added — SenseNova como executor de subagentes (2.197.0)
+
+**Configurações → Subagentes de pesquisa (delegate_subtasks)** ganhou a opção
+**SenseNova (nuvem)**, ao lado do Ollama local e do pool do Modal.
+
+- **Sem pool de keys.** O Modal usa 1 key por vaga paralela (cada key = um
+  container de GPU). O SenseNova é um endpoint de nuvem comum: a **mesma** key
+  atende todos os workers e o paralelismo respeita o **semáforo global** do app.
+  O teto real é o rate limit da conta, não vagas de GPU.
+- **Não exige que o provider principal seja SenseNova** — diferente do Modal.
+  O caso de uso bom é justamente orquestrar num modelo forte (Claude, GPT) e
+  delegar a pesquisa aos workers baratos do `sensenova-6.8-flash-lite`.
+- **Vale em qualquer profundidade.** Subagentes aninhados do Modal caem no
+  Ollama de propósito (evita esgotar o pool e travar). Sem pool não há esse
+  risco, então os filhos também rodam no SenseNova — cair no Ollama quebraria
+  quem nem tem Ollama instalado.
+- Se a key não estiver configurada, o seletor **avisa** que os subagentes vão
+  cair no Ollama, em vez de falhar em silêncio.
+
+### Fixed — Lista de modelos por subtarefa era anunciada a executores que a ignoram (2.197.0)
+
+O campo `model` por subtarefa só é honrado pelos workers do **Ollama**. A
+condição que injetava a lista de modelos na descrição do `delegate_subtasks`
+era `!== 'modal'` — ou seja, qualquer executor novo passaria a anunciar modelos
+locais que seus workers ignoram, fazendo o orquestrador escolher nomes sem
+efeito nenhum. Agora é `=== 'ollama'`, num helper puro e testado
+(`shouldAnnounceSubagentModels`).
+
+### Fixed — Catálogo de modelos aparecia truncado (2.196.1)
+
+Depois de "Testar conexão", o campo Modelo mostrava **1 opção** mesmo quando a
+busca tinha retornado várias (ex.: "4 modelos" no SenseNova). Não era a busca: o
+`<datalist>` do HTML **filtra as opções pelo texto já digitado**, e com o campo
+preenchido só a opção que casava sobrava.
+
+- Os modelos buscados agora também aparecem como **chips clicáveis** abaixo do
+  campo — o catálogo inteiro fica visível independente do que está digitado, e um
+  clique seleciona. Vale para TODOS os provedores, não só o SenseNova.
+- `deepseek-v4-flash` entrou nos modelos padrão do SenseNova (é de chat e está
+  documentado no mesmo gateway). `sensenova-u1-fast` fica de fora de propósito:
+  é geração de imagem, noutro endpoint (`/v1/images/generations`) — escolhê-lo
+  no campo de chat só daria erro.
+
+### Added — 🌏 Novo provedor: SenseNova (2.196.0)
+
+**SenseNova** entra como provedor de primeira classe — não como `custom`. Ele fala
+o **wire da OpenAI** num endpoint **fixo** (`https://token.sensenova.ai/v1`), então
+o usuário só cola a chave: sem digitar base URL, sem chance de errar o caminho.
+
+- **Settings → Provedor → SenseNova**: campo de chave + modelo, com
+  `sensenova-6.8-flash-lite` como padrão. **Testar conexão** (`GET /v1/models`)
+  valida a chave, mede a latência e preenche o datalist com o catálogo real.
+- **Chat com streaming** (SSE), **Agent Mode** (tool calling) e resposta normal —
+  mesmo caminho dos demais provedores OpenAI-compat.
+- **Visão** ligada: `capture_screen`, `analyze_image` e o painel Vision Mode
+  funcionam — a doc oficial confirma entrada de imagem no formato Vision da
+  OpenAI (URL ou data-URL base64).
+- **Custo real do turno**: o gateway emite um evento SÓ de `usage` antes de
+  encerrar o stream, então o SenseNova entra em `expectsTrailingUsage` — sem
+  isso o renderer fecharia no `finish_reason` e descartaria esse evento.
+- **Esforço de raciocínio por MODELO**: o gateway serve dois tipos de modelo.
+  Os `sensenova-*` pensam sozinhos e devolvem o raciocínio em `message.reasoning`
+  (sem parâmetro de controle documentado → o seletor é no-op de propósito). Já o
+  `deepseek-v4-flash`, revendido no mesmo endpoint, aceita `reasoning_effort`
+  `none|low|medium|high` — inclusive **desligar** o thinking, algo que nenhum
+  outro provedor OpenAI-compat do app sabe fazer.
+- Aparece no **onboarding**, na **troca rápida de modelo**, no **Parliament**,
+  **ModelArena**, **WorkflowBuilder**, **ORION**, **perfis**, no **compare_models**
+  e como alvo do **app do celular**. A chave entra na **auditoria de segurança** e
+  no **sync** entre máquinas.
+- **Limites conhecidos**:
+  - **Sem `stream_options`** — não consta na doc; não faz falta, porque o evento
+    de `usage` vem sozinho (acima).
+  - **Custos mostram $0** para modelos `sensenova-*`: não há tabela de preços
+    pública para alimentar `constants/pricing.ts`. Os tokens são contados
+    corretamente; só falta o preço por token.
+  - **Endpoint internacional fixo** (`token.sensenova.ai`). Contas do continente
+    chinês usam `token.sensenova.cn` — hoje isso se resolve pelo provedor
+    **Custom (OpenAI-compatible)** com base URL `https://token.sensenova.cn/v1`,
+    sem código novo.
+
 ### Added — 📱 App do celular (PWA) conectado ao desktop (2.191.0 – 2.195.0)
 
 Um app para o **iPhone/Android** que conversa com a **IA local (Ollama)** e a

@@ -5,7 +5,7 @@ import { resolveToolSearch, formatToolSearchResult } from '../services/toolDefer
 import { toolNeedsApproval, truncateToolOutput, isToolError, isProtectedWritePath, isBlockedInPlanMode } from '../utils/toolPolicy'
 import { evaluatePermissionRules } from '../utils/permissionRules'
 import { combineHookOutput } from '../utils/outputHooks'
-import { classifyCommand } from '../utils/commandSandbox'
+import { classifyCommand, DEFAULT_SANDBOX } from '../utils/commandSandbox'
 import { planWorktree, WORKTREE_LIST_COMMAND } from '../utils/worktree'
 import { formatExecResult, resolveExecCwd, resolveExecTimeoutMs } from '../utils/execResult'
 import { formatEditResult, formatWriteResult, COACH_REWRITE_MIN_CHARS } from '../utils/editResult'
@@ -16,6 +16,8 @@ import { parseSearchGlob, formatSearchResults } from '../utils/searchFiles'
 import { isRiskyDesktopAction } from '../utils/desktopPolicy'
 import { paginateFileContent } from '../utils/readFile'
 import { formatClickResult, formatNavResult } from '../utils/browserResult'
+import { formatQueryResult } from '../utils/queryResult'
+import { resolveMemoryPath, MEMORY_DIR } from '../utils/memoryPath'
 import { logInsight } from '../services/devInsights'
 import { findSkill, formatLoadSkillResult, suggestSkill, renderSkillsForWorker, renderSkillBody } from '../utils/skills'
 import { buildImportedSkills, parseRepoSpec, parseSkillIndex, parseSkillMarkdown, sanitizeSkillName, decideSkillImport, lintSkill } from '../utils/skillImport'
@@ -26,9 +28,13 @@ import {
   buildWorkerTools, runResearchWorker, runWithConcurrency, normalizeWorkerChat,
   summarizeToolsUsed, resolveSubagentModel, pickFallbackModel, WORKER_TOOL_NAMES,
   buildWorkerToolsForDepth, workerSystemPrompt, canDelegateAtDepth, capNestedSubtasks,
-  normalizeMaxDepth, DELEGATE_TOOL_NAME,
+  normalizeMaxDepth, DELEGATE_TOOL_NAME, workerChatErrorMessage, ROOT_FANOUT_CAP,
   type WorkerChat, type WorkerExec, type WorkerMessage,
 } from '../utils/researchWorker'
+import {
+  IMPLEMENTER_TOOL_NAMES, isInsideWorktree, planImplementer, diffCommands,
+  summarizeDiff, formatDiffSummary, implementerSystemPrompt,
+} from '../utils/implementerWorker'
 import type { Skill } from '../types/skill'
 import type { ModalKeyPool } from './useModalKeyPool'
 import type { BackgroundSubagentRegistry } from '../utils/backgroundSubagents'
@@ -120,6 +126,44 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
 
   const callMcpToolRef = useRef(callMcpTool)
   callMcpToolRef.current = callMcpTool
+
+  // ── Executor dos workers de pesquisa ────────────────────────────
+  // UMA regra, usada tanto pelo delegate_subtasks quanto pelo scout. Antes o
+  // scout era Ollama fixo e ignorava esta configuração: quem escolhia outro
+  // executor (e não tinha Ollama de pé) via o worker morrer com
+  // "ollama-chat: AggregateError" citando llama3.2.
+  const useSensenovaWorkers = settings.subagentExecutor === 'sensenova' && !!settings.sensenovaApiKey
+
+  /** Worker no Ollama local. Hoistado junto do SenseNova (v2.211.0): o
+   *  delegate_implementers precisa da MESMA fábrica, e duplicá-la era como as
+   *  duas divergiriam (uma ganharia um parâmetro que a outra não tem). */
+  const makeOllamaChat = useCallback((model: string): WorkerChat => async (messages, tools) => {
+    try {
+      const r = await window.electron.ollamaChat({
+        model, messages, tools,
+        temperature: settings.temperature,
+        max_tokens: settings.maxTokens,
+        numCtx: settings.ollamaNumCtx,
+        reasoningEffort: settings.reasoningEffort,
+        timeoutMs: Math.max(0, Math.round((settings.subagentTimeoutSec ?? 600) * 1000)),
+      })
+      return normalizeWorkerChat(r)
+    } catch (e: any) { return { content: '', toolCalls: [], error: workerChatErrorMessage(e, 'ollama') } }
+  }, [settings])
+
+  /** Worker no SenseNova: sem pool, a MESMA key atende todas as tasks. */
+  const makeSensenovaChat = useCallback((): WorkerChat => async (messages, tools) => {
+    try {
+      const [res] = await window.electron.providerParallelChat({
+        tasks: [{ id: 'w', messages, tools, apiKey: settings.sensenovaApiKey }],
+        provider: 'sensenova',
+        model: settings.sensenovaModel || 'sensenova-6.8-flash-lite',
+        temperature: settings.temperature,
+        max_tokens: settings.maxTokens,
+      })
+      return normalizeWorkerChat(res?.result, res?.error || undefined)
+    } catch (e: any) { return { content: '', toolCalls: [], error: workerChatErrorMessage(e, 'sensenova') } }
+  }, [settings])
 
   const executeToolRaw = useCallback(async (name: string, args: Record<string, any>): Promise<string> => {
     const convId = activeConvIdRef.current
@@ -436,6 +480,67 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         if (result.content == null) return result.error || ''
         return paginateFileContent(result.content, args.offset, args.limit)
       }
+      if (name === 'memory_write' || name === 'memory_append') {
+        // SAFE (sem aprovação) só porque fica DENTRO de .claude/memory — ver
+        // utils/memoryPath: `../` escrevia em qualquer lugar do disco.
+        const mp = resolveMemoryPath(args.path)
+        if ('error' in mp) return `Erro: ${mp.error}`
+        const pCwd = projectCwdRef.current || '.'
+        const targetPath = `${pCwd}/${MEMORY_DIR}/${mp.rel}`
+        const append = name === 'memory_append'
+        const result = await window.electron.writeFile({ filePath: targetPath, content: String(args.content || ''), append })
+        return result.error ? `Erro: ${result.error}` : `Arquivo salvo em ${MEMORY_DIR}/${mp.rel}`
+      }
+      if (name === 'memory_read') {
+        const mp = resolveMemoryPath(args.path)
+        if ('error' in mp) return `Erro: ${mp.error}`
+        const pCwd = projectCwdRef.current || '.'
+        const targetPath = `${pCwd}/${MEMORY_DIR}/${mp.rel}`
+        const result = await window.electron.readFile(targetPath)
+        return result.content != null ? result.content : (result.error || '')
+      }
+      if (name === 'memory_list') {
+        const pCwd = projectCwdRef.current || '.'
+        const targetPath = `${pCwd}/.claude/memory`
+        const res = await window.electron.workspaceTree(targetPath)
+        return formatProjectTree(res, targetPath)
+      }
+      if (name === 'take_screenshot') {
+        // O base64 como TEXTO não servia: a saída passa pelo corte de 4.000
+        // caracteres e o modelo nunca "via" a imagem (e o prefixo data: saía
+        // duplicado). Mesmo caminho do capture_screen — captura → modelo de
+        // visão → texto —, mas pedindo posições em pixels da tela, que são as
+        // coordenadas do mouse_move.
+        const target = resolveVisionTarget(settings)
+        if (!target) return `O provider de visão atual ("${settings.provider}") não suporta análise de imagem. Configure ollama (llava), openai, gemini, anthropic, openrouter, modal ou sensenova.`
+        const shot = await window.electron.takeScreenshot()
+        if (shot.error || !shot.base64) return `Erro ao capturar tela: ${shot.error || 'sem imagem'}`
+        const dims = shot.width && shot.height ? `${shot.width}×${shot.height}` : ''
+        const ask = String(args.prompt ?? '').trim()
+        const prompt = (ask ? `${ask}\n\n` : '') +
+          `Liste os elementos de interface visíveis relevantes (janelas, botões, campos, menus, textos) com a posição do CENTRO de cada um em pixels desta imagem${dims ? ` (${dims})` : ''}, no formato "elemento — (x, y)".`
+        const res = await window.electron.visionChat({
+          provider: target.provider, apiKey: target.apiKey, model: target.model,
+          prompt, imageBase64: shot.base64, modalHostname: settings.modalHostname,
+        })
+        const out = formatVisionResult(res, 'a tela')
+        return dims && res && !res.error ? `[Tela ${dims} px — as mesmas coordenadas do mouse_move]\n${out}` : out
+      }
+      if (name === 'mouse_move') {
+        const res = await window.electron.mouseMove({ x: args.x, y: args.y })
+        if (res.error) return `Erro ao mover mouse: ${res.error}`
+        return `Mouse movido para (${args.x}, ${args.y})`
+      }
+      if (name === 'mouse_click') {
+        const res = await window.electron.mouseClick({ button: args.button })
+        if (res.error) return `Erro ao clicar: ${res.error}`
+        return `Clique com botão ${args.button} efetuado.`
+      }
+      if (name === 'keyboard_type') {
+        const res = await window.electron.keyboardType({ text: args.text })
+        if (res.error) return `Erro ao digitar: ${res.error}`
+        return `Texto digitado com sucesso.`
+      }
       if (name === 'write_file') {
         // Recuperação de escrita TRUNCADA (v2.161.0): se a chamada foi cortada
         // pelo limite de tokens, o JSON chegou quebrado (raw_invalid_json) e
@@ -542,7 +647,7 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         // Fusão do VisionMode (v2.74.0): captura o desktop e analisa num modelo
         // de visão. Leitura (não muda nada). Ver utils/vision.ts.
         const target = resolveVisionTarget(settings)
-        if (!target) return `O provider de visão atual ("${settings.provider}") não suporta análise de imagem. Configure ollama (llava), openai, gemini, anthropic, openrouter ou modal.`
+        if (!target) return `O provider de visão atual ("${settings.provider}") não suporta análise de imagem. Configure ollama (llava), openai, gemini, anthropic, openrouter, modal ou sensenova.`
         const prompt = String(args.prompt ?? '').trim() || 'Descreva o que está visível na tela, de forma objetiva.'
         const shot = await window.electron.captureScreen()
         if (shot.error || !shot.base64) return `Não consegui capturar a tela: ${shot.error || 'sem imagem'}.`
@@ -556,7 +661,7 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         const path = String(args.path ?? '').trim()
         if (!path) return 'analyze_image: faltou o parâmetro "path".'
         const target = resolveVisionTarget(settings)
-        if (!target) return `O provider de visão atual ("${settings.provider}") não suporta análise de imagem. Configure ollama (llava), openai, gemini, anthropic, openrouter ou modal.`
+        if (!target) return `O provider de visão atual ("${settings.provider}") não suporta análise de imagem. Configure ollama (llava), openai, gemini, anthropic, openrouter, modal ou sensenova.`
         const doc: any = await window.electron.readDocument(path)
         if (doc.error) return `Não consegui ler a imagem "${path}": ${doc.error}.`
         if (!doc.isImage || !doc.base64) return `O arquivo "${path}" não é uma imagem suportada (png/jpg/jpeg/gif/webp/bmp).`
@@ -719,6 +824,53 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         const matches = searchConversations(all as any, query, { excludeId: convId || undefined, max })
         return formatConversationMatches(matches, query, new Date())
       }
+      if (name === 'recent_chats') {
+        const n = Math.min(Math.max(Number(args.n) || 5, 1), 50)
+        const all: any[] = await window.electron.loadConversations() || []
+        const sorted = all.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        const top = sorted.slice(0, n)
+        return top.map(c => `ID: ${c.id} | Timestamp: ${c.createdAt} | Título: ${c.title}`).join('\n') || 'Nenhuma conversa encontrada.'
+      }
+      if (name === 'conversation_search') {
+        const query = String(args.query ?? '').trim().toLowerCase()
+        if (!query) return 'Faltou o parâmetro "query".'
+        const all: any[] = await window.electron.loadConversations() || []
+        const matches: string[] = []
+        for (const chat of all) {
+          if (!chat.messages) continue
+          for (const msg of chat.messages) {
+            if (msg.content && typeof msg.content === 'string' && msg.content.toLowerCase().includes(query)) {
+              const contentStr = msg.content
+              const idx = contentStr.toLowerCase().indexOf(query)
+              const start = Math.max(0, idx - 40)
+              const end = Math.min(contentStr.length, idx + query.length + 40)
+              const snippet = contentStr.substring(start, end).replace(/\n/g, ' ')
+              matches.push(`[Chat ID: ${chat.id}] (Msg: ${msg.role}) ...${snippet}...`)
+              if (matches.length >= 20) break
+            }
+          }
+          if (matches.length >= 20) break
+        }
+        return matches.length > 0 ? matches.join('\n') : `Nenhum resultado para "${query}".`
+      }
+      if (name === 'read_conversation') {
+        const cid = String(args.conversation_id ?? '').trim()
+        if (!cid) return 'Faltou o parâmetro "conversation_id".'
+        const all: any[] = await window.electron.loadConversations() || []
+        const chat = all.find(c => c.id === cid)
+        if (!chat) return `Conversa ${cid} não encontrada.`
+        if (!chat.messages || chat.messages.length === 0) return `A conversa ${cid} está vazia.`
+        return chat.messages.map((m: any) => `[${(m.role || 'unknown').toUpperCase()}] ${m.content}`).join('\n\n')
+      }
+      if (name === 'postgres_query') {
+        // Está em DANGEROUS_TOOLS: o executeTool pede aprovação antes de chegar
+        // aqui. A validação só-leitura e a DATABASE_URL vivem no main (ipc-postgres.js).
+        const query = String(args.query ?? '').trim()
+        if (!query) return 'Erro: faltou o parâmetro "query".'
+        const r = await window.electron.postgresQuery(query)
+        if (r.error) return `Erro: ${r.error}`
+        return formatQueryResult(r)
+      }
       if (name === 'list_directory') {
         const result = await window.electron.listDirectory(args.path)
         if (result.items) {
@@ -786,6 +938,107 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
           return `Worktree removido: ${path}`
         }
         return 'git_worktree: action deve ser "add", "remove" ou "list".'
+      }
+      if (name === 'delegate_implementers') {
+        // Subagentes que ESCREVEM (v2.211.0). A fronteira do pesquisador era
+        // "só leitura"; aqui ela vira "só a sua pasta": cada worker recebe um
+        // git worktree próprio, e o guard isInsideWorktree recusa qualquer
+        // caminho fora dele. A árvore principal nunca é tocada — o trabalho
+        // volta como DIFF para revisão, nunca como merge automático.
+        const cwdImpl = projectCwdRef.current
+        if (!cwdImpl) return 'delegate_implementers: defina a pasta de trabalho da conversa/projeto primeiro (os worktrees são criados relativos a ela).'
+        const pedidas = (args.subtasks || []).filter((s: any) => s && s.prompt)
+        if (!pedidas.length) return 'delegate_implementers: nenhuma subtarefa válida.'
+        const lote = pedidas.slice(0, ROOT_FANOUT_CAP)
+        const cortadas = pedidas.length - lote.length
+        const canTest = args.allowCommands !== false
+        const langI = settings.language || 'pt'
+        const allowedI = (settings.subagentModels || []).map(s => String(s).trim()).filter(Boolean)
+        const fallbackI = settings.subagentModel || 'llama3.2'
+
+        const runImpl = (st: any, i: number) => async (): Promise<string> => {
+          const plan = planImplementer(cwdImpl, st.id || st.label, worktreeSeqRef.current++)
+          const rid = `impl-${plan.label}-${i}`
+          const add = await window.electron.execCommand({ command: plan.addCommand, cwd: cwdImpl, timeoutMs: 60000 })
+          if ((add?.exitCode ?? 1) !== 0) {
+            return `[${st.id ?? i}]: não consegui criar o worktree: ${(add?.stderr || add?.stdout || '').trim().slice(0, 400)}`
+          }
+          subagentActivity?.start(rid, String(st.prompt).slice(0, 120), plan.branch, Date.now(), 1)
+          try {
+            // É AQUI que "só a sua pasta" deixa de ser texto no prompt e vira
+            // regra: toda ferramenta passa pelo guard antes de rodar.
+            const execImpl: WorkerExec = async (n, a) => {
+              if (!IMPLEMENTER_TOOL_NAMES.has(n)) {
+                return `[a ferramenta "${n}" não está disponível para implementadores.]`
+              }
+              // Este caminho chama o executeToolRaw direto, por fora do gate do
+              // executeTool — e não há humano no meio do lote. Então as regras de
+              // DENY do usuário valem aqui, e a denylist do sandbox também,
+              // mesmo com o sandbox desligado para o agente principal.
+              if (evaluatePermissionRules(settings.permissionRules, n, a) === 'deny') {
+                return `[BLOQUEADO por regra de permissão: "${n}" com estes argumentos.]`
+              }
+              if (n === 'execute_command' && classifyCommand(a?.command, { ...DEFAULT_SANDBOX, ...(settings.commandSandbox || {}), enabled: true }) === 'deny') {
+                return '[BLOQUEADO: o comando casa um padrão perigoso da denylist do sandbox.]'
+              }
+              const alvo = String(a?.path ?? a?.filePath ?? a?.cwd ?? '')
+              if (alvo && !isInsideWorktree(alvo, plan.dir)) {
+                return `[RECUSADO: "${alvo}" está fora do seu worktree. Use o caminho completo a partir de ${plan.dir}.]`
+              }
+              if (n === 'execute_command') {
+                if (!canTest) return '[execução de comandos está desligada neste lote.]'
+                // Sem cwd explícito o comando rodaria na árvore PRINCIPAL (o
+                // default do execute_command) — forçar a pasta do worker é o
+                // que impede um `npm test` de rodar no projeto do usuário.
+                return executeToolRaw(n, { ...a, cwd: a?.cwd || plan.dir })
+              }
+              return executeToolRaw(n, a)
+            }
+            // Implementador também herda o playbook das skills ativas: são as
+            // convenções de código do usuário, e ignorá-las produz diff que
+            // ele vai ter que reescrever.
+            const playbook = renderSkillsForWorker(getActiveSkillsRef.current?.() || [], langI)
+            const sysI = [implementerSystemPrompt(langI, plan.dir, canTest), playbook].filter(Boolean).join('\n\n')
+            const out = await runResearchWorker({
+              messages: [{ role: 'system', content: sysI }, { role: 'user', content: String(st.prompt) }],
+              tools: (TOOLS as any).filter((t: any) => IMPLEMENTER_TOOL_NAMES.has(t?.function?.name)),
+              chat: useSensenovaWorkers ? makeSensenovaChat() : makeOllamaChat(resolveSubagentModel(undefined, i, allowedI, fallbackI)),
+              exec: execImpl,
+              isStopped: getStopped,
+              maxSteps: 16, // implementar custa mais passos que pesquisar
+              finalNudge: langI === 'en' ? 'Summarize what you changed and what you verified.' : 'Resuma o que você mudou e o que verificou.',
+              onProgress: (p) => subagentActivity?.progress(rid, p.step, p.toolsUsed, p.lastTool),
+            })
+            // O diff é coletado MESMO se o worker falhou: ele pode ter deixado
+            // trabalho útil pelo caminho, e descartar em silêncio apagaria o
+            // único registro do que aconteceu.
+            const dc = diffCommands(plan.dir)
+            await window.electron.execCommand({ command: dc.stage, cwd: cwdImpl, timeoutMs: 60000 })
+            const dr = await window.electron.execCommand({ command: dc.diff, cwd: cwdImpl, timeoutMs: 60000 })
+            const diff = String(dr?.stdout || '')
+            const resumo = summarizeDiff(diff)
+            if (out.error) subagentActivity?.fail(rid, out.text, Date.now())
+            else subagentActivity?.finish(rid, out.text, out.steps, out.toolsUsed, Date.now())
+            logInsight('subagent', 'run', { ok: !out.error, depth: 1, model: plan.branch, steps: out.steps, impl: true })
+            const head = `[${st.id ?? i}] ${formatDiffSummary(resumo, langI)} · ${plan.dir}`
+            const corpo = resumo.files.length
+              ? `\n\nArquivos: ${resumo.files.join(', ')}\n\n${'```'}diff\n${diff.slice(0, 12000)}\n${'```'}`
+              : ''
+            return `${head}\n${out.text}${corpo}`
+          } catch (e: any) {
+            subagentActivity?.fail(rid, String(e?.message || e), Date.now())
+            return `[${st.id ?? i}]: erro: ${e?.message || e}`
+          }
+        }
+
+        const saidas = subagentLimiter
+          ? await Promise.all(lote.map((st: any, i: number) => subagentLimiter.run(() => runImpl(st, i)())))
+          : await runWithConcurrency(lote.map((st: any, i: number) => runImpl(st, i)), 2)
+        const nota = langI === 'en'
+          ? '\n\n[Nothing was applied to the main tree. Review each diff; to apply one, run `git apply --3way` on it, or ask the user.]'
+          : '\n\n[NADA foi aplicado na árvore principal. Revise cada diff; para aplicar um, rode `git apply --3way` nele, ou pergunte ao usuário.]'
+        const corte = cortadas > 0 ? `\n\n[AVISO: ${cortadas} subtarefa(s) excedentes descartadas — teto de ${ROOT_FANOUT_CAP} por lote.]` : ''
+        return saidas.join('\n\n---\n\n') + corte + nota
       }
       if (name === 'undo_last_write') {
         const result = await window.electron.undoLastWrite()
@@ -924,8 +1177,18 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
           ? 'Step budget reached. Stop using tools and give your final synthesis now, based on what you gathered.'
           : 'Limite de passos atingido. Pare de usar ferramentas e dê agora sua síntese final, com base no que coletou.'
 
-        const subtasks = (args.subtasks || []).filter((s: any) => s && s.prompt)
-        if (!subtasks.length) return 'Nenhuma subtarefa válida fornecida.'
+        const requested = (args.subtasks || []).filter((s: any) => s && s.prompt)
+        if (!requested.length) return 'Nenhuma subtarefa válida fornecida.'
+        // Teto de fan-out da RAIZ (v2.201.0). Antes só os lotes ANINHADOS eram
+        // limitados (capNestedSubtasks): um delegate_subtasks com 20 subtarefas
+        // passava inteiro, entupindo o semáforo e o rate limit. O corte é
+        // ANUNCIADO — truncar em silêncio faria o orquestrador crer que tudo
+        // rodou e sintetizar em cima de um buraco.
+        const subtasks = requested.slice(0, ROOT_FANOUT_CAP)
+        const dropped = requested.length - subtasks.length
+        const dropNote = (n: number) => lang === 'en'
+          ? `[NOTE: ${n} extra subtask(s) were DROPPED — the per-batch cap is ${ROOT_FANOUT_CAP}. Re-delegate them in a later batch if they still matter.]`
+          : `[AVISO: ${n} subtarefa(s) excedentes foram DESCARTADAS — o teto por lote é ${ROOT_FANOUT_CAP}. Re-delegue num lote seguinte se ainda importarem.]`
 
         // Subagentes HERDAM as skills ativas (v2.159.0): o worker recebe um prompt
         // próprio (sem o do orquestrador), então sem isto a parte delegada rodava
@@ -941,8 +1204,9 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         // cláusula de delegação e a allowlist ganha delegate_subtasks só enquanto
         // ainda dá para aninhar.
         const buildMessages = (st: any, depth: number): WorkerMessage[] => {
-          const rolePrompt = resolveSubagentPrompt(st.agent)
-          const sys = [workerSystemPrompt(lang, canDelegateAtDepth(depth, maxDepth)), rolePrompt, skillPlaybook, systemMsg]
+          const rolePrompt = resolveSubagentPrompt(st.agent, st.prompt)
+          const cwdContext = projectCwdRef.current ? `[DIRETÓRIO DE TRABALHO DO PROJETO]: ${projectCwdRef.current}` : ''
+          const sys = [workerSystemPrompt(lang, canDelegateAtDepth(depth, maxDepth)), rolePrompt, cwdContext, skillPlaybook, systemMsg]
             .filter(Boolean).join('\n\n') + langRule
           return [{ role: 'system', content: sys }, { role: 'user', content: String(st.prompt ?? '') }]
         }
@@ -958,18 +1222,6 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         // (600s/passo); 0 = sem limite (respeitando quem deleta tarefas grandes,
         // com o caveat de que um Ollama realmente preso volta a congelar).
         const stepTimeoutMs = Math.max(0, Math.round((settings.subagentTimeoutSec ?? 600) * 1000))
-        const makeOllamaChat = (model: string): WorkerChat => async (messages, tools) => {
-          try {
-            const r = await window.electron.ollamaChat({
-              model, messages, tools,
-              temperature: settings.temperature,
-              max_tokens: settings.maxTokens,
-              numCtx: settings.ollamaNumCtx,
-              timeoutMs: stepTimeoutMs, // 0 → sem timeout no handler
-            })
-            return normalizeWorkerChat(r)
-          } catch (e: any) { return { content: '', toolCalls: [], error: e?.message || 'ollama error' } }
-        }
         const makeModalChat = (apiKey: string): WorkerChat => async (messages, tools) => {
           try {
             const [res] = await window.electron.providerParallelChat({
@@ -981,11 +1233,18 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
               max_tokens: settings.maxTokens,
             })
             return normalizeWorkerChat(res?.result, res?.error || undefined)
-          } catch (e: any) { return { content: '', toolCalls: [], error: e?.message || 'modal error' } }
+          } catch (e: any) { return { content: '', toolCalls: [], error: workerChatErrorMessage(e, 'modal') } }
         }
 
+        // SenseNova como executor (v2.197.0): ao contrário do Modal, NÃO há pool
+        // de keys — é um endpoint de nuvem comum, então a MESMA key atende todas
+        // as tasks e o paralelismo é limitado pelo semáforo global (o teto de
+        // verdade aqui é o rate limit da conta, não vagas de GPU). Também NÃO
+        // exige que o provider principal seja SenseNova: o caso de uso bom é
+        // justamente orquestrar num modelo forte e delegar aos workers baratos.
         const useModal = settings.subagentExecutor === 'modal'
           && settings.provider === 'modal' && !!modalKeyPool && modalKeyPool.totalCount > 0
+        const useSensenova = useSensenovaWorkers
 
         const batchTag = Date.now().toString(36)
         // `depth` = nível na árvore (1 = worker direto do orquestrador).
@@ -1018,6 +1277,11 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
                 childTasks.map((cst: any, ci: number) => runOne(cst, ci, depth + 1, runId)), 1)
               return childOut.join('\n\n---\n\n')
             }
+            // Regras de DENY do usuário valem para o subagente também: ele chama
+            // o executeToolRaw direto, por fora do gate do executeTool.
+            if (evaluatePermissionRules(settings.permissionRules, n, a) === 'deny') {
+              return `[BLOQUEADO por regra de permissão: "${n}" com estes argumentos.]`
+            }
             return WORKER_TOOL_NAMES.has(n)
               ? executeToolRaw(n, a)
               : `[A ferramenta "${n}" não está disponível para subagentes. Use só leitura/pesquisa: ${[...WORKER_TOOL_NAMES].join(', ')}.]`
@@ -1038,6 +1302,12 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
               modelUsed = resolveSubagentModel(st.model, index, allowedModels, fallbackModel)
               chat = makeOllamaChat(modelUsed); onOllama = true
             } else return `[Agent ${st.id ?? '?'}]: [pool Modal esgotado]`
+          } else if (useSensenova) {
+            // Vale em QUALQUER profundidade — sem pool não há risco de deadlock
+            // (a restrição "só na raiz" do Modal existe por causa das vagas).
+            // Cair no Ollama aqui quebraria quem nem tem Ollama rodando.
+            modelUsed = settings.sensenovaModel || 'sensenova-6.8-flash-lite'
+            chat = makeSensenovaChat()
           } else {
             modelUsed = resolveSubagentModel(st.model, index, allowedModels, fallbackModel)
             chat = makeOllamaChat(modelUsed); onOllama = true
@@ -1075,7 +1345,16 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
             logInsight('subagent', 'run', { ok: !errored, depth, model: modelUsed, steps: out.steps })
             const bits = [`${out.steps}↻`, modelUsed]
             if (out.toolsUsed.length) bits.push(summarizeToolsUsed(out.toolsUsed))
-            return `[Agent ${st.id ?? '?'}]: _(${bits.join(' · ')})_\n${out.text}`
+            // Worker cortado no teto de passos: `out.capped` existia mas era
+            // DESCARTADO — o orquestrador recebia investigação incompleta com
+            // cara de conclusão. Agora o corte é explícito nos dois canais.
+            if (out.capped) bits.push(lang === 'en' ? '⚠ step limit' : '⚠ limite de passos')
+            const cappedNote = out.capped
+              ? (lang === 'en'
+                ? `\n\n[WARNING: this subagent was cut off at its ${out.steps}-step budget — the investigation may be INCOMPLETE. Treat it as partial; re-delegate in smaller pieces if you need certainty.]`
+                : `\n\n[AVISO: este subagente foi cortado no orçamento de ${out.steps} passos — a investigação pode estar INCOMPLETA. Trate como parcial; re-delegue em partes menores se precisar de certeza.]`)
+              : ''
+            return `[Agent ${st.id ?? '?'}]: _(${bits.join(' · ')})_\n${out.text}${cappedNote}`
           } catch (e: any) {
             errored = true
             subagentActivity?.fail(runId, `[erro: ${e?.message || e}]`, Date.now())
@@ -1123,19 +1402,21 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         if (background) {
           const work = runBatch().then((rs) => rs.join('\n\n---\n\n'))
           const id = backgroundTasks!.register(`${subtasks.length} subtarefa(s)`, work)
+          const cutNote = dropped > 0 ? `${dropNote(dropped)} ` : ''
           return lang === 'en'
-            ? `🚀 Delegated ${subtasks.length} subtask(s) to BACKGROUND subagents (batch ${id}, ${maxConc} running at a time). They are running now; CONTINUE with other useful work — their results will be injected automatically when ready (and awaited before you finish if still pending). Do NOT stop and wait.`
-            : `🚀 Deleguei ${subtasks.length} subtarefa(s) a subagentes em BACKGROUND (lote ${id}, ${maxConc} por vez). Eles estão rodando agora; CONTINUE com outro trabalho útil — os resultados serão injetados automaticamente quando prontos (e aguardados antes de você concluir, se ainda pendentes). NÃO pare para esperar.`
+            ? `${cutNote}🚀 Delegated ${subtasks.length} subtask(s) to BACKGROUND subagents (batch ${id}, ${maxConc} running at a time). They are running now; CONTINUE with other useful work — their results will be injected automatically when ready (and awaited before you finish if still pending). Do NOT stop and wait.`
+            : `${cutNote}🚀 Deleguei ${subtasks.length} subtarefa(s) a subagentes em BACKGROUND (lote ${id}, ${maxConc} por vez). Eles estão rodando agora; CONTINUE com outro trabalho útil — os resultados serão injetados automaticamente quando prontos (e aguardados antes de você concluir, se ainda pendentes). NÃO pare para esperar.`
         }
 
         const results = await runBatch()
-        return results.join('\n\n---\n\n')
+        const joined = results.join('\n\n---\n\n')
+        return dropped > 0 ? `${joined}\n\n---\n\n${dropNote(dropped)}` : joined
       }
       return 'Ferramenta nao reconhecida'
     } catch (e: any) {
       return `Erro: ${e.message}`
     }
-  }, [setConversations, settings, selectedModel, modalKeyPool])
+  }, [setConversations, settings, selectedModel, modalKeyPool, useSensenovaWorkers, makeSensenovaChat])
 
   const requestApproval = useCallback((toolName: string, args: Record<string, any>): Promise<boolean> => {
     return new Promise((resolve) => {
@@ -1278,12 +1559,21 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
     const lang = settings.language || 'pt'
     const today = new Date().toISOString().slice(0, 10)
     const allowedModels = (settings.subagentModels || []).map(s => String(s).trim()).filter(Boolean)
-    const model = resolveSubagentModel(undefined, scoutSeqRef.current, allowedModels, settings.subagentModel || 'llama3.2')
+    // BUG (até v2.197.0): o scout era Ollama FIXO e ignorava subagentExecutor.
+    // Quem escolhia SenseNova via o worker morrer citando llama3.2
+    // ("ollama-chat: AggregateError") — o executor configurado não valia aqui.
+    // O Modal segue no Ollama de propósito: o scout é OPORTUNISTA (só pega vaga
+    // ociosa, nunca espera), e disputar uma key do pool o faria bloquear.
+    const model = useSensenovaWorkers
+      ? (settings.sensenovaModel || 'sensenova-6.8-flash-lite')
+      : resolveSubagentModel(undefined, scoutSeqRef.current, allowedModels, settings.subagentModel || 'llama3.2')
     const timeoutSec = settings.subagentTimeoutSec ?? 600
     const runId = `scout_${Date.now()}_${++scoutSeqRef.current}`
     const workerTools = buildWorkerTools(TOOLS as any)
     const workerExec: WorkerExec = async (n, a) =>
-      WORKER_TOOL_NAMES.has(n) ? executeToolRaw(n, a) : `[indisponível para o scout: ${n}]`
+      !WORKER_TOOL_NAMES.has(n) ? `[indisponível para o scout: ${n}]`
+        : evaluatePermissionRules(settings.permissionRules, n, a) === 'deny' ? `[BLOQUEADO por regra de permissão: "${n}".]`
+        : executeToolRaw(n, a)
     // Fábrica de chat por modelo (v2.86.1): permite retry-com-fallback se o
     // modelo atribuído falhar (ex.: 9b não cabe na VRAM — mesma causa das
     // falhas do delegate_subtasks).
@@ -1295,7 +1585,7 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
           numCtx: settings.ollamaNumCtx, timeoutMs: timeoutSec > 0 ? timeoutSec * 1000 : 0,
         })
         return normalizeWorkerChat(r)
-      } catch (e: any) { return { content: '', toolCalls: [], error: e?.message || 'ollama error' } }
+      } catch (e: any) { return { content: '', toolCalls: [], error: workerChatErrorMessage(e, 'ollama') } }
     }
     const userMsg = lang === 'en'
       ? `What the main AI is currently doing: ${topic}\n\nResearch the MOST CURRENT info (today, ${today}) and faster alternative paths for this. Deliver only what is new/current/useful.`
@@ -1312,10 +1602,15 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
         isStopped: () => signal.aborted,
         onProgress: (p: { step: number; toolsUsed: string[]; lastTool?: string }) => subagentActivity?.progress(runId, p.step, p.toolsUsed, p.lastTool),
       }
-      let out = await runResearchWorker({ ...runOpts, chat: makeChat(model) })
+      let out = await runResearchWorker({
+        ...runOpts,
+        chat: useSensenovaWorkers ? makeSensenovaChat() : makeChat(model),
+      })
       // Retry-com-fallback (v2.86.1): se falhou (e não foi pausa), tenta 1× em
       // OUTRO modelo da lista (um menor que cabe na VRAM) — igual ao delegate.
-      if (out.error && !signal.aborted) {
+      // Só vale no Ollama: o retry existe por causa de OOM de VRAM, que não é
+      // um modo de falha do SenseNova (e a lista é de modelos locais).
+      if (out.error && !signal.aborted && !useSensenovaWorkers) {
         const fb = pickFallbackModel(model, allowedModels, settings.subagentModel || 'llama3.2')
         if (fb) {
           subagentActivity?.start(runId, `🔭 ${topic.slice(0, 70)}`, `${fb} (fallback)`, Date.now())
@@ -1333,7 +1628,7 @@ export function useToolExecution({ settings, activeConvId, setConversations, sel
     } finally {
       subagentLimiter.release()
     }
-  }, [settings, subagentLimiter, subagentActivity, executeToolRaw])
+  }, [settings, subagentLimiter, subagentActivity, executeToolRaw, useSensenovaWorkers, makeSensenovaChat])
 
   return { pendingApproval, setPendingApproval, executeTool, executeToolRaw, runScout }
 }

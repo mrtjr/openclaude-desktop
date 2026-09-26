@@ -43,7 +43,8 @@ export function RegenSplit({
     : prov === 'anthropic' ? settings.anthropicModel
     : prov === 'gemini' ? settings.geminiModel
     : prov === 'openrouter' ? settings.openrouterModel
-    : prov === 'modal' ? settings.modalModel : ''
+    : prov === 'modal' ? settings.modalModel
+    : prov === 'sensenova' ? settings.sensenovaModel : ''
 
   return (
     <div className="regen-split">

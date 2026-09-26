@@ -86,7 +86,7 @@ export function isProtectedWritePath(name: string, args: Record<string, unknown>
 
 /** Ferramentas perigosas que AINDA são permitidas no plan mode por serem de
  *  exploração/leitura (não alteram o sistema). */
-export const PLAN_MODE_ALLOWED_DANGEROUS = new Set(['delegate_subtasks', 'browser_navigate', 'open_file_or_url'])
+export const PLAN_MODE_ALLOWED_DANGEROUS = new Set(['delegate_subtasks', 'browser_navigate', 'open_file_or_url', 'postgres_query'])
 
 /** A ferramenta é bloqueada no modo de planejamento? Bloqueia toda mutação
  *  (DANGEROUS_TOOLS) e tools MCP externas; libera a exploração read-only. */

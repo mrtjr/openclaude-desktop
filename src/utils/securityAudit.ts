@@ -35,6 +35,7 @@ export function runSecurityAudit(settings: AppSettings): AuditFinding[] {
     { key: 'anthropicApiKey', name: 'Anthropic' },
     { key: 'openrouterApiKey', name: 'OpenRouter' },
     { key: 'modalApiKey', name: 'Modal' },
+    { key: 'sensenovaApiKey', name: 'SenseNova' },
   ] as const
 
   const exposedKeys = keysToCheck.filter(k => (settings as any)[k.key])
@@ -117,4 +118,21 @@ export function runSecurityAudit(settings: AppSettings): AuditFinding[] {
   // Sort: danger first, then warn, then info
   const severityOrder: Record<Severity, number> = { danger: 0, warn: 1, info: 2 }
   return findings.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity])
+}
+
+export function maskSecrets(text: string): string {
+  if (!text || typeof text !== 'string') return text
+  let masked = text
+  // Anthropic
+  masked = masked.replace(/sk-ant-api[a-zA-Z0-9-_]{20,}/g, 'sk-ant-api***')
+  // OpenAI — o `_` entra na classe: as chaves sk-proj-… têm sublinhado, e sem
+  // ele a máscara parava no primeiro `_` e deixava o resto da chave à mostra.
+  masked = masked.replace(/sk-[a-zA-Z0-9_-]{20,}/g, 'sk-***')
+  // Google Gemini (AIza)
+  masked = masked.replace(/AIza[0-9A-Za-z-_]{35}/g, 'AIza***')
+  // Slack Tokens
+  masked = masked.replace(/xox[baprs]-[a-zA-Z0-9-]{10,}/g, 'xox***')
+  // Generic Bearer tokens
+  masked = masked.replace(/Bearer [a-zA-Z0-9-_\.]{20,}/gi, 'Bearer ***')
+  return masked
 }
