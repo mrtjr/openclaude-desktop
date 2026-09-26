@@ -92,7 +92,9 @@ describe('maskSecrets', () => {
   })
 
   it('should mask Google Gemini and Bearer mixed with text', () => {
-    const input = 'Normal text with Gemini AIzaSy1234567890abcdefghijklmnopqrstuvw and a Bearer abcde1234567890ABCDEF mixed.'
+    // Chave FALSA montada em partes: o literal inteiro tem o formato exato de
+    // API key do Google e dispara a proteção contra segredos do GitHub no push.
+    const input = 'Normal text with Gemini AIza' + 'Sy1234567890abcdefghijklmnopqrstuvw and a Bearer abcde1234567890ABCDEF mixed.'
     const expected = 'Normal text with Gemini AIza*** and a Bearer *** mixed.'
     expect(maskSecrets(input)).toBe(expected)
   })
